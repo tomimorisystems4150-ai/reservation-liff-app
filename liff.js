@@ -274,8 +274,17 @@ async function handleBookingSubmit() {
   } catch (error) {
     console.error('予約の作成に失敗しました:', error);
     alert(`エラーが発生しました: ${error.message}`);
-    submitButton.disabled = false;
-    submitButton.textContent = '予約を確定する';
+    
+    // ▼▼▼【ここから追加】エラー発生時に空き枠を自動で再取得・再描画する▼▼▼
+    submitButton.textContent = '空き枠を更新中...';
+    try {
+      await fetchAndRenderAvailableSlots();
+    } finally {
+      // 成功・失敗に関わらずボタンの状態を元に戻す
+      // submitButtonはfetchAndRenderAvailableSlots内でdisabledになるので、ここではテキストのみ更新
+      submitButton.textContent = '予約を確定する';
+    }
+    // ▲▲▲【ここまで追加】▲▲▲
   }
 }
 
