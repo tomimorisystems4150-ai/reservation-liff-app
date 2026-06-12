@@ -91,17 +91,28 @@ async function initializeApp() {
     document.getElementById('dateSelectorTitle').textContent = '3. ご希望の日を選択';
   }
 
-  // 日付セレクターの初期設定
+  // 日付セレクターの予約可能期間を90日に設定
+  const dateSelector = document.getElementById('dateSelector');
   const today = new Date();
-  const jstOffset = 9 * 60;
-  const jstDate = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
+  const jstOffset = 9 * 60; // JSTはUTC+9
   
-  jstDate.setDate(jstDate.getDate() + 1);
-  const tomorrowString = jstDate.toISOString().split('T')[0];
-  document.getElementById('dateSelector').value = tomorrowString;
+  // JST基準の今日の日付
+  const jstToday = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
+  const todayString = jstToday.toISOString().split('T')[0];
+  
+  // JST基準の明日（デフォルト選択日）
+  const jstTomorrow = new Date(jstToday);
+  jstTomorrow.setDate(jstTomorrow.getDate() + 1);
+  const tomorrowString = jstTomorrow.toISOString().split('T')[0];
 
-  const todayString = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000).toISOString().split('T')[0];
-  document.getElementById('dateSelector').min = todayString;
+  // JST基準の90日後（予約可能最終日）
+  const jst90DaysLater = new Date(jstToday);
+  jst90DaysLater.setDate(jst90DaysLater.getDate() + 90);
+  const maxDateString = jst90DaysLater.toISOString().split('T')[0];
+
+  dateSelector.value = tomorrowString; // デフォルトは明日
+  dateSelector.min = todayString;       // 予約は今日から可能
+  dateSelector.max = maxDateString;     // 予約は90日後まで可能
 }
 
 /**
@@ -134,9 +145,6 @@ function showError(message) {
   document.getElementById('error').style.display = 'block';
 }
 
-/**
- * 空き時間枠を取得し、画面に描画する
- */
 async function fetchAndRenderAvailableSlots() {
   const menuSelector = document.getElementById('menuSelector');
   const staffSelector = document.getElementById('staffSelector');
@@ -156,15 +164,12 @@ async function fetchAndRenderAvailableSlots() {
   const staffEmail = staffSelector.value;
   const isStaffFeatureEnabled = document.getElementById('staffSelectorSection').style.display === 'block';
 
-  // APIを呼び出す条件をチェック
   let shouldFetch = false;
   if (isStaffFeatureEnabled) {
-    // 担当者機能ON: メニュー、担当者、日付がすべて選択されているか
     if (duration && staffEmail && date) {
       shouldFetch = true;
     }
   } else {
-    // 担当者機能OFF: メニューと日付が選択されているか
     if (duration && date) {
       shouldFetch = true;
     }
@@ -180,11 +185,10 @@ async function fetchAndRenderAvailableSlots() {
   timeSlotsSection.style.display = 'block';
 
   try {
-    // 【注意】現時点ではstaffEmailをAPIに渡しても、バックエンドの空き枠計算ロジックは未対応です
     const payload = { 
       date: date, 
       duration: parseInt(duration),
-      staffEmail: staffEmail // 担当者情報を追加
+      staffEmail: staffEmail
     };
     const availableSlots = await fetchApi('getAvailableSlots', payload);
 
@@ -275,16 +279,12 @@ async function handleBookingSubmit() {
     console.error('予約の作成に失敗しました:', error);
     alert(`エラーが発生しました: ${error.message}`);
     
-    // ▼▼▼【ここから追加】エラー発生時に空き枠を自動で再取得・再描画する▼▼▼
     submitButton.textContent = '空き枠を更新中...';
     try {
       await fetchAndRenderAvailableSlots();
     } finally {
-      // 成功・失敗に関わらずボタンの状態を元に戻す
-      // submitButtonはfetchAndRenderAvailableSlots内でdisabledになるので、ここではテキストのみ更新
       submitButton.textContent = '予約を確定する';
     }
-    // ▲▲▲【ここまで追加】▲▲▲
   }
 }
 
@@ -304,7 +304,6 @@ function showBookingCompleteScreen(bookingResult) {
   const selectedMenuOption = menuSelector.options[menuSelector.selectedIndex];
   document.getElementById('completeMenuName').textContent = selectedMenuOption.dataset.name;
 
-  // 担当者情報があれば表示
   const staffSelector = document.getElementById('staffSelector');
   const selectedStaffOption = staffSelector.options[staffSelector.selectedIndex];
   if (selectedStaffOption && selectedStaffOption.value) {
