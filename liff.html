@@ -24,8 +24,13 @@
         <select id="menuSelector" class="form-control"></select>
       </section>
 
+      <section id="staffSelectorSection" class="step" style="display: none;">
+        <h2>2. 担当者を選択</h2>
+        <select id="staffSelector" class="form-control"></select>
+      </section>
+
       <section class="step">
-        <h2>2. ご希望の日を選択</h2>
+        <h2 id="dateSelectorTitle">2. ご希望の日を選択</h2>
         <input type="date" id="dateSelector" class="form-control">
       </section>
 
@@ -47,7 +52,7 @@
     <h2>エラーが発生しました</h2>
     <p id="errorMessage"></p>
   </div>
-  
+
   <div id="bookingComplete" class="container" style="display: none;">
     <header>
       <h1 id="completeShopName"></h1>
@@ -67,7 +72,6 @@
       <div class="calendar-actions">
         <h3>カレンダーに登録</h3>
         <a id="googleCalendarLink" href="#" target="_blank" class="calendar-button google">Googleカレンダーに追加</a>
-        <!-- 今後の拡張用: <a id="icsLink" href="#" class="calendar-button ics">その他のカレンダー (ICS)</a> -->
       </div>
     </main>
   </div>

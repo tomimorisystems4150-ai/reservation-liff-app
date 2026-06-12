@@ -136,9 +136,6 @@ header p {
   color: #e74c3c;
 }
 
-/* ...（既存のスタイルはそのまま）... */
-
-/* ▼▼▼【追記】完了画面スタイル ▼▼▼ */
 .complete-message {
   text-align: center;
   padding: 20px;
@@ -188,9 +185,5 @@ header p {
 }
 .calendar-button.google {
   background-color: #4285F4;
-  color: white;
-}
-.calendar-button.ics {
-  background-color: #555;
   color: white;
 }
