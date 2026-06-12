@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>予約</title>
+  <link rel="stylesheet" href="liff.css">
+</head>
+<body>
+  <div id="loading" class="loading-overlay">
+    <div class="spinner"></div>
+    <p>読み込んでいます...</p>
+  </div>
+
+  <div id="app" class="container" style="display: none;">
+    <header>
+      <h1 id="shopName"></h1>
+      <p id="welcomeMessage"></p>
+    </header>
+
+    <main>
+      <section class="step">
+        <h2>1. メニューを選択</h2>
+        <select id="menuSelector" class="form-control"></select>
+      </section>
+
+      <section class="step">
+        <h2>2. ご希望の日を選択</h2>
+        <input type="date" id="dateSelector" class="form-control">
+      </section>
+
+      <section id="timeSlotsSection" class="step" style="display: none;">
+        <h2>3. ご希望の時間を選択</h2>
+        <div id="timeSlots" class="time-slots-container">
+          <!-- 空き時間がここに表示されます -->
+        </div>
+        <p id="timeSlotsMessage" class="message"></p>
+      </section>
+    </main>
+
+    <footer>
+      <button id="submitButton" class="submit-button" disabled>予約を確定する</button>
+    </footer>
+  </div>
+
+  <div id="error" class="error-container" style="display: none;">
+    <h2>エラーが発生しました</h2>
+    <p id="errorMessage"></p>
+  </div>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="liff.js"></script>
+</body>
+</html>
