@@ -47,6 +47,30 @@
     <h2>エラーが発生しました</h2>
     <p id="errorMessage"></p>
   </div>
+  
+  <div id="bookingComplete" class="container" style="display: none;">
+    <header>
+      <h1 id="completeShopName"></h1>
+    </header>
+    <main>
+      <div class="complete-message">
+        <h2>ご予約が完了しました</h2>
+        <p><span id="completeUserName"></span>様のご予約を承りました。</p>
+        <div class="booking-details">
+          <p><strong>日時:</strong> <span id="completeDateTime"></span></p>
+          <p><strong>メニュー:</strong> <span id="completeMenuName"></span></p>
+        </div>
+        <p class="info-text">
+          ご予約内容の確認や変更・キャンセルは、LINEのトーク画面下部のメニューから行えます。
+        </p>
+      </div>
+      <div class="calendar-actions">
+        <h3>カレンダーに登録</h3>
+        <a id="googleCalendarLink" href="#" target="_blank" class="calendar-button google">Googleカレンダーに追加</a>
+        <!-- 今後の拡張用: <a id="icsLink" href="#" class="calendar-button ics">その他のカレンダー (ICS)</a> -->
+      </div>
+    </main>
+  </div>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="liff.js"></script>

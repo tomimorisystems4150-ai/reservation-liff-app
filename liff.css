@@ -135,3 +135,62 @@ header p {
 .error-container h2 {
   color: #e74c3c;
 }
+
+/* ...（既存のスタイルはそのまま）... */
+
+/* ▼▼▼【追記】完了画面スタイル ▼▼▼ */
+.complete-message {
+  text-align: center;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 25px;
+}
+.complete-message h2 {
+  color: #2ecc71;
+  font-size: 1.5em;
+}
+.booking-details {
+  margin: 20px 0;
+  text-align: left;
+  display: inline-block;
+}
+.booking-details p {
+  margin: 8px 0;
+  font-size: 1.1em;
+}
+.info-text {
+  font-size: 0.9em;
+  color: #7f8c8d;
+}
+.calendar-actions {
+  text-align: center;
+}
+.calendar-actions h3 {
+  font-size: 1.2em;
+  color: #2980b9;
+  margin-bottom: 15px;
+}
+.calendar-button {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 1.1em;
+  box-sizing: border-box;
+  transition: opacity 0.2s;
+}
+.calendar-button:hover {
+  opacity: 0.8;
+}
+.calendar-button.google {
+  background-color: #4285F4;
+  color: white;
+}
+.calendar-button.ics {
+  background-color: #555;
+  color: white;
+}
