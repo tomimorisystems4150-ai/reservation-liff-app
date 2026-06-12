@@ -2,11 +2,25 @@
 // 定数・設定
 // =================================================================
 
-// URLのクエリパラメータから設定値を取得
-const urlParams = new URLSearchParams(window.location.search);
-const GAS_API_URL = urlParams.get('gasApiUrl');
-const LIFF_ID = urlParams.get('liffId');
+// ---【修正】リダイレクトに対応するため、sessionStorageを利用してパラメータを保持 ---
+function getLiffParams() {
+  let gasApiUrl = sessionStorage.getItem('gasApiUrl');
+  let liffId = sessionStorage.getItem('liffId');
 
+  if (!gasApiUrl || !liffId) {
+    const urlParams = new URLSearchParams(window.location.search);
+    gasApiUrl = urlParams.get('gasApiUrl');
+    liffId = urlParams.get('liffId');
+
+    if (gasApiUrl && liffId) {
+      sessionStorage.setItem('gasApiUrl', gasApiUrl);
+      sessionStorage.setItem('liffId', liffId);
+    }
+  }
+  return { gasApiUrl, liffId };
+}
+
+const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
 let userProfile = null;
 
 // =================================================================
@@ -17,7 +31,7 @@ window.onload = async () => {
   try {
     // 必須パラメータの存在チェック
     if (!GAS_API_URL || !LIFF_ID) {
-      throw new Error('設定情報が不足しています。URLを確認してください。');
+      throw new Error('設定情報が不足しています。LIFFアプリのURL設定を確認してください。');
     }
     await initializeLiff();
     await initializeApp();
@@ -37,7 +51,8 @@ async function initializeLiff() {
   if (!liff.isLoggedIn()) {
     // ログインしていない場合はログインページにリダイレクト
     liff.login(); 
-    return;
+    // login()はページ遷移を発生させるため、ここで処理を中断させる
+    await new Promise(() => {});
   }
   userProfile = await liff.getProfile();
   document.getElementById('welcomeMessage').textContent = `${userProfile.displayName}様、こんにちは！`;
