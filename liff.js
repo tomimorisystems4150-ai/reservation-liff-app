@@ -91,7 +91,7 @@ async function initializeApp() {
     document.getElementById('dateSelectorTitle').textContent = '3. ご希望の日を選択';
   }
 
-  // 日付セレクターの予約可能期間を90日に設定
+  // --- ▼▼▼【修正】日付セレクターの予約可能期間を90日に設定 ▼▼▼ ---
   const dateSelector = document.getElementById('dateSelector');
   const today = new Date();
   const jstOffset = 9 * 60; // JSTはUTC+9
@@ -113,6 +113,7 @@ async function initializeApp() {
   dateSelector.value = tomorrowString; // デフォルトは明日
   dateSelector.min = todayString;       // 予約は今日から可能
   dateSelector.max = maxDateString;     // 予約は90日後まで可能
+  // --- ▲▲▲【修正】ここまで ▲▲▲ ---
 }
 
 /**
