@@ -137,22 +137,31 @@ function setupEventListeners() {
  */
 function handleDateChange() {
   const dateSelector = document.getElementById('dateSelector');
-  const selectedDate = new Date(dateSelector.value + 'T00:00:00'); // JSTとして解釈
+  const selectedDate = new Date(dateSelector.value + 'T00:00:00');
   const minDate = new Date(dateSelector.min + 'T00:00:00');
   const maxDate = new Date(dateSelector.max + 'T00:00:00');
 
   if (selectedDate < minDate || selectedDate > maxDate) {
-    alert('ご予約は本日より90日後まで可能です。');
-    // 日付を有効な範囲（デフォルトの明日）に戻す
-    const today = new Date();
-    const jstOffset = 9 * 60;
-    const jstToday = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
-    const jstTomorrow = new Date(jstToday);
-    jstTomorrow.setDate(jstTomorrow.getDate() + 1);
-    dateSelector.value = jstTomorrow.toISOString().split('T')[0];
+    // ▼▼▼【修正】setTimeoutでアラートの実行を遅延させる▼▼▼
+    setTimeout(() => {
+      alert('ご予約は本日より90日後まで可能です。');
+      // 日付を有効な範囲（デフォルトの明日）に戻す
+      const today = new Date();
+      const jstOffset = 9 * 60;
+      const jstToday = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
+      const jstTomorrow = new Date(jstToday);
+      jstTomorrow.setDate(jstTomorrow.getDate() + 1);
+      dateSelector.value = jstTomorrow.toISOString().split('T')[0];
+      
+      // 日付をリセットした後に、再度空き枠検索をトリガーする
+      fetchAndRenderAvailableSlots();
+    }, 10); // 10ミリ秒の遅延
+    
+    // 不正な日付の時点では空き枠検索を実行しない
+    return;
   }
   
-  // 有効な日付が選択された後、空き枠を検索
+  // 有効な日付が選択された場合、通常通り空き枠を検索
   fetchAndRenderAvailableSlots();
 }
 
