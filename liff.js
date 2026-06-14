@@ -44,7 +44,7 @@ window.onload = async () => {
     }
     await initializeLiff();
     await initializeApp();
-    setupEventListeners(); // ページ読み込み時に一度だけ実行
+    setupEventListeners();
     showSection('section-step1-visit-experience');
     showApp();
   } catch (error) {
@@ -80,13 +80,9 @@ async function initializeApp() {
 // イベントリスナー設定
 // =================================================================
 
-/**
- * 【修正】イベント委任（Event Delegation）を用いて、リスナー登録を一度だけにする
- */
 function setupEventListeners() {
   const mainElement = document.querySelector('main');
 
-  // main要素に一度だけイベントリスナーを設定
   mainElement.addEventListener('click', (e) => {
     const selectionButton = e.target.closest('.selection-button[data-next-step]');
     const backButton = e.target.closest('.back-button');
@@ -101,7 +97,6 @@ function setupEventListeners() {
     }
   });
 
-  // 週送りボタンと担当者セレクターは静的なので、ここで登録
   document.getElementById('prev-week-button').addEventListener('click', () => {
     const newDate = new Date(currentWeekStartDate.getTime());
     newDate.setDate(newDate.getDate() - 7);
@@ -124,6 +119,9 @@ function setupEventListeners() {
     bookingState.staff = staff || { name: '指名なし', email: 'any' };
     renderTimetable();
   });
+
+  // 予約確定ボタンのイベントリスナーを追加
+  document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 }
 
 // =================================================================
@@ -257,13 +255,16 @@ async function renderTimetable() {
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  const date = new Date(currentWeekStartDate);
-  const availableSlots = await fetchApi('getAvailableSlots', { 
-    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+  // --- ▼▼▼【ここからロジックを全面的に修正】▼▼▼ ---
+
+  // APIから1週間分の空き枠データをオブジェクトとして取得
+  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', { 
+    date: `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`,
     duration: bookingState.menu.duration,
     staffEmail: bookingState.staff ? bookingState.staff.email : null
   });
 
+  // ヘッダーを生成
   let headerHtml = '<tr><th></th>';
   const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
   for (let i = 0; i < 7; i++) {
@@ -275,8 +276,9 @@ async function renderTimetable() {
   headerHtml += '</tr>';
   timetableHead.innerHTML = headerHtml;
 
+  // ボディを生成
   let bodyHtml = '';
-  const timeUnit = initData.bookingTimeUnit || 30;
+  const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10); // bookingTimeUnitを正しく取得
   for (let hour = 9; hour < 20; hour++) {
     for (let min = 0; min < 60; min += timeUnit) {
       const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
@@ -284,12 +286,17 @@ async function renderTimetable() {
       for (let i = 0; i < 7; i++) {
         const d = new Date(currentWeekStartDate.getTime());
         d.setDate(d.getDate() + i);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        // その日の空き枠リストを取得
+        const dailyAvailableSlots = weeklyAvailableSlots[dateStr] || [];
         
         let cellContent = 'ー';
         let cellClass = 'unavailable';
 
         if (d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime()) {
-          if (availableSlots.includes(timeStr)) {
+          // 空き枠リストに時間が含まれているかで判定
+          if (dailyAvailableSlots.includes(timeStr)) {
             cellContent = '◯';
             cellClass = '';
           } else {
@@ -297,12 +304,15 @@ async function renderTimetable() {
           }
         }
         
-        bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${d.toISOString().split('T')[0]}T${timeStr}">${cellContent}</div></td>`;
+        bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateStr}T${timeStr}">${cellContent}</div></td>`;
       }
       bodyHtml += '</tr>';
     }
   }
   timetableBody.innerHTML = bodyHtml;
+
+  // イベントリスナーはイベント委任で処理されるため、ここでは再設定不要
+  // --- ▲▲▲【ここまでロジックを全面的に修正】▲▲▲ ---
 }
 
 function showApp() {
@@ -337,4 +347,79 @@ async function fetchApi(action, payload = {}) {
   }
 
   return result.data;
+}
+
+// =================================================================
+// 予約確定処理
+// =================================================================
+
+async function handleBookingSubmit() {
+  const submitButton = document.getElementById('submitButton');
+  submitButton.disabled = true;
+  submitButton.textContent = '予約処理中...';
+
+  try {
+    if (!userProfile || !bookingState.menu || !bookingState.dateTime) {
+      throw new Error('予約情報が不完全です。');
+    }
+
+    const bookingData = {
+      lineUserId: userProfile.userId,
+      userName: userProfile.displayName,
+      menuName: bookingState.menu.name,
+      duration: bookingState.menu.duration,
+      startDateTime: bookingState.dateTime,
+      staffEmail: bookingState.staff ? bookingState.staff.email : '',
+      staffName: bookingState.staff ? bookingState.staff.name : ''
+    };
+
+    const result = await fetchApi('createBooking', { bookingData });
+    showBookingCompleteScreen(result);
+
+  } catch (error) {
+    console.error('予約の作成に失敗しました:', error);
+    alert(`エラーが発生しました: ${error.message}`);
+    
+    submitButton.textContent = '空き枠を更新中...';
+    try {
+      await renderTimetable();
+    } finally {
+      submitButton.textContent = '予約を確定';
+      submitButton.disabled = true; // 予約失敗後は再度日時選択から
+    }
+  }
+}
+
+function showBookingCompleteScreen(bookingResult) {
+  const { eventTitle, startTime, shopName } = bookingResult;
+
+  // メインの予約画面を非表示に
+  document.getElementById('app').style.display = 'none';
+
+  // 完了画面に情報を設定
+  document.getElementById('completeShopName').textContent = shopName;
+  document.getElementById('completeUserName').textContent = userProfile.displayName;
+  
+  const startTimeObj = new Date(startTime);
+  const formattedDateTime = `${startTimeObj.toLocaleDateString('ja-JP')} ${startTimeObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+  document.getElementById('completeDateTime').textContent = formattedDateTime;
+  
+  document.getElementById('completeMenuName').textContent = bookingState.menu.name;
+
+  if (bookingState.staff && bookingState.staff.email !== 'any') {
+    document.getElementById('completeStaffName').textContent = bookingState.staff.name;
+    document.getElementById('completeStaffP').style.display = 'block';
+  }
+
+  const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
+  const endTime = new Date(startTimeObj.getTime() + bookingState.menu.duration * 60000);
+  const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
+  googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
+  googleCalendarUrl.searchParams.append('text', eventTitle);
+  googleCalendarUrl.searchParams.append('dates', `${formatGCDate(startTime)}/${formatGCDate(endTime.toISOString())}`);
+  googleCalendarUrl.searchParams.append('details', `店舗: ${shopName}\nご予約ありがとうございます。`);
+  document.getElementById('googleCalendarLink').href = googleCalendarUrl.toString();
+
+  // 完了画面を表示
+  document.getElementById('bookingComplete').style.display = 'block';
 }
