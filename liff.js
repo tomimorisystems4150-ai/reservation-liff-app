@@ -86,21 +86,25 @@ async function initializeApp() {
 // 画面遷移（ナビゲーション）
 // =================================================================
 
-function setupNavigation() {
-  document.querySelectorAll('.selection-button[data-next-step]').forEach(button => {
-    button.addEventListener('click', (e) => {
-      const nextStepId = e.currentTarget.dataset.nextStep;
-      const value = e.currentTarget.dataset.value;
-      
-      const currentSectionId = e.currentTarget.closest('.page-section').id;
-      handleStepCompletion(currentSectionId, value, e.currentTarget);
+// ▼ 新設：選択ボタン押下時の共通処理を関数化（デグレ防止用）
+function handleSelectionClick(e) {
+  const nextStepId = e.currentTarget.dataset.nextStep;
+  const value = e.currentTarget.dataset.value;
+  
+  const currentSectionId = e.currentTarget.closest('.page-section').id;
+  handleStepCompletion(currentSectionId, value, e.currentTarget);
 
-      if (nextStepId === 'unimplemented') {
-        alert('この機能は現在準備中です。');
-        return;
-      }
-      showSection(`section-${nextStepId}`);
-    });
+  if (nextStepId === 'unimplemented') {
+    alert('この機能は現在準備中です。');
+    return;
+  }
+  showSection(`section-${nextStepId}`);
+}
+
+function setupNavigation() {
+  // ▼ 修正：無名関数から、切り出した handleSelectionClick の呼び出しに変更
+  document.querySelectorAll('.selection-button[data-next-step]').forEach(button => {
+    button.addEventListener('click', handleSelectionClick);
   });
 
   document.querySelectorAll('.back-button').forEach(button => {
@@ -196,9 +200,13 @@ function renderMenuList() {
     button.textContent = `${menu.name} (${menu.duration}分)`;
     button.dataset.nextStep = 'step4-datetime';
     button.dataset.value = menu.name;
+    
+    // ▼ 修正：setupNavigation()を呼ばず、作成したボタン単体に直接イベントを付与
+    button.addEventListener('click', handleSelectionClick);
+    
     container.appendChild(button);
   });
-  setupNavigation();
+  // ▼ 修正：重複登録の原因となっていた setupNavigation(); を削除
 }
 
 function renderStaffSelector() {
