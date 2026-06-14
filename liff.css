@@ -190,14 +190,12 @@ header p {
 #timetable tbody th {
   font-size: 0.75em;
   padding: 8px 4px;
-  background-color: #f8f9fa;
-  background-color: #f8f9fa;
+  background-color: #f8f9fa; /* 背景色を不透明に設定 */
   font-weight: normal;
   height: 30px;
   position: sticky;
   left: 0;
-  /* ▼▼▼【修正】z-indexを日付ヘッダーより大きくする ▼▼▼ */
-  z-index: 3; /* 最前面に表示 */
+  z-index: 1; /* ヘッダーよりは手前、ボディよりは奥でOK */
   border-right: 1px solid #dee2e6;
 }
 
