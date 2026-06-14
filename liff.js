@@ -67,10 +67,9 @@ async function initializeApp() {
   initData = await fetchApi('getInitData');
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
-  // 今日の日付を基準に、その週の月曜日を開始日として設定
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0:日曜, 1:月曜...
-  const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜始まりに調整
+  const dayOfWeek = today.getDay();
+  const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
   currentWeekStartDate = new Date(today.setDate(diff));
   currentWeekStartDate.setHours(0, 0, 0, 0);
 }
@@ -112,6 +111,13 @@ function setupNavigation() {
     currentWeekStartDate.setDate(currentWeekStartDate.getDate() + 7);
     renderTimetable();
   });
+
+  document.getElementById('staff-selector').addEventListener('change', (e) => {
+    const staffEmail = e.target.value;
+    const staff = initData.staffs.find(s => s.email === staffEmail);
+    bookingState.staff = staff || { name: '指名なし', email: 'any' };
+    renderTimetable();
+  });
 }
 
 function handleStepCompletion(completedSectionId, selectedValue, targetElement) {
@@ -125,10 +131,6 @@ function handleStepCompletion(completedSectionId, selectedValue, targetElement) 
     case 'section-step3-menu':
       const menu = initData.serviceMenus.find(m => m.name === targetElement.dataset.value);
       bookingState.menu = menu;
-      break;
-    case 'section-step4-staff':
-      const staff = initData.staffs.find(s => s.email === targetElement.dataset.value);
-      bookingState.staff = staff || { name: '指名なし', email: 'any' };
       break;
   }
 }
@@ -152,17 +154,12 @@ function prepareSection(sectionId) {
     case 'section-step3-menu':
       renderMenuList();
       break;
-    case 'section-step4-staff':
-      renderStaffList();
-      break;
-    case 'section-step5-datetime':
+    case 'section-step4-datetime':
+      renderStaffSelector();
       const infoEl = document.getElementById('lookahead-days-info');
       if (initData.bookingLookaheadDays) {
         infoEl.textContent = `※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`;
       }
-      // 担当者機能OFFの場合に戻るボタンの遷移先を調整
-      const backButton = document.getElementById('back-button-from-datetime');
-      backButton.dataset.prevStep = initData.isStaffFeatureEnabled ? 'step4-staff' : 'step3-menu';
       renderTimetable();
       break;
   }
@@ -179,65 +176,61 @@ function renderMenuList() {
     const button = document.createElement('button');
     button.className = 'selection-button';
     button.textContent = `${menu.name} (${menu.duration}分)`;
-    button.dataset.nextStep = initData.isStaffFeatureEnabled ? 'step4-staff' : 'step5-datetime';
+    button.dataset.nextStep = 'step4-datetime';
     button.dataset.value = menu.name;
     container.appendChild(button);
   });
   setupNavigation();
 }
 
-function renderStaffList() {
-  const container = document.getElementById('staff-list-container');
-  container.innerHTML = '';
+function renderStaffSelector() {
+  const container = document.getElementById('staff-selector-container');
+  const selector = document.getElementById('staff-selector');
   
-  const noPreferenceButton = document.createElement('button');
-  noPreferenceButton.className = 'selection-button';
-  noPreferenceButton.textContent = '指名なし';
-  noPreferenceButton.dataset.nextStep = 'step5-datetime';
-  noPreferenceButton.dataset.value = 'any';
-  container.appendChild(noPreferenceButton);
-
-  initData.staffs.forEach(staff => {
-    const button = document.createElement('button');
-    button.className = 'selection-button';
-    button.textContent = staff.name;
-    button.dataset.nextStep = 'step5-datetime';
-    button.dataset.value = staff.email;
-    container.appendChild(button);
-  });
-  setupNavigation();
+  if (initData.isStaffFeatureEnabled && initData.staffs.length > 0) {
+    selector.innerHTML = '<option value="any">指名なし</option>';
+    initData.staffs.forEach(staff => {
+      const option = document.createElement('option');
+      option.value = staff.email;
+      option.textContent = staff.name;
+      selector.appendChild(option);
+    });
+    container.style.display = 'block';
+    // 初期選択
+    bookingState.staff = { name: '指名なし', email: 'any' };
+  } else {
+    container.style.display = 'none';
+    bookingState.staff = null;
+  }
 }
 
 async function renderTimetable() {
   const timetableBody = document.querySelector('#timetable tbody');
   const timetableHead = document.querySelector('#timetable thead');
-  timetableBody.innerHTML = '<tr><td colspan="8">空き時間を検索中...</td></tr>';
+  timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
   timetableHead.innerHTML = '';
 
-  // 週の表示を更新
-  const weekEnd = new Date(currentWeekStartDate);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  document.getElementById('week-display').textContent = 
-    `${currentWeekStartDate.getFullYear()}年${currentWeekStartDate.getMonth() + 1}月${currentWeekStartDate.getDate()}日〜${weekEnd.getMonth() + 1}月${weekEnd.getDate()}日`;
+  const monthDisplay = new Date(currentWeekStartDate);
+  monthDisplay.setDate(monthDisplay.getDate() + 3); // 週の中間あたりで月を表示
+  document.getElementById('month-display').textContent = `${monthDisplay.getFullYear()}年 ${monthDisplay.getMonth() + 1}月`;
 
-  // 週ナビゲーションボタンの有効/無効を制御
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   document.getElementById('prev-week-button').disabled = currentWeekStartDate <= today;
   
-  const maxDate = new Date(today);
+  const maxDate = new Date();
+  maxDate.setHours(0,0,0,0);
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
-  document.getElementById('next-week-button').disabled = weekEnd >= maxDate;
+  document.getElementById('next-week-button').disabled = currentWeekStartDate >= maxDate;
 
-  // APIから7日分の空き枠を一括取得（※GAS側のAPIはまだ1日分しか対応していないので、今後改修が必要）
+  // TODO: APIを改修して7日分の空き枠を一括取得する
   const date = new Date(currentWeekStartDate);
   const availableSlots = await fetchApi('getAvailableSlots', { 
     date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
     duration: bookingState.menu.duration,
-    staffEmail: bookingState.staff ? bookingState.staff.email : 'any'
+    staffEmail: bookingState.staff ? bookingState.staff.email : null
   });
 
-  // ヘッダーを生成
   let headerHtml = '<tr><th></th>';
   const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
   for (let i = 0; i < 7; i++) {
@@ -249,7 +242,6 @@ async function renderTimetable() {
   headerHtml += '</tr>';
   timetableHead.innerHTML = headerHtml;
 
-  // ボディを生成
   let bodyHtml = '';
   const timeUnit = initData.bookingTimeUnit || 30;
   for (let hour = 9; hour < 20; hour++) {
@@ -260,13 +252,15 @@ async function renderTimetable() {
         const d = new Date(currentWeekStartDate);
         d.setDate(d.getDate() + i);
         
-        let cellContent = '✕';
+        let cellContent = 'ー';
         let cellClass = 'unavailable';
 
         if (d >= today && d <= maxDate) {
           if (availableSlots.includes(timeStr)) {
             cellContent = '◯';
             cellClass = '';
+          } else {
+            cellContent = '✕';
           }
         }
         
@@ -277,13 +271,10 @@ async function renderTimetable() {
   }
   timetableBody.innerHTML = bodyHtml;
 
-  // クリックイベントを設定
   document.querySelectorAll('#timetable .slot').forEach(slot => {
     if (!slot.classList.contains('unavailable')) {
       slot.addEventListener('click', (e) => {
-        // 他の選択を解除
         document.querySelectorAll('#timetable .slot.selected').forEach(s => s.classList.remove('selected'));
-        // クリックしたスロットを選択状態に
         e.currentTarget.classList.add('selected');
         bookingState.dateTime = e.currentTarget.dataset.datetime;
         document.getElementById('submitButton').disabled = false;

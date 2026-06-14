@@ -47,25 +47,20 @@
         <button class="back-button" data-prev-step="step2-booking-type">戻る</button>
       </section>
 
-      <!-- ステップ4: 担当者選択 -->
-      <section id="section-step4-staff" class="page-section" style="display: none;">
-        <h2>担当者の指名</h2>
-        <div id="staff-list-container" class="selection-group">
-          <!-- 担当者がここに動的に追加されます -->
-        </div>
-        <button class="back-button" data-prev-step="step3-menu">戻る</button>
-      </section>
-
-      <!-- ステップ5: 日時選択 -->
-      <section id="section-step5-datetime" class="page-section" style="display: none;">
-        <h2>ご希望の時間帯を選択</h2>
-        <p class="info-text" id="lookahead-days-info"></p>
+      <!-- ステップ4: 日時選択（担当者選択を統合） -->
+      <section id="section-step4-datetime" class="page-section" style="display: none;">
+        <h2>時間帯の選択</h2>
         
-        <!-- ▼▼▼【ここからタイムテーブルUIの骨格を追加】▼▼▼ -->
+        <!-- ▼▼▼【ここから構造を変更】▼▼▼ -->
+        <div id="staff-selector-container" style="display: none;">
+          <label for="staff-selector" class="form-label">担当者の指名</label>
+          <select id="staff-selector" class="form-control"></select>
+        </div>
+
         <div id="timetable-container">
           <div class="timetable-nav">
             <button id="prev-week-button">＜ 前の週</button>
-            <h3 id="week-display"></h3>
+            <h3 id="month-display"></h3>
             <button id="next-week-button">次の週 ＞</button>
           </div>
           <div class="timetable-wrapper">
@@ -78,11 +73,12 @@
               </tbody>
             </table>
           </div>
+          <p class="info-text" id="lookahead-days-info"></p>
         </div>
-        <!-- ▲▲▲【ここまでタイムテーブルUIの骨格を追加】▲▲▲ -->
+        <!-- ▲▲▲【ここまで構造を変更】▲▲▲ -->
 
         <div class="navigation-buttons">
-          <button class="back-button" data-prev-step="step4-staff" id="back-button-from-datetime">戻る</button>
+          <button class="back-button" data-prev-step="step3-menu">戻る</button>
           <button id="submitButton" class="submit-button" disabled>下に進んで予約を確定</button>
         </div>
       </section>
