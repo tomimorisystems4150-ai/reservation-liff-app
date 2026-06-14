@@ -110,15 +110,25 @@ function setupNavigation() {
     });
   });
 
+  // --- ▼▼▼【バグ修正】週送りボタンのイベントリスナーを修正 ▼▼▼ ---
   document.getElementById('prev-week-button').addEventListener('click', () => {
-    currentWeekStartDate.setDate(currentWeekStartDate.getDate() - 7);
+    const newDate = new Date(currentWeekStartDate.getTime());
+    newDate.setDate(newDate.getDate() - 7);
+    currentWeekStartDate = newDate;
     renderTimetable();
+    // スクロール位置をリセット
+    document.querySelector('.timetable-wrapper').scrollTop = 0;
   });
 
   document.getElementById('next-week-button').addEventListener('click', () => {
-    currentWeekStartDate.setDate(currentWeekStartDate.getDate() + 7);
+    const newDate = new Date(currentWeekStartDate.getTime());
+    newDate.setDate(newDate.getDate() + 7);
+    currentWeekStartDate = newDate;
     renderTimetable();
+    // スクロール位置をリセット
+    document.querySelector('.timetable-wrapper').scrollTop = 0;
   });
+  // --- ▲▲▲【バグ修正】ここまで ▲▲▲ ---
 
   document.getElementById('staff-selector').addEventListener('change', (e) => {
     const staffEmail = e.target.value;
