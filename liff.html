@@ -60,11 +60,31 @@
       <section id="section-step5-datetime" class="page-section" style="display: none;">
         <h2>ご希望の時間帯を選択</h2>
         <p class="info-text" id="lookahead-days-info"></p>
+        
+        <!-- ▼▼▼【ここからタイムテーブルUIの骨格を追加】▼▼▼ -->
         <div id="timetable-container">
-          <p>（タイムテーブルUIを実装予定）</p>
+          <div class="timetable-nav">
+            <button id="prev-week-button">＜ 前の週</button>
+            <h3 id="week-display"></h3>
+            <button id="next-week-button">次の週 ＞</button>
+          </div>
+          <div class="timetable-wrapper">
+            <table id="timetable">
+              <thead>
+                <!-- ヘッダーがここに動的に生成されます -->
+              </thead>
+              <tbody>
+                <!-- 時間枠がここに動的に生成されます -->
+              </tbody>
+            </table>
+          </div>
         </div>
-        <button class="back-button" data-prev-step="step4-staff">戻る</button>
-        <button id="submitButton" class="submit-button" disabled>予約を確定する</button>
+        <!-- ▲▲▲【ここまでタイムテーブルUIの骨格を追加】▲▲▲ -->
+
+        <div class="navigation-buttons">
+          <button class="back-button" data-prev-step="step4-staff" id="back-button-from-datetime">戻る</button>
+          <button id="submitButton" class="submit-button" disabled>下に進んで予約を確定</button>
+        </div>
       </section>
 
     </main>
