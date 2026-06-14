@@ -19,14 +19,12 @@
     </header>
 
     <main>
-      <!-- ▼▼▼【ここから全面的に構造を変更】▼▼▼ -->
-
-      <!-- ステップ1: 来店経験の選択 -->
+      <!-- ステップ1: 予約経験の選択 -->
       <section id="section-step1-visit-experience" class="page-section">
-        <h2>ご来院・ご利用経験</h2>
+        <h2>ご予約経験</h2>
         <div class="selection-group">
-          <button class="selection-button" data-next-step="step2-booking-type">初めてのご来院・ご利用</button>
-          <button class="selection-button" data-next-step="step2-booking-type">2回目以降のご来院・ご利用</button>
+          <button class="selection-button" data-next-step="step2-booking-type" data-value="first-time">初めてのご予約</button>
+          <button class="selection-button" data-next-step="step2-booking-type" data-value="repeat">2回目以降のご予約</button>
         </div>
       </section>
 
@@ -43,7 +41,7 @@
       <!-- ステップ3: メニュー選択 -->
       <section id="section-step3-menu" class="page-section" style="display: none;">
         <h2>メニュー選択</h2>
-        <div id="menu-list" class="selection-group">
+        <div id="menu-list-container" class="selection-group">
           <!-- メニューがここに動的に追加されます -->
         </div>
         <button class="back-button" data-prev-step="step2-booking-type">戻る</button>
@@ -52,7 +50,7 @@
       <!-- ステップ4: 担当者選択 -->
       <section id="section-step4-staff" class="page-section" style="display: none;">
         <h2>担当者の指名</h2>
-        <div id="staff-list" class="selection-group">
+        <div id="staff-list-container" class="selection-group">
           <!-- 担当者がここに動的に追加されます -->
         </div>
         <button class="back-button" data-prev-step="step3-menu">戻る</button>
@@ -62,7 +60,6 @@
       <section id="section-step5-datetime" class="page-section" style="display: none;">
         <h2>ご希望の時間帯を選択</h2>
         <p class="info-text" id="lookahead-days-info"></p>
-        <!-- タイムテーブルUIがここに配置されます -->
         <div id="timetable-container">
           <p>（タイムテーブルUIを実装予定）</p>
         </div>
@@ -70,7 +67,6 @@
         <button id="submitButton" class="submit-button" disabled>予約を確定する</button>
       </section>
 
-      <!-- ▲▲▲【ここまで全面的に構造を変更】▲▲▲ -->
     </main>
   </div>
 
@@ -79,7 +75,6 @@
     <p id="errorMessage"></p>
   </div>
 
-  <!-- 予約完了画面は変更なし -->
   <div id="bookingComplete" class="container" style="display: none;">
     <header>
       <h1 id="completeShopName"></h1>
