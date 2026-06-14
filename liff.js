@@ -68,10 +68,15 @@ async function initializeApp() {
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
   const today = new Date();
-  const dayOfWeek = today.getDay();
-  const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-  currentWeekStartDate = new Date(today.setDate(diff));
-  currentWeekStartDate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0); // 今日の日付の0時0分0秒を取得
+
+  const dayOfWeek = today.getDay(); // 0:日曜, 1:月曜...
+  // new Date()で新しいインスタンスを生成し、元のtodayオブジェクトを変更しないようにする
+  const startDate = new Date(today.getTime()); 
+  const diff = startDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜始まりに調整
+  startDate.setDate(diff);
+  
+  currentWeekStartDate = startDate;
 }
 
 // =================================================================
