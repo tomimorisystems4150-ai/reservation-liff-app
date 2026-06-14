@@ -236,6 +236,8 @@ function renderStaffSelector() {
   }
 }
 
+// ...（既存のrenderTimetable関数を完全に置き換え）...
+
 async function renderTimetable() {
   const timetableBody = document.querySelector('#timetable tbody');
   const timetableHead = document.querySelector('#timetable thead');
