@@ -27,59 +27,73 @@ header p {
   margin: 0 0 20px 0;
 }
 
-.step {
-  margin-bottom: 25px;
-}
+/* --- ▼▼▼【ここから追加・変更】▼▼▼ --- */
 
-.step h2 {
-  font-size: 1.2em;
+.page-section h2 {
+  font-size: 1.4em;
   border-bottom: 2px solid #3498db;
   padding-bottom: 8px;
-  margin-bottom: 15px;
+  margin-bottom: 20px;
   color: #2980b9;
+  text-align: center;
 }
 
-.form-control {
+.selection-group {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.selection-button {
+  display: block;
   width: 100%;
-  padding: 12px;
-  font-size: 1em;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  box-sizing: border-box;
-}
-
-.time-slots-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 10px;
-}
-
-.time-slot-button {
-  padding: 12px 5px;
-  font-size: 1em;
-  cursor: pointer;
-  border: 1px solid #3498db;
+  padding: 18px;
+  font-size: 1.1em;
+  text-align: left;
   background-color: #fff;
-  color: #3498db;
-  border-radius: 4px;
-  transition: background-color 0.2s, color 0.2s;
+  border: 1px solid #bdc3c7;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+  padding-right: 40px; /* 矢印のスペース */
 }
 
-.time-slot-button:hover {
-  background-color: #ecf5ff;
+.selection-button:hover {
+  border-color: #3498db;
+  box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
 }
 
-.time-slot-button.selected {
-  background-color: #3498db;
-  color: #fff;
+.selection-button::after {
+  content: '>';
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #bdc3c7;
   font-weight: bold;
 }
 
-.message {
-  margin-top: 15px;
+.back-button {
+  margin-top: 30px;
+  padding: 12px 20px;
+  font-size: 1em;
+  background-color: #ecf0f1;
+  color: #7f8c8d;
+  border: 1px solid #bdc3c7;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.info-text {
+  font-size: 0.9em;
   color: #7f8c8d;
   text-align: center;
+  margin-bottom: 15px;
 }
+
+/* --- ▲▲▲【ここまで追加・変更】▲▲▲ --- */
+
 
 .submit-button {
   width: 100%;
@@ -92,6 +106,7 @@ header p {
   border-radius: 5px;
   cursor: pointer;
   transition: background-color 0.2s;
+  margin-top: 20px;
 }
 
 .submit-button:disabled {
@@ -156,10 +171,7 @@ header p {
   margin: 8px 0;
   font-size: 1.1em;
 }
-.info-text {
-  font-size: 0.9em;
-  color: #7f8c8d;
-}
+
 .calendar-actions {
   text-align: center;
 }

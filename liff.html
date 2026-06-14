@@ -19,33 +19,59 @@
     </header>
 
     <main>
-      <section class="step">
-        <h2>1. メニューを選択</h2>
-        <select id="menuSelector" class="form-control"></select>
-      </section>
+      <!-- ▼▼▼【ここから全面的に構造を変更】▼▼▼ -->
 
-      <section id="staffSelectorSection" class="step" style="display: none;">
-        <h2>2. 担当者を選択</h2>
-        <select id="staffSelector" class="form-control"></select>
-      </section>
-
-      <section class="step">
-        <h2 id="dateSelectorTitle">2. ご希望の日を選択</h2>
-        <input type="date" id="dateSelector" class="form-control">
-      </section>
-
-      <section id="timeSlotsSection" class="step" style="display: none;">
-        <h2>3. ご希望の時間を選択</h2>
-        <div id="timeSlots" class="time-slots-container">
-          <!-- 空き時間がここに表示されます -->
+      <!-- ステップ1: 来店経験の選択 -->
+      <section id="section-step1-visit-experience" class="page-section">
+        <h2>ご来院・ご利用経験</h2>
+        <div class="selection-group">
+          <button class="selection-button" data-next-step="step2-booking-type">初めてのご来院・ご利用</button>
+          <button class="selection-button" data-next-step="step2-booking-type">2回目以降のご来院・ご利用</button>
         </div>
-        <p id="timeSlotsMessage" class="message"></p>
       </section>
-    </main>
 
-    <footer>
-      <button id="submitButton" class="submit-button" disabled>予約を確定する</button>
-    </footer>
+      <!-- ステップ2: 予約種別の選択 -->
+      <section id="section-step2-booking-type" class="page-section" style="display: none;">
+        <h2>ご予約の種類</h2>
+        <div class="selection-group">
+          <button class="selection-button" data-next-step="step3-menu">新規の予約</button>
+          <button class="selection-button" data-next-step="unimplemented">予約内容の確認・変更</button>
+        </div>
+        <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
+      </section>
+
+      <!-- ステップ3: メニュー選択 -->
+      <section id="section-step3-menu" class="page-section" style="display: none;">
+        <h2>メニュー選択</h2>
+        <div id="menu-list" class="selection-group">
+          <!-- メニューがここに動的に追加されます -->
+        </div>
+        <button class="back-button" data-prev-step="step2-booking-type">戻る</button>
+      </section>
+
+      <!-- ステップ4: 担当者選択 -->
+      <section id="section-step4-staff" class="page-section" style="display: none;">
+        <h2>担当者の指名</h2>
+        <div id="staff-list" class="selection-group">
+          <!-- 担当者がここに動的に追加されます -->
+        </div>
+        <button class="back-button" data-prev-step="step3-menu">戻る</button>
+      </section>
+
+      <!-- ステップ5: 日時選択 -->
+      <section id="section-step5-datetime" class="page-section" style="display: none;">
+        <h2>ご希望の時間帯を選択</h2>
+        <p class="info-text" id="lookahead-days-info"></p>
+        <!-- タイムテーブルUIがここに配置されます -->
+        <div id="timetable-container">
+          <p>（タイムテーブルUIを実装予定）</p>
+        </div>
+        <button class="back-button" data-prev-step="step4-staff">戻る</button>
+        <button id="submitButton" class="submit-button" disabled>予約を確定する</button>
+      </section>
+
+      <!-- ▲▲▲【ここまで全面的に構造を変更】▲▲▲ -->
+    </main>
   </div>
 
   <div id="error" class="error-container" style="display: none;">
@@ -53,6 +79,7 @@
     <p id="errorMessage"></p>
   </div>
 
+  <!-- 予約完了画面は変更なし -->
   <div id="bookingComplete" class="container" style="display: none;">
     <header>
       <h1 id="completeShopName"></h1>

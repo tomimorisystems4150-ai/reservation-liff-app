@@ -33,7 +33,8 @@ window.onload = async () => {
     }
     await initializeLiff();
     await initializeApp();
-    setupEventListeners();
+    setupNavigation(); // イベントリスナーの役割を変更
+    showSection('section-step1-visit-experience'); // 最初のセクションを表示
     showApp();
   } catch (error) {
     console.error(error);
@@ -58,112 +59,54 @@ async function initializeLiff() {
  * アプリケーションの初期化（GASから設定情報を取得）
  */
 async function initializeApp() {
+  // この段階ではGASからデータを取得せず、UIの骨格のみを準備
   const response = await fetchApi('getInitData');
-  const { shopName, serviceMenus, isStaffFeatureEnabled, staffs } = response;
+  document.getElementById('shopName').textContent = response.shopName || '予約システム';
+}
 
-  document.getElementById('shopName').textContent = shopName || '予約システム';
+// =================================================================
+// 画面遷移（ナビゲーション）
+// =================================================================
 
-  // メニューセレクターの生成
-  const menuSelector = document.getElementById('menuSelector');
-  menuSelector.innerHTML = '<option value="">--- メニューを選択してください ---</option>';
-  serviceMenus.forEach(menu => {
-    const option = document.createElement('option');
-    option.value = menu.duration;
-    option.textContent = `${menu.name} (${menu.duration}分)`;
-    option.dataset.name = menu.name;
-    menuSelector.appendChild(option);
+/**
+ * 全てのナビゲーションボタンにイベントリスナーを設定する
+ */
+function setupNavigation() {
+  document.querySelectorAll('[data-next-step]').forEach(button => {
+    button.addEventListener('click', (e) => {
+      const nextStepId = e.currentTarget.dataset.nextStep;
+      if (nextStepId === 'unimplemented') {
+        alert('この機能は現在準備中です。');
+        return;
+      }
+      showSection(`section-${nextStepId}`);
+    });
   });
 
-  // 担当者機能が有効な場合、担当者セレクターを生成・表示
-  if (isStaffFeatureEnabled && staffs.length > 0) {
-    const staffSelectorSection = document.getElementById('staffSelectorSection');
-    const staffSelector = document.getElementById('staffSelector');
-    
-    staffSelector.innerHTML = '<option value="">--- 担当者を選択してください ---</option>';
-    staffs.forEach(staff => {
-      const option = document.createElement('option');
-      option.value = staff.email; // 識別子としてemailを使用
-      option.textContent = staff.name;
-      staffSelector.appendChild(option);
+  document.querySelectorAll('[data-prev-step]').forEach(button => {
+    button.addEventListener('click', (e) => {
+      const prevStepId = e.currentTarget.dataset.prevStep;
+      showSection(`section-${prevStepId}`);
     });
-
-    staffSelectorSection.style.display = 'block';
-    document.getElementById('dateSelectorTitle').textContent = '3. ご希望の日を選択';
-  }
-
-  // --- ▼▼▼【修正】日付セレクターの予約可能期間を90日に設定 ▼▼▼ ---
-  const dateSelector = document.getElementById('dateSelector');
-  const today = new Date();
-  const jstOffset = 9 * 60; // JSTはUTC+9
-  
-  // JST基準の今日の日付
-  const jstToday = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
-  const todayString = jstToday.toISOString().split('T')[0];
-  
-  // JST基準の明日（デフォルト選択日）
-  const jstTomorrow = new Date(jstToday);
-  jstTomorrow.setDate(jstTomorrow.getDate() + 1);
-  const tomorrowString = jstTomorrow.toISOString().split('T')[0];
-
-  // JST基準の90日後（予約可能最終日）
-  const jst90DaysLater = new Date(jstToday);
-  jst90DaysLater.setDate(jst90DaysLater.getDate() + 90);
-  const maxDateString = jst90DaysLater.toISOString().split('T')[0];
-
-  dateSelector.value = tomorrowString; // デフォルトは明日
-  dateSelector.min = todayString;       // 予約は今日から可能
-  dateSelector.max = maxDateString;     // 予約は90日後まで可能
-  // --- ▲▲▲【修正】ここまで ▲▲▲ ---
+  });
 }
 
 /**
- * イベントリスナーの設定
+ * 指定されたIDのセクションを表示し、他をすべて非表示にする
+ * @param {string} sectionId 表示するセクションのID
  */
-function setupEventListeners() {
-  const menuSelector = document.getElementById('menuSelector');
-  const staffSelector = document.getElementById('staffSelector');
-  const dateSelector = document.getElementById('dateSelector');
-  const submitButton = document.getElementById('submitButton');
-
-  menuSelector.addEventListener('change', fetchAndRenderAvailableSlots);
-  staffSelector.addEventListener('change', fetchAndRenderAvailableSlots);
-  dateSelector.addEventListener('change', handleDateChange); // 変更
-  submitButton.addEventListener('click', handleBookingSubmit);
-}
-
-/**
- * 日付が変更されたときの処理
- * 選択された日付が有効範囲内か検証する
- */
-function handleDateChange() {
-  const dateSelector = document.getElementById('dateSelector');
-  const selectedDate = new Date(dateSelector.value + 'T00:00:00');
-  const minDate = new Date(dateSelector.min + 'T00:00:00');
-  const maxDate = new Date(dateSelector.max + 'T00:00:00');
-
-  if (selectedDate < minDate || selectedDate > maxDate) {
-    // ▼▼▼【修正】setTimeoutでアラートの実行を遅延させる▼▼▼
-    setTimeout(() => {
-      alert('ご予約は本日より90日後まで可能です。');
-      // 日付を有効な範囲（デフォルトの明日）に戻す
-      const today = new Date();
-      const jstOffset = 9 * 60;
-      const jstToday = new Date(today.getTime() + (today.getTimezoneOffset() + jstOffset) * 60000);
-      const jstTomorrow = new Date(jstToday);
-      jstTomorrow.setDate(jstTomorrow.getDate() + 1);
-      dateSelector.value = jstTomorrow.toISOString().split('T')[0];
-      
-      // 日付をリセットした後に、再度空き枠検索をトリガーする
-      fetchAndRenderAvailableSlots();
-    }, 10); // 10ミリ秒の遅延
-    
-    // 不正な日付の時点では空き枠検索を実行しない
-    return;
+function showSection(sectionId) {
+  document.querySelectorAll('.page-section').forEach(section => {
+    section.style.display = 'none';
+  });
+  const targetSection = document.getElementById(sectionId);
+  if (targetSection) {
+    targetSection.style.display = 'block';
+  } else {
+    console.error(`セクションが見つかりません: ${sectionId}`);
   }
-  
-  // 有効な日付が選択された場合、通常通り空き枠を検索
-  fetchAndRenderAvailableSlots();
 }
+
 
 // =================================================================
 // UI制御・表示関連
@@ -178,80 +121,6 @@ function showError(message) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('errorMessage').textContent = message;
   document.getElementById('error').style.display = 'block';
-}
-
-async function fetchAndRenderAvailableSlots() {
-  const menuSelector = document.getElementById('menuSelector');
-  const staffSelector = document.getElementById('staffSelector');
-  const dateSelector = document.getElementById('dateSelector');
-  const timeSlotsSection = document.getElementById('timeSlotsSection');
-  const timeSlotsDiv = document.getElementById('timeSlots');
-  const timeSlotsMessage = document.getElementById('timeSlotsMessage');
-
-  document.getElementById('submitButton').disabled = true;
-  const selectedButton = document.querySelector('.time-slot-button.selected');
-  if (selectedButton) {
-    selectedButton.classList.remove('selected');
-  }
-
-  const duration = menuSelector.value;
-  const date = dateSelector.value;
-  const staffEmail = staffSelector.value;
-  const isStaffFeatureEnabled = document.getElementById('staffSelectorSection').style.display === 'block';
-
-  let shouldFetch = false;
-  if (isStaffFeatureEnabled) {
-    if (duration && staffEmail && date) {
-      shouldFetch = true;
-    }
-  } else {
-    if (duration && date) {
-      shouldFetch = true;
-    }
-  }
-
-  if (!shouldFetch) {
-    timeSlotsSection.style.display = 'none';
-    return;
-  }
-
-  timeSlotsDiv.innerHTML = '';
-  timeSlotsMessage.textContent = '空き時間を検索中...';
-  timeSlotsSection.style.display = 'block';
-
-  try {
-    const payload = { 
-      date: date, 
-      duration: parseInt(duration),
-      staffEmail: staffEmail
-    };
-    const availableSlots = await fetchApi('getAvailableSlots', payload);
-
-    if (availableSlots.length > 0) {
-      availableSlots.forEach(slot => {
-        const button = document.createElement('button');
-        button.className = 'time-slot-button';
-        button.textContent = slot;
-        button.dataset.time = slot;
-        button.addEventListener('click', handleTimeSlotSelection);
-        timeSlotsDiv.appendChild(button);
-      });
-      timeSlotsMessage.textContent = '';
-    } else {
-      timeSlotsMessage.textContent = 'ご指定の条件では、予約可能な時間がありません。';
-    }
-  } catch (error) {
-    console.error('空き枠の取得に失敗しました:', error);
-    timeSlotsMessage.textContent = 'エラーが発生しました。時間をおいて再度お試しください。';
-  }
-}
-
-function handleTimeSlotSelection(event) {
-  document.querySelectorAll('.time-slot-button').forEach(btn => {
-    btn.classList.remove('selected');
-  });
-  event.target.classList.add('selected');
-  document.getElementById('submitButton').disabled = false;
 }
 
 // =================================================================
@@ -277,82 +146,4 @@ async function fetchApi(action, payload = {}) {
   return result.data;
 }
 
-// =================================================================
-// 予約確定処理
-// =================================================================
-
-async function handleBookingSubmit() {
-  const submitButton = document.getElementById('submitButton');
-  submitButton.disabled = true;
-  submitButton.textContent = '予約処理中...';
-
-  try {
-    const menuSelector = document.getElementById('menuSelector');
-    const staffSelector = document.getElementById('staffSelector');
-    const selectedMenuOption = menuSelector.options[menuSelector.selectedIndex];
-    const selectedStaffOption = staffSelector.options[staffSelector.selectedIndex];
-    const selectedTimeButton = document.querySelector('.time-slot-button.selected');
-
-    if (!userProfile || !selectedMenuOption.dataset.name || !selectedTimeButton) {
-      throw new Error('予約情報が不完全です。');
-    }
-
-    const bookingData = {
-      lineUserId: userProfile.userId,
-      userName: userProfile.displayName,
-      menuName: selectedMenuOption.dataset.name,
-      duration: parseInt(selectedMenuOption.value, 10),
-      startDateTime: `${document.getElementById('dateSelector').value}T${selectedTimeButton.dataset.time}`,
-      staffEmail: selectedStaffOption ? selectedStaffOption.value : '',
-      staffName: selectedStaffOption ? selectedStaffOption.textContent : ''
-    };
-
-    const result = await fetchApi('createBooking', { bookingData });
-    showBookingCompleteScreen(result);
-
-  } catch (error) {
-    console.error('予約の作成に失敗しました:', error);
-    alert(`エラーが発生しました: ${error.message}`);
-    
-    submitButton.textContent = '空き枠を更新中...';
-    try {
-      await fetchAndRenderAvailableSlots();
-    } finally {
-      submitButton.textContent = '予約を確定する';
-    }
-  }
-}
-
-function showBookingCompleteScreen(bookingResult) {
-  const { eventTitle, startTime, endTime, shopName } = bookingResult;
-
-  document.getElementById('app').style.display = 'none';
-
-  document.getElementById('completeShopName').textContent = shopName;
-  document.getElementById('completeUserName').textContent = userProfile.displayName;
-  
-  const startTimeObj = new Date(startTime);
-  const formattedDateTime = `${startTimeObj.toLocaleDateString('ja-JP')} ${startTimeObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
-  document.getElementById('completeDateTime').textContent = formattedDateTime;
-  
-  const menuSelector = document.getElementById('menuSelector');
-  const selectedMenuOption = menuSelector.options[menuSelector.selectedIndex];
-  document.getElementById('completeMenuName').textContent = selectedMenuOption.dataset.name;
-
-  const staffSelector = document.getElementById('staffSelector');
-  const selectedStaffOption = staffSelector.options[staffSelector.selectedIndex];
-  if (selectedStaffOption && selectedStaffOption.value) {
-    document.getElementById('completeStaffName').textContent = selectedStaffOption.textContent;
-    document.getElementById('completeStaffP').style.display = 'block';
-  }
-
-  const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
-  const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
-  googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
-  googleCalendarUrl.searchParams.append('text', eventTitle);
-  googleCalendarUrl.searchParams.append('dates', `${formatGCDate(startTime)}/${formatGCDate(endTime)}`);
-  googleCalendarUrl.searchParams.append('details', `店舗: ${shopName}\nご予約ありがとうございます。`);
-  document.getElementById('googleCalendarLink').href = googleCalendarUrl.toString();
-
-  document.getElementById('bookingComplete').style.display = 'block';
-}
+// (予約確定処理や完了画面表示の関数は、後のステップで再実装します)
