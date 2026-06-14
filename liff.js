@@ -63,10 +63,12 @@ async function initializeLiff() {
   document.getElementById('welcomeMessage').textContent = `${userProfile.displayName}様、こんにちは！`;
 }
 
+
 async function initializeApp() {
   initData = await fetchApi('getInitData');
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
+  // --- ▼▼▼【バグ修正】週送りの計算ロジックを修正 ▼▼▼ ---
   const today = new Date();
   today.setHours(0, 0, 0, 0); // 今日の日付の0時0分0秒を取得
 
@@ -77,6 +79,7 @@ async function initializeApp() {
   startDate.setDate(diff);
   
   currentWeekStartDate = startDate;
+  // --- ▲▲▲【バグ修正】ここまで ▲▲▲ ---
 }
 
 // =================================================================
