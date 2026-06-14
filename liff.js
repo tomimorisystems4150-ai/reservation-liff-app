@@ -44,7 +44,7 @@ window.onload = async () => {
     }
     await initializeLiff();
     await initializeApp();
-    setupNavigation();
+    setupEventListeners(); // ページ読み込み時に一度だけ実行
     showSection('section-step1-visit-experience');
     showApp();
   } catch (error) {
@@ -63,64 +63,50 @@ async function initializeLiff() {
   document.getElementById('welcomeMessage').textContent = `${userProfile.displayName}様、こんにちは！`;
 }
 
-
 async function initializeApp() {
   initData = await fetchApi('getInitData');
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
-  // --- ▼▼▼【バグ修正】週送りの計算ロジックを修正 ▼▼▼ ---
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // 今日の日付の0時0分0秒を取得
-
-  const dayOfWeek = today.getDay(); // 0:日曜, 1:月曜...
-  // new Date()で新しいインスタンスを生成し、元のtodayオブジェクトを変更しないようにする
+  today.setHours(0, 0, 0, 0);
+  const dayOfWeek = today.getDay();
   const startDate = new Date(today.getTime()); 
-  const diff = startDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜始まりに調整
+  const diff = startDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
   startDate.setDate(diff);
-  
   currentWeekStartDate = startDate;
-  // --- ▲▲▲【バグ修正】ここまで ▲▲▲ ---
 }
 
 // =================================================================
-// 画面遷移（ナビゲーション）
+// イベントリスナー設定
 // =================================================================
 
-// ▼ 新設：選択ボタン押下時の共通処理を関数化（デグレ防止用）
-function handleSelectionClick(e) {
-  const nextStepId = e.currentTarget.dataset.nextStep;
-  const value = e.currentTarget.dataset.value;
-  
-  const currentSectionId = e.currentTarget.closest('.page-section').id;
-  handleStepCompletion(currentSectionId, value, e.currentTarget);
+/**
+ * 【修正】イベント委任（Event Delegation）を用いて、リスナー登録を一度だけにする
+ */
+function setupEventListeners() {
+  const mainElement = document.querySelector('main');
 
-  if (nextStepId === 'unimplemented') {
-    alert('この機能は現在準備中です。');
-    return;
-  }
-  showSection(`section-${nextStepId}`);
-}
+  // main要素に一度だけイベントリスナーを設定
+  mainElement.addEventListener('click', (e) => {
+    const selectionButton = e.target.closest('.selection-button[data-next-step]');
+    const backButton = e.target.closest('.back-button');
+    const slotButton = e.target.closest('#timetable .slot:not(.unavailable)');
 
-function setupNavigation() {
-  // ▼ 修正：無名関数から、切り出した handleSelectionClick の呼び出しに変更
-  document.querySelectorAll('.selection-button[data-next-step]').forEach(button => {
-    button.addEventListener('click', handleSelectionClick);
+    if (selectionButton) {
+      handleSelectionButtonClick(selectionButton);
+    } else if (backButton) {
+      handleBackButtonClick(backButton);
+    } else if (slotButton) {
+      handleSlotClick(slotButton);
+    }
   });
 
-  document.querySelectorAll('.back-button').forEach(button => {
-    button.addEventListener('click', (e) => {
-      const prevStepId = e.currentTarget.dataset.prevStep;
-      showSection(`section-${prevStepId}`);
-    });
-  });
-
-  // --- ▼▼▼【バグ修正】週送りボタンのイベントリスナーを修正 ▼▼▼ ---
+  // 週送りボタンと担当者セレクターは静的なので、ここで登録
   document.getElementById('prev-week-button').addEventListener('click', () => {
     const newDate = new Date(currentWeekStartDate.getTime());
     newDate.setDate(newDate.getDate() - 7);
     currentWeekStartDate = newDate;
     renderTimetable();
-    // スクロール位置をリセット
     document.querySelector('.timetable-wrapper').scrollTop = 0;
   });
 
@@ -129,10 +115,8 @@ function setupNavigation() {
     newDate.setDate(newDate.getDate() + 7);
     currentWeekStartDate = newDate;
     renderTimetable();
-    // スクロール位置をリセット
     document.querySelector('.timetable-wrapper').scrollTop = 0;
   });
-  // --- ▲▲▲【バグ修正】ここまで ▲▲▲ ---
 
   document.getElementById('staff-selector').addEventListener('change', (e) => {
     const staffEmail = e.target.value;
@@ -140,6 +124,36 @@ function setupNavigation() {
     bookingState.staff = staff || { name: '指名なし', email: 'any' };
     renderTimetable();
   });
+}
+
+// =================================================================
+// イベントハンドラ
+// =================================================================
+
+function handleSelectionButtonClick(button) {
+  const nextStepId = button.dataset.nextStep;
+  const value = button.dataset.value;
+  const currentSectionId = button.closest('.page-section').id;
+  
+  handleStepCompletion(currentSectionId, value, button);
+
+  if (nextStepId === 'unimplemented') {
+    alert('この機能は現在準備中です。');
+    return;
+  }
+  showSection(`section-${nextStepId}`);
+}
+
+function handleBackButtonClick(button) {
+  const prevStepId = button.dataset.prevStep;
+  showSection(`section-${prevStepId}`);
+}
+
+function handleSlotClick(slot) {
+  document.querySelectorAll('#timetable .slot.selected').forEach(s => s.classList.remove('selected'));
+  slot.classList.add('selected');
+  bookingState.dateTime = slot.dataset.datetime;
+  document.getElementById('submitButton').disabled = false;
 }
 
 function handleStepCompletion(completedSectionId, selectedValue, targetElement) {
@@ -156,6 +170,10 @@ function handleStepCompletion(completedSectionId, selectedValue, targetElement) 
       break;
   }
 }
+
+// =================================================================
+// 画面表示・制御
+// =================================================================
 
 function showSection(sectionId) {
   prepareSection(sectionId);
@@ -187,10 +205,6 @@ function prepareSection(sectionId) {
   }
 }
 
-// =================================================================
-// UI動的生成
-// =================================================================
-
 function renderMenuList() {
   const container = document.getElementById('menu-list-container');
   container.innerHTML = '';
@@ -200,13 +214,8 @@ function renderMenuList() {
     button.textContent = `${menu.name} (${menu.duration}分)`;
     button.dataset.nextStep = 'step4-datetime';
     button.dataset.value = menu.name;
-    
-    // ▼ 修正：setupNavigation()を呼ばず、作成したボタン単体に直接イベントを付与
-    button.addEventListener('click', handleSelectionClick);
-    
     container.appendChild(button);
   });
-  // ▼ 修正：重複登録の原因となっていた setupNavigation(); を削除
 }
 
 function renderStaffSelector() {
@@ -222,7 +231,6 @@ function renderStaffSelector() {
       selector.appendChild(option);
     });
     container.style.display = 'block';
-    // 初期選択
     bookingState.staff = { name: '指名なし', email: 'any' };
   } else {
     container.style.display = 'none';
@@ -236,20 +244,19 @@ async function renderTimetable() {
   timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
   timetableHead.innerHTML = '';
 
-  const monthDisplay = new Date(currentWeekStartDate);
-  monthDisplay.setDate(monthDisplay.getDate() + 3); // 週の中間あたりで月を表示
+  const monthDisplay = new Date(currentWeekStartDate.getTime());
+  monthDisplay.setDate(monthDisplay.getDate() + 3);
   document.getElementById('month-display').textContent = `${monthDisplay.getFullYear()}年 ${monthDisplay.getMonth() + 1}月`;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  document.getElementById('prev-week-button').disabled = currentWeekStartDate <= today;
+  document.getElementById('prev-week-button').disabled = currentWeekStartDate.getTime() <= today.getTime();
   
   const maxDate = new Date();
   maxDate.setHours(0,0,0,0);
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
-  document.getElementById('next-week-button').disabled = currentWeekStartDate >= maxDate;
+  document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  // TODO: APIを改修して7日分の空き枠を一括取得する
   const date = new Date(currentWeekStartDate);
   const availableSlots = await fetchApi('getAvailableSlots', { 
     date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
@@ -260,7 +267,7 @@ async function renderTimetable() {
   let headerHtml = '<tr><th></th>';
   const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(currentWeekStartDate);
+    const d = new Date(currentWeekStartDate.getTime());
     d.setDate(d.getDate() + i);
     const dayClass = d.getDay() === 0 ? 'is-sunday' : (d.getDay() === 6 ? 'is-saturday' : '');
     headerHtml += `<th class="${dayClass}">${d.getDate()}<br><span class="day-of-week">(${daysOfWeek[d.getDay()]})</span></th>`;
@@ -275,13 +282,13 @@ async function renderTimetable() {
       const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
       bodyHtml += `<tr><th>${timeStr}</th>`;
       for (let i = 0; i < 7; i++) {
-        const d = new Date(currentWeekStartDate);
+        const d = new Date(currentWeekStartDate.getTime());
         d.setDate(d.getDate() + i);
         
         let cellContent = 'ー';
         let cellClass = 'unavailable';
 
-        if (d >= today && d <= maxDate) {
+        if (d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime()) {
           if (availableSlots.includes(timeStr)) {
             cellContent = '◯';
             cellClass = '';
@@ -296,23 +303,7 @@ async function renderTimetable() {
     }
   }
   timetableBody.innerHTML = bodyHtml;
-
-  document.querySelectorAll('#timetable .slot').forEach(slot => {
-    if (!slot.classList.contains('unavailable')) {
-      slot.addEventListener('click', (e) => {
-        document.querySelectorAll('#timetable .slot.selected').forEach(s => s.classList.remove('selected'));
-        e.currentTarget.classList.add('selected');
-        bookingState.dateTime = e.currentTarget.dataset.datetime;
-        document.getElementById('submitButton').disabled = false;
-      });
-    }
-  });
 }
-
-
-// =================================================================
-// UI制御・表示関連
-// =================================================================
 
 function showApp() {
   document.getElementById('loading').style.display = 'none';
