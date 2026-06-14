@@ -255,16 +255,12 @@ async function renderTimetable() {
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  // --- ▼▼▼【ここからロジックを全面的に修正】▼▼▼ ---
-
-  // APIから1週間分の空き枠データをオブジェクトとして取得
   const weeklyAvailableSlots = await fetchApi('getAvailableSlots', { 
     date: `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`,
     duration: bookingState.menu.duration,
     staffEmail: bookingState.staff ? bookingState.staff.email : null
   });
 
-  // ヘッダーを生成
   let headerHtml = '<tr><th></th>';
   const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
   for (let i = 0; i < 7; i++) {
@@ -276,9 +272,8 @@ async function renderTimetable() {
   headerHtml += '</tr>';
   timetableHead.innerHTML = headerHtml;
 
-  // ボディを生成
   let bodyHtml = '';
-  const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10); // bookingTimeUnitを正しく取得
+  const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10);
   for (let hour = 9; hour < 20; hour++) {
     for (let min = 0; min < 60; min += timeUnit) {
       const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
@@ -288,14 +283,12 @@ async function renderTimetable() {
         d.setDate(d.getDate() + i);
         const dateStr = d.toISOString().split('T')[0];
         
-        // その日の空き枠リストを取得
         const dailyAvailableSlots = weeklyAvailableSlots[dateStr] || [];
         
         let cellContent = 'ー';
         let cellClass = 'unavailable';
 
         if (d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime()) {
-          // 空き枠リストに時間が含まれているかで判定
           if (dailyAvailableSlots.includes(timeStr)) {
             cellContent = '◯';
             cellClass = '';
@@ -304,15 +297,14 @@ async function renderTimetable() {
           }
         }
         
-        bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateStr}T${timeStr}">${cellContent}</div></td>`;
+        // ▼▼▼【修正】data-datetime属性にタイムゾーン情報を付与▼▼▼
+        const dateTimeString = `${dateStr}T${timeStr}:00+09:00`;
+        bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateTimeString}">${cellContent}</div></td>`;
       }
       bodyHtml += '</tr>';
     }
   }
   timetableBody.innerHTML = bodyHtml;
-
-  // イベントリスナーはイベント委任で処理されるため、ここでは再設定不要
-  // --- ▲▲▲【ここまでロジックを全面的に修正】▲▲▲ ---
 }
 
 function showApp() {
