@@ -21,6 +21,7 @@ function getLiffParams() {
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
 let userProfile = null;
+let isCustomerRegistered = false;
 
 const bookingState = {
   visitExperience: null,
@@ -64,7 +65,8 @@ async function initializeLiff() {
 }
 
 async function initializeApp() {
-  initData = await fetchApi('getInitData');
+  initData = await fetchApi('getInitData', { lineUserId: userProfile.userId });
+  isCustomerRegistered = initData.isRegistered || false;
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
   const today = new Date();
@@ -120,6 +122,9 @@ function setupEventListeners() {
     renderTimetable();
   });
 
+  // 顧客情報登録ボタン
+  document.getElementById('register-customer-button').addEventListener('click', handleCustomerRegistration);
+
   // 予約確定ボタンのイベントリスナーを追加
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 }
@@ -139,6 +144,13 @@ function handleSelectionButtonClick(button) {
     alert('この機能は現在準備中です。');
     return;
   }
+
+  // 「初めてのご予約」かつ未登録の場合は顧客情報登録画面へ
+  if (currentSectionId === 'section-step1-visit-experience' && value === 'first-time' && !isCustomerRegistered) {
+    showSection('section-customer-registration');
+    return;
+  }
+
   showSection(`section-${nextStepId}`);
 }
 
@@ -158,9 +170,6 @@ function handleStepCompletion(completedSectionId, selectedValue, targetElement) 
   switch (completedSectionId) {
     case 'section-step1-visit-experience':
       bookingState.visitExperience = selectedValue;
-      if (selectedValue === 'first-time') {
-        console.log("「初めてのご予約」が選択されました。顧客登録フローを実装予定。");
-      }
       break;
     case 'section-step3-menu':
       const menu = initData.serviceMenus.find(m => m.name === targetElement.dataset.value);
@@ -189,6 +198,10 @@ function showSection(sectionId) {
 
 function prepareSection(sectionId) {
   switch (sectionId) {
+    case 'section-customer-registration':
+      document.getElementById('customer-name').value = '';
+      document.getElementById('customer-phone').value = '';
+      break;
     case 'section-step3-menu':
       renderMenuList();
       break;
@@ -348,6 +361,44 @@ async function fetchApi(action, payload = {}) {
   }
 
   return result.data;
+}
+
+// =================================================================
+// 顧客情報登録処理
+// =================================================================
+
+async function handleCustomerRegistration() {
+  const nameInput = document.getElementById('customer-name');
+  const phoneInput = document.getElementById('customer-phone');
+  const registerButton = document.getElementById('register-customer-button');
+
+  const customerName = nameInput.value.trim();
+  if (!customerName) {
+    alert('お名前を入力してください。');
+    nameInput.focus();
+    return;
+  }
+
+  registerButton.disabled = true;
+  registerButton.textContent = '登録中...';
+
+  try {
+    await fetchApi('registerCustomer', {
+      lineUserId: userProfile.userId,
+      customerName: customerName,
+      phone: phoneInput.value.trim()
+    });
+
+    isCustomerRegistered = true;
+    showSection('section-step2-booking-type');
+
+  } catch (error) {
+    console.error('顧客登録に失敗しました:', error);
+    alert(`登録に失敗しました: ${error.message}`);
+  } finally {
+    registerButton.disabled = false;
+    registerButton.textContent = '登録して予約に進む';
+  }
 }
 
 // =================================================================

@@ -93,12 +93,40 @@ header p {
   margin: 10px 0;
 }
 
+.form-group {
+  margin-bottom: 20px;
+}
+
 .form-label {
   display: block;
   margin-bottom: 8px;
   font-weight: bold;
   color: #555;
   font-size: 1em;
+}
+
+.required-badge {
+  display: inline-block;
+  background-color: #e74c3c;
+  color: #fff;
+  font-size: 0.7em;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.optional-badge {
+  display: inline-block;
+  background-color: #95a5a6;
+  color: #fff;
+  font-size: 0.7em;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .form-control {

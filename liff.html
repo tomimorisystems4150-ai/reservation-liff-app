@@ -28,6 +28,22 @@
         </div>
       </section>
 
+      <!-- 顧客情報登録（初回ユーザーのみ） -->
+      <section id="section-customer-registration" class="page-section" style="display: none;">
+        <h2>お客様情報のご登録</h2>
+        <p class="info-text">初めてご利用いただく方は、お客様情報をご登録ください。</p>
+        <div class="form-group">
+          <label for="customer-name" class="form-label">お名前 <span class="required-badge">必須</span></label>
+          <input type="text" id="customer-name" class="form-control" placeholder="例：山田 太郎" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label for="customer-phone" class="form-label">お電話番号 <span class="optional-badge">任意</span></label>
+          <input type="tel" id="customer-phone" class="form-control" placeholder="例：090-1234-5678" autocomplete="tel">
+        </div>
+        <button id="register-customer-button" class="submit-button">登録して予約に進む</button>
+        <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
+      </section>
+
       <!-- ステップ2: 予約種別の選択 -->
       <section id="section-step2-booking-type" class="page-section" style="display: none;">
         <h2>ご予約の種類</h2>
