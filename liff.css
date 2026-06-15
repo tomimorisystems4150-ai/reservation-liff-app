@@ -369,3 +369,17 @@ header p {
   background-color: #4285F4;
   color: white;
 }
+/* --- ▼▼▼【追加】選択中メニュー表示用スタイル ▼▼▼ --- */
+.selected-menu-info {
+  background-color: #e8f4fd;
+  border: 1px solid #3498db;
+  color: #2c3e50;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.05em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+/* --- ▲▲▲【追加】ここまで ▲▲▲ --- */

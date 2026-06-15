@@ -193,6 +193,11 @@ function prepareSection(sectionId) {
       renderMenuList();
       break;
     case 'section-step4-datetime':
+      // ▼▼▼【追加】選択されたメニューを画面にセット▼▼▼
+      if (bookingState.menu) {
+        document.getElementById('current-selected-menu').textContent = `${bookingState.menu.name} (${bookingState.menu.duration}分)`;
+      }
+      // ▲▲▲【追加】ここまで▲▲▲
       renderStaffSelector();
       const infoEl = document.getElementById('lookahead-days-info');
       if (initData.bookingLookaheadDays) {
