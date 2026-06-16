@@ -393,6 +393,10 @@ header p {
 .calendar-button:hover {
   opacity: 0.8;
 }
+.calendar-button.ics {
+  background-color: #27ae60;
+  color: white;
+}
 .calendar-button.google {
   background-color: #4285F4;
   color: white;

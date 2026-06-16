@@ -709,19 +709,66 @@ function showBookingCompleteScreen(results) {
     document.getElementById('completeStaffP').style.display = 'block';
   }
 
-  // Googleカレンダーリンクは最初の予約日時で生成
-  const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
-  const gcStart = firstResult.startTime;
-  const gcEnd = new Date(new Date(gcStart).getTime() + bookingState.menu.duration * 60000).toISOString();
-  const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
-  googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
-  googleCalendarUrl.searchParams.append('text', firstResult.eventTitle);
-  googleCalendarUrl.searchParams.append('dates', `${formatGCDate(gcStart)}/${formatGCDate(gcEnd)}`);
-  const calDetails = sortedResults.length > 1
-    ? `店舗: ${shopName}\n全${sortedResults.length}件のご予約ありがとうございます。`
-    : `店舗: ${shopName}\nご予約ありがとうございます。`;
-  googleCalendarUrl.searchParams.append('details', calDetails);
-  document.getElementById('googleCalendarLink').href = googleCalendarUrl.toString();
+  // ICSファイルを生成してダウンロードリンクにセット（全機種・複数イベント対応）
+  const icsContent = generateICS(sortedResults, shopName);
+  const icsBlob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+  const icsUrl = URL.createObjectURL(icsBlob);
+  const icsLink = document.getElementById('icsDownloadLink');
+  icsLink.href = icsUrl;
+  icsLink.download = `reservation_${firstResult.bookingId}.ics`;
+
+  // Googleカレンダーリンクは単一予約時のみ表示
+  const googleCalendarLink = document.getElementById('googleCalendarLink');
+  if (sortedResults.length === 1) {
+    const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
+    const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
+    googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
+    googleCalendarUrl.searchParams.append('text', firstResult.eventTitle);
+    googleCalendarUrl.searchParams.append('dates',
+      `${formatGCDate(firstResult.startTime)}/${formatGCDate(firstResult.endTime)}`);
+    googleCalendarUrl.searchParams.append('details', `店舗: ${shopName}\nご予約ありがとうございます。`);
+    googleCalendarLink.href = googleCalendarUrl.toString();
+    googleCalendarLink.style.display = 'block';
+  } else {
+    googleCalendarLink.style.display = 'none';
+  }
 
   document.getElementById('bookingComplete').style.display = 'block';
+}
+
+/**
+ * ICS（iCalendar）形式の文字列を生成する。
+ * 1ファイルに複数イベントを含められるため、一括予約にも対応。
+ * @param {Array} results - 予約結果の配列（startTime, endTime, eventTitle, bookingId を含む）
+ * @param {string} shopName - 店舗名
+ * @returns {string} ICS文字列
+ */
+function generateICS(results, shopName) {
+  const formatICSDate = (isoStr) =>
+    new Date(isoStr).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const now = formatICSDate(new Date().toISOString());
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ReservationSystem//JP',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH'
+  ];
+
+  results.forEach(result => {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${result.bookingId}@reservation-system`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${formatICSDate(result.startTime)}`,
+      `DTEND:${formatICSDate(result.endTime)}`,
+      `SUMMARY:${result.eventTitle}`,
+      `DESCRIPTION:店舗: ${shopName}\\nご予約ありがとうございます。`,
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
 }
