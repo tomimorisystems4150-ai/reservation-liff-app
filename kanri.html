@@ -86,6 +86,17 @@
     .form-control { width: 100%; padding: 9px 11px; border: 1px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; }
     textarea.form-control { height: 76px; resize: vertical; }
 
+    /* btn-outline */
+    .btn-outline { background: #fff; border: 1px solid #3498db; color: #3498db; }
+
+    /* Error log */
+    .log-card { background: #fff; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 3px solid #e74c3c; }
+    .log-ts { font-size: 0.75em; color: #aaa; margin-bottom: 3px; }
+    .log-fn { font-size: 0.8em; font-weight: bold; color: #e74c3c; margin-bottom: 4px; }
+    .log-msg { font-size: 0.85em; color: #444; word-break: break-all; }
+    .log-stack { font-size: 0.75em; color: #bbb; margin-top: 5px; word-break: break-all; white-space: pre-wrap; display: none; }
+    .log-toggle { font-size: 0.75em; color: #aaa; cursor: pointer; margin-top: 4px; display: inline-block; }
+
     /* Toast */
     .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 22px; border-radius: 8px; z-index: 2000; font-size: 0.88em; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
     .toast.show { opacity: 1; }
@@ -109,6 +120,7 @@
     <button class="tab-btn active" data-tab="booking">予約一覧</button>
     <button class="tab-btn" data-tab="endofday">終業後処理<span id="eod-badge" class="count-badge" style="display:none;"></span></button>
     <button class="tab-btn" data-tab="customer">顧客管理</button>
+    <button class="tab-btn" data-tab="errorlog">エラーログ</button>
   </nav>
 
   <!-- Tab: 予約一覧 -->
@@ -134,6 +146,16 @@
   <div id="tab-customer" class="tab-content">
     <input type="text" id="customer-search" class="search-box" placeholder="顧客名で検索...">
     <div id="customer-list"><div class="empty"><div class="empty-icon">👤</div><div>読み込み中...</div></div></div>
+  </div>
+
+  <!-- Tab: エラーログ -->
+  <div id="tab-errorlog" class="tab-content">
+    <div class="action-bar">
+      <button id="reload-log-btn" class="btn btn-outline">再読み込み</button>
+      <button id="clear-log-btn" class="btn btn-cancel">ログをクリア</button>
+    </div>
+    <div class="section-label">直近100件のエラー（新しい順）</div>
+    <div id="error-log-list"><div class="empty"><div>読み込み中...</div></div></div>
   </div>
 </div>
 
@@ -193,6 +215,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (tab === 'booking')   loadBookings(currentFilter);
     if (tab === 'endofday')  loadEndOfDay();
     if (tab === 'customer' && allCustomers.length === 0) loadCustomers();
+    if (tab === 'errorlog')  loadErrorLogs();
   });
 });
 
@@ -387,6 +410,49 @@ function toast(msg, type) {
   el.className = 'toast ' + (type || '') + ' show';
   setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+// ===== Error log =====
+function loadErrorLogs() {
+  setLoading('error-log-list');
+  google.script.run
+    .withSuccessHandler(renderErrorLogs)
+    .withFailureHandler(e => setError('error-log-list', e.message))
+    .getErrorLogs();
+}
+
+function renderErrorLogs(logs) {
+  const el = document.getElementById('error-log-list');
+  if (!logs || !logs.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div>エラーログはありません</div></div>';
+    return;
+  }
+  el.innerHTML = logs.map((log, idx) => {
+    const ts = log.timestamp ? new Date(log.timestamp).toLocaleString('ja-JP') : '';
+    const hasStack = !!log.stack;
+    return `<div class="log-card">
+      <div class="log-ts">${ts}</div>
+      <div class="log-fn">${log.functionName || '(不明)'}</div>
+      <div class="log-msg">${log.message || ''}</div>
+      ${hasStack ? `<span class="log-toggle" onclick="toggleStack(this)">▶ スタックトレースを表示</span><div class="log-stack">${log.stack}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function toggleStack(btn) {
+  const stack = btn.nextElementSibling;
+  const open = stack.style.display === 'block';
+  stack.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? '▶ スタックトレースを表示' : '▼ 閉じる';
+}
+
+document.getElementById('reload-log-btn').addEventListener('click', loadErrorLogs);
+document.getElementById('clear-log-btn').addEventListener('click', () => {
+  if (!confirm('エラーログを全件削除しますか？')) return;
+  google.script.run
+    .withSuccessHandler(() => { toast('ログをクリアしました', 'ok'); loadErrorLogs(); })
+    .withFailureHandler(e => toast('エラー: ' + e.message, 'err'))
+    .clearErrorLogs();
+});
 
 // ===== Initial load =====
 loadBookings('today');

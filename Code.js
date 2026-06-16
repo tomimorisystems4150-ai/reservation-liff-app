@@ -1664,16 +1664,31 @@ function runNightlyBatch() {
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
 
+  // 夜間バッチ（毎日 深夜2時）
   ScriptApp.newTrigger('runNightlyBatch')
     .timeBased().everyDays(1).atHour(2).create();
 
+  // ブロックカレンダー差分同期（1時間ごと）
   ScriptApp.newTrigger('syncBlockCalendars')
     .timeBased().everyHours(1).create();
 
+  // 終業後未確定予定の作成（毎日 21時）
   ScriptApp.newTrigger('createEndOfDayUnconfirmedEvent')
     .timeBased().everyDays(1).atHour(21).create();
 
-  Logger.log('トリガーを設定しました（夜間バッチ/ブロック同期/終業後予定）。');
+  // 前日LINEリマインド（毎日 18時）
+  ScriptApp.newTrigger('sendDayBeforeReminders')
+    .timeBased().everyDays(1).atHour(18).create();
+
+  // 当日60分前LINEリマインド（1時間ごと）
+  ScriptApp.newTrigger('sendHourBeforeReminders')
+    .timeBased().everyHours(1).create();
+
+  // 月次データアーカイブ（毎日 深夜3時に起動し、1日のみ実行）
+  ScriptApp.newTrigger('runMonthlyArchive')
+    .timeBased().everyDays(1).atHour(3).create();
+
+  Logger.log('トリガーを設定しました（全6種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/月次アーカイブ）。');
   return { success: true };
 }
 
@@ -1712,4 +1727,269 @@ function createEndOfDayUnconfirmedEvent() {
     { description: `本日の未確定予約が${unconfirmedCount}件あります。\n管理画面から確認・確定してください:\n${kanriUrl}` }
   );
   Logger.log(`終業後未確定予定を作成: ${unconfirmedCount}件`);
+}
+
+// =================================================================
+// フェーズ4: LINEリマインド・エラーログ・データアーカイブ
+// =================================================================
+
+// ----------------------------------------------------------------
+// LINE リマインド機能
+// ----------------------------------------------------------------
+
+/**
+ * LINE Messaging API でプッシュメッセージを送信する共通ヘルパー。
+ */
+function sendLineMessage_(lineUserId, messages) {
+  const configs  = getConfigs();
+  const token    = configs.lineChannelAccessToken;
+  const response = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'post',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    payload:           JSON.stringify({ to: lineUserId, messages }),
+    muteHttpExceptions: true
+  });
+  const result = JSON.parse(response.getContentText());
+  if (result.message) throw new Error('LINE API: ' + result.message);
+  return result;
+}
+
+/**
+ * 前日リマインド（毎日18時トリガー）。
+ * reminderMode が "LINE" の場合のみ、翌日予約の顧客にプッシュ通知を送る。
+ * PropertiesService でキーを保存し二重送信を防止する。
+ */
+function sendDayBeforeReminders() {
+  try {
+    const configs = getConfigs();
+    if (configs.reminderMode !== 'LINE') return;
+
+    const now      = new Date();
+    const tmrStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const tmrEnd   = new Date(tmrStart.getTime() + 86400000);
+
+    const sheet = getReservationSheet(configs);
+    const data  = sheet.getDataRange().getValues();
+    const h     = data[0];
+    const bkIdCol    = h.indexOf('予約ID');
+    const statusCol  = h.indexOf('ステータス');
+    const userIdCol  = h.indexOf('LINE User ID');
+    const menuCol    = h.indexOf('メニュー名');
+    const startCol   = h.indexOf('予約日時');
+    const staffCol   = h.indexOf('担当者名');
+
+    const props = PropertiesService.getScriptProperties();
+    const dayNames = ['日','月','火','水','木','金','土'];
+
+    for (let i = 1; i < data.length; i++) {
+      const row    = data[i];
+      const status = row[statusCol];
+      if (!row[bkIdCol] || (status !== '予約' && status !== '仮予約')) continue;
+
+      const startTime = new Date(row[startCol]);
+      if (startTime < tmrStart || startTime >= tmrEnd) continue;
+
+      const bookingId  = row[bkIdCol];
+      const propKey    = `reminder_day_${bookingId}`;
+      if (props.getProperty(propKey)) continue;
+
+      const lineUserId = row[userIdCol];
+      if (!lineUserId) continue;
+
+      const d = startTime;
+      const dateStr  = `${d.getMonth()+1}月${d.getDate()}日(${dayNames[d.getDay()]}) ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const staffStr = (row[staffCol] && row[staffCol] !== '指名なし') ? `\n担当者: ${row[staffCol]}` : '';
+      const text = `【明日の予約リマインド🔔】\n\n📅 ${dateStr}\n📋 ${row[menuCol]}${staffStr}\n\nお気をつけてご来店ください。`;
+
+      try {
+        sendLineMessage_(lineUserId, [{ type: 'text', text }]);
+        props.setProperty(propKey, new Date().toISOString());
+      } catch (e) {
+        logError_('sendDayBeforeReminders', e);
+      }
+    }
+  } catch (e) {
+    logError_('sendDayBeforeReminders', e);
+  }
+}
+
+/**
+ * 当日60分前リマインド（1時間ごとトリガー）。
+ * 現在時刻から60〜75分後に開始する予約の顧客にプッシュ通知を送る。
+ */
+function sendHourBeforeReminders() {
+  try {
+    const configs = getConfigs();
+    if (configs.reminderMode !== 'LINE') return;
+
+    const now         = new Date();
+    const windowStart = new Date(now.getTime() + 60 * 60000);
+    const windowEnd   = new Date(now.getTime() + 75 * 60000);
+
+    const sheet = getReservationSheet(configs);
+    const data  = sheet.getDataRange().getValues();
+    const h     = data[0];
+    const bkIdCol   = h.indexOf('予約ID');
+    const statusCol = h.indexOf('ステータス');
+    const userIdCol = h.indexOf('LINE User ID');
+    const menuCol   = h.indexOf('メニュー名');
+    const startCol  = h.indexOf('予約日時');
+    const staffCol  = h.indexOf('担当者名');
+
+    const props = PropertiesService.getScriptProperties();
+
+    for (let i = 1; i < data.length; i++) {
+      const row    = data[i];
+      const status = row[statusCol];
+      if (!row[bkIdCol] || (status !== '予約' && status !== '仮予約')) continue;
+
+      const startTime = new Date(row[startCol]);
+      if (startTime < windowStart || startTime > windowEnd) continue;
+
+      const bookingId = row[bkIdCol];
+      const propKey   = `reminder_hour_${bookingId}`;
+      if (props.getProperty(propKey)) continue;
+
+      const lineUserId = row[userIdCol];
+      if (!lineUserId) continue;
+
+      const timeStr  = `${String(startTime.getHours()).padStart(2,'0')}:${String(startTime.getMinutes()).padStart(2,'0')}`;
+      const staffStr = (row[staffCol] && row[staffCol] !== '指名なし') ? `\n担当者: ${row[staffCol]}` : '';
+      const text = `【本日の予約リマインド🔔】\n1時間後のご来店をお待ちしております。\n\n🕐 ${timeStr}\n📋 ${row[menuCol]}${staffStr}`;
+
+      try {
+        sendLineMessage_(lineUserId, [{ type: 'text', text }]);
+        props.setProperty(propKey, new Date().toISOString());
+      } catch (e) {
+        logError_('sendHourBeforeReminders', e);
+      }
+    }
+  } catch (e) {
+    logError_('sendHourBeforeReminders', e);
+  }
+}
+
+// ----------------------------------------------------------------
+// エラーログ機能
+// ----------------------------------------------------------------
+
+/**
+ * GAS 内エラーを「エラーログ」シートに記録する共通ヘルパー。
+ * 最大500件を保持し、超過分は古い順に削除する。
+ */
+function logError_(functionName, error) {
+  try {
+    let sheet = SPREADSHEET.getSheetByName('エラーログ');
+    if (!sheet) {
+      sheet = SPREADSHEET.insertSheet('エラーログ');
+      sheet.getRange(1, 1, 1, 4).setValues([['日時', '関数名', 'エラー内容', 'スタックトレース']]);
+      sheet.setFrozenRows(1);
+      sheet.hideSheet(); // 通常シートタブには表示しない
+    }
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const stack  = (error instanceof Error && error.stack) ? error.stack : '';
+    sheet.appendRow([new Date(), functionName, errMsg, stack]);
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 501) sheet.deleteRows(2, lastRow - 501);
+  } catch (logErr) {
+    Logger.log('logError_失敗: ' + logErr.message);
+  }
+}
+
+/**
+ * エラーログ一覧を返す（管理画面から呼び出される）。最新100件を返す。
+ */
+function getErrorLogs() {
+  const sheet = SPREADSHEET.getSheetByName('エラーログ');
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues().slice(1);
+  return data.reverse().slice(0, 100).map(row => ({
+    timestamp:    row[0] instanceof Date ? row[0].toISOString() : String(row[0]),
+    functionName: row[1] || '',
+    message:      row[2] || '',
+    stack:        row[3] || ''
+  }));
+}
+
+/**
+ * エラーログを全件削除する（管理画面から呼び出される）。
+ */
+function clearErrorLogs() {
+  const sheet = SPREADSHEET.getSheetByName('エラーログ');
+  if (!sheet || sheet.getLastRow() <= 1) return;
+  sheet.deleteRows(2, sheet.getLastRow() - 1);
+}
+
+// ----------------------------------------------------------------
+// データアーカイブ機能
+// ----------------------------------------------------------------
+
+/**
+ * 月次アーカイブ（毎日深夜3時トリガー・月初1日のみ実行）。
+ * 3ヶ月以上前の完了済み予約を別スプレッドシートへ移動し、本体を軽量化する。
+ * アーカイブ先のSpreadsheet IDは Configの「archiveSpreadsheetId」に保存する。
+ */
+function runMonthlyArchive() {
+  if (new Date().getDate() !== 1) return; // 月初のみ実行
+
+  try {
+    const configs = getConfigs();
+    const cutoff  = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 3);
+
+    const sheet  = getReservationSheet(configs);
+    const data   = sheet.getDataRange().getValues();
+    const h      = data[0];
+    const bkIdCol    = h.indexOf('予約ID');
+    const statusCol  = h.indexOf('ステータス');
+    const startCol   = h.indexOf('予約日時');
+    const doneStats  = ['来店', 'キャンセル', '無断キャンセル'];
+
+    const toArchive = [];
+    const rowNums   = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[bkIdCol]) continue;
+      if (!doneStats.includes(row[statusCol])) continue;
+      if (new Date(row[startCol]) >= cutoff) continue;
+      toArchive.push(row);
+      rowNums.push(i + 1);
+    }
+
+    if (toArchive.length === 0) {
+      Logger.log('月次アーカイブ: 対象レコードなし。');
+      return;
+    }
+
+    // アーカイブ先スプレッドシートを取得または新規作成
+    let archiveSS;
+    const archiveId = configs.archiveSpreadsheetId;
+    if (archiveId) {
+      try { archiveSS = SpreadsheetApp.openById(archiveId); }
+      catch (e) { archiveSS = null; }
+    }
+    if (!archiveSS) {
+      archiveSS = SpreadsheetApp.create(`予約アーカイブ_${configs.shopName || 'システム'}`);
+      Logger.log(`アーカイブ用スプレッドシートを新規作成しました。ID: ${archiveSS.getId()}\nConfigシートの「archiveSpreadsheetId」キーに上記IDを保存してください。`);
+    }
+
+    // 年月シート（yyyy-MM）に書き込む
+    const monthLabel = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM');
+    let archiveSheet = archiveSS.getSheetByName(monthLabel);
+    if (!archiveSheet) {
+      archiveSheet = archiveSS.insertSheet(monthLabel);
+      archiveSheet.getRange(1, 1, 1, h.length).setValues([h]);
+    }
+    archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, toArchive.length, h.length).setValues(toArchive);
+
+    // 本体シートから削除（後ろから削除してインデックスずれを防ぐ）
+    rowNums.reverse().forEach(r => sheet.deleteRow(r));
+
+    Logger.log(`月次アーカイブ完了: ${toArchive.length}件を「${monthLabel}」シートへ移動。`);
+  } catch (e) {
+    logError_('runMonthlyArchive', e);
+  }
 }
