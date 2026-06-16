@@ -127,8 +127,14 @@ function setupEventListeners() {
   // 顧客情報登録ボタン
   document.getElementById('register-customer-button').addEventListener('click', handleCustomerRegistration);
 
-  // 予約確定ボタンのイベントリスナーを追加
+  // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
+
+  // 選択済み日時パネルの✕ボタン（イベントデリゲーション）
+  document.getElementById('selected-dates-panel').addEventListener('click', (e) => {
+    const btn = e.target.closest('.remove-slot-btn');
+    if (btn) removeSlot(btn.dataset.datetime);
+  });
 }
 
 // =================================================================
@@ -183,6 +189,7 @@ function handleSlotClick(slot) {
 
   updateSubmitButton();
   updateBulkSlotAvailability();
+  updateBulkCounter();
 }
 
 /**
@@ -316,7 +323,7 @@ function prepareSection(sectionId) {
         infoEl.textContent = `※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`;
       }
       updateSubmitButton();
-      updateBulkCounter();
+      updateBulkCounter(); // updateSelectedDatesPanel も内部で呼ばれる
       renderTimetable();
       break;
   }
@@ -443,12 +450,57 @@ function updateBulkCounter() {
   const maxBulk = initData.maxBulkBookings || 1;
   if (maxBulk <= 1) {
     counterEl.style.display = 'none';
+  } else {
+    const count = bookingState.selectedSlots.length;
+    counterEl.style.display = 'block';
+    counterEl.textContent = `選択中: ${count} / ${maxBulk} 件`;
+    counterEl.className = `bulk-counter${count >= maxBulk ? ' bulk-counter--full' : ''}`;
+  }
+  updateSelectedDatesPanel();
+}
+
+/**
+ * 選択済み日時の一覧パネルを更新する。
+ */
+function updateSelectedDatesPanel() {
+  const panel = document.getElementById('selected-dates-panel');
+  const list = document.getElementById('selected-dates-list');
+  if (!panel || !list) return;
+
+  const slots = bookingState.selectedSlots;
+  if (slots.length === 0) {
+    panel.style.display = 'none';
     return;
   }
-  const count = bookingState.selectedSlots.length;
-  counterEl.style.display = 'block';
-  counterEl.textContent = `選択中: ${count} / ${maxBulk} 件`;
-  counterEl.className = `bulk-counter${count >= maxBulk ? ' bulk-counter--full' : ''}`;
+
+  panel.style.display = 'block';
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const sorted = slots.slice().sort();
+
+  list.innerHTML = sorted.map(dt => {
+    const d = new Date(dt);
+    const label = `${d.getMonth() + 1}月${d.getDate()}日（${dayNames[d.getDay()]}）`
+      + `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<li class="selected-date-item">
+      <span class="selected-date-label">${label}</span>
+      <button class="remove-slot-btn" data-datetime="${dt}" aria-label="取り消し">✕</button>
+    </li>`;
+  }).join('');
+}
+
+/**
+ * パネルの✕ボタンから特定スロットの選択を解除する。
+ */
+function removeSlot(datetime) {
+  bookingState.selectedSlots = bookingState.selectedSlots.filter(s => s !== datetime);
+
+  // 現在の週に該当スロットが表示されていれば視覚的にも解除
+  const slotEl = document.querySelector(`#timetable .slot[data-datetime="${datetime}"]`);
+  if (slotEl) slotEl.classList.remove('selected');
+
+  updateSubmitButton();
+  updateBulkSlotAvailability();
+  updateBulkCounter();
 }
 
 function showApp() {
