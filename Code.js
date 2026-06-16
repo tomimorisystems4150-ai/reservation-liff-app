@@ -461,30 +461,34 @@ function handleTextMessage(event, configs) {
   const userId = event.source.userId;
   const replyToken = event.replyToken;
 
-  if (userText === '予約確認') {
+  if (userText === '予約') {
     const futureBookings = getFutureBookingsByUserId(userId, configs);
     let replyText = '';
 
     if (futureBookings.length > 0) {
       const dayOfWeekJp = ['日', '月', '火', '水', '木', '金', '土'];
-      
-      replyText = '今後のご予約一覧です。\n\n';
-      futureBookings.forEach(booking => {
+
+      replyText = '📅 今後のご予約一覧です。\n\n';
+      futureBookings.forEach((booking, index) => {
         const startTime = new Date(booking.startTime);
-        
         const dayChar = dayOfWeekJp[startTime.getDay()];
         const datePart = Utilities.formatDate(startTime, 'JST', 'M月d日');
         const timePart = Utilities.formatDate(startTime, 'JST', 'HH:mm');
         const formattedDateTime = `${datePart}(${dayChar}) ${timePart}`;
 
-        replyText += `■ ${formattedDateTime}\n`;
-        replyText += `メニュー: ${booking.menuName}\n\n`;
+        replyText += `【予約${index + 1}】\n`;
+        replyText += `📆 ${formattedDateTime}\n`;
+        replyText += `✂️ メニュー: ${booking.menuName}\n`;
+        if (booking.staffName && booking.staffName !== '指名なし') {
+          replyText += `👤 担当: ${booking.staffName}\n`;
+        }
+        replyText += '\n';
       });
-      replyText += 'ご来店をお待ちしております。';
+      replyText += 'ご来店をお待ちしております😊';
     } else {
-      replyText = '現在、今後のご予約はございません。';
+      replyText = '現在、今後のご予約はございません。\n\nご予約はLINEのメニューから承ります。';
     }
-    
+
     replyToUser(replyToken, replyText, configs.lineChannelAccessToken);
   }
 }
@@ -496,17 +500,19 @@ function getFutureBookingsByUserId(userId, configs) {
   const now = new Date();
   const futureBookings = [];
 
-  const userIdCol = headers.indexOf('LINE User ID');
-  const statusCol = headers.indexOf('ステータス');
+  const userIdCol    = headers.indexOf('LINE User ID');
+  const statusCol    = headers.indexOf('ステータス');
   const startTimeCol = headers.indexOf('予約日時');
-  const menuNameCol = headers.indexOf('メニュー名');
+  const menuNameCol  = headers.indexOf('メニュー名');
+  const staffNameCol = headers.indexOf('担当者名');
 
   data.forEach(row => {
     const bookingTime = new Date(row[startTimeCol]);
     if (row[userIdCol] === userId && row[statusCol] === '予約' && bookingTime > now) {
       futureBookings.push({
         startTime: bookingTime,
-        menuName: row[menuNameCol]
+        menuName:  row[menuNameCol],
+        staffName: staffNameCol >= 0 ? row[staffNameCol] : '',
       });
     }
   });
