@@ -67,6 +67,8 @@ async function initializeLiff() {
 async function initializeApp() {
   initData = await fetchApi('getInitData', { lineUserId: userProfile.userId });
   isCustomerRegistered = initData.isRegistered || false;
+  // 診断ログ（本番確認後に削除可）
+  console.log('[initData]', JSON.stringify(initData));
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
   const today = new Date();
@@ -160,7 +162,9 @@ function handleBackButtonClick(button) {
 }
 
 function handleSlotClick(slot) {
-  if (slot.classList.contains('unavailable') || slot.classList.contains('bulk-limit-reached')) return;
+  if (slot.classList.contains('unavailable') ||
+      slot.classList.contains('bulk-limit-reached') ||
+      slot.classList.contains('slot-conflict')) return;
 
   const dateTime = slot.dataset.datetime;
   const maxBulk = initData.maxBulkBookings || 1;
@@ -204,21 +208,48 @@ function updateSubmitButton() {
 }
 
 /**
- * 一括予約の上限に達したとき、未選択スロットをグレーアウトする。
+ * 一括予約の選択状況に応じてスロットの選択可否を更新する。
+ * - 上限到達: bulk-limit-reached（グレーアウト）
+ * - 選択済みスロットと時間帯が重複: slot-conflict（オレンジ警告色）
+ * どちらも該当しない場合は両クラスを除去する。
  */
 function updateBulkSlotAvailability() {
   const maxBulk = initData.maxBulkBookings || 1;
-  if (maxBulk <= 1) return;
-
   const count = bookingState.selectedSlots.length;
-  const limitReached = count >= maxBulk;
+  const limitReached = maxBulk > 1 && count >= maxBulk;
+  const duration = bookingState.menu ? bookingState.menu.duration : 0;
+
   document.querySelectorAll('#timetable .slot:not(.unavailable)').forEach(slot => {
     if (slot.classList.contains('selected')) {
-      slot.classList.remove('bulk-limit-reached');
-    } else if (limitReached) {
+      slot.classList.remove('bulk-limit-reached', 'slot-conflict');
+      return;
+    }
+
+    if (limitReached) {
       slot.classList.add('bulk-limit-reached');
+      slot.classList.remove('slot-conflict');
+      return;
+    }
+
+    slot.classList.remove('bulk-limit-reached');
+
+    // 選択済みスロットとの時間帯重複チェック
+    if (duration > 0 && bookingState.selectedSlots.length > 0) {
+      const slotStart = new Date(slot.dataset.datetime);
+      const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+      const hasConflict = bookingState.selectedSlots.some(selectedDT => {
+        const selStart = new Date(selectedDT);
+        const selEnd = new Date(selStart.getTime() + duration * 60000);
+        // 時間帯の重複判定（端点は許容）
+        return slotStart < selEnd && slotEnd > selStart;
+      });
+      if (hasConflict) {
+        slot.classList.add('slot-conflict');
+      } else {
+        slot.classList.remove('slot-conflict');
+      }
     } else {
-      slot.classList.remove('bulk-limit-reached');
+      slot.classList.remove('slot-conflict');
     }
   });
 }

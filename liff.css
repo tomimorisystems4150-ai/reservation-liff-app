@@ -433,6 +433,14 @@ header p {
   opacity: 0.6;
 }
 
+/* 選択済みスロットと時間帯が重複するスロット */
+#timetable .slot.slot-conflict {
+  background-color: #fdebd0;
+  color: #a04000;
+  cursor: not-allowed;
+  font-size: 0.7em;
+}
+
 /* 一括選択カウンター */
 .bulk-counter {
   text-align: center;
