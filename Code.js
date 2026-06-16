@@ -119,6 +119,11 @@ function handleICSDownload_(e) {
         `DTEND:${formatICSDate(row[endTimeCol])}`,
         `SUMMARY:【${row[userNameCol]}様】${row[menuNameCol]}`,
         `DESCRIPTION:店舗: ${configs.shopName}\\nご予約ありがとうございます。`,
+        'BEGIN:VALARM',
+        'TRIGGER:-PT1H',
+        'ACTION:DISPLAY',
+        'DESCRIPTION:ご予約の1時間前です',
+        'END:VALARM',
         'END:VEVENT'
       );
     });
