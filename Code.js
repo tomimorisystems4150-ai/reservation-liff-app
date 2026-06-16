@@ -1684,11 +1684,11 @@ function setupTriggers() {
   ScriptApp.newTrigger('sendHourBeforeReminders')
     .timeBased().everyHours(1).create();
 
-  // 月次データアーカイブ（毎日 深夜3時に起動し、1日のみ実行）
-  ScriptApp.newTrigger('runMonthlyArchive')
+  // 日次アーカイブ（毎日 深夜3時）
+  ScriptApp.newTrigger('runDailyArchive')
     .timeBased().everyDays(1).atHour(3).create();
 
-  Logger.log('トリガーを設定しました（全6種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/月次アーカイブ）。');
+  Logger.log('トリガーを設定しました（全6種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/日次アーカイブ）。');
   return { success: true };
 }
 
@@ -1928,68 +1928,166 @@ function clearErrorLogs() {
 // ----------------------------------------------------------------
 
 /**
- * 月次アーカイブ（毎日深夜3時トリガー・月初1日のみ実行）。
- * 3ヶ月以上前の完了済み予約を別スプレッドシートへ移動し、本体を軽量化する。
- * アーカイブ先のSpreadsheet IDは Configの「archiveSpreadsheetId」に保存する。
+ * 日次アーカイブ（毎日深夜3時トリガー）。
+ * 前日以前の完了済みデータを本体スプレッドシートからアーカイブファイルへ移動し
+ * 本体を常に軽量に保つ。
+ *   - 予約シート  : 来店/キャンセル/無断キャンセル かつ 予約日が昨日以前 → アーカイブ移動
+ *   - 顧客マスタ  : ステータスが「無効」 → アーカイブ移動（離脱顧客の分析価値を保持）
+ *   - 満席テーブル: 日付が昨日以前 → 削除のみ（予約データから再現可能な派生データ）
+ * アーカイブファイルが 50,000行を超えた場合は新ファイルを自動作成し
+ * Config の「archiveSpreadsheetId」を自動更新する。
  */
-function runMonthlyArchive() {
-  if (new Date().getDate() !== 1) return; // 月初のみ実行
-
+function runDailyArchive() {
   try {
     const configs = getConfigs();
-    const cutoff  = new Date();
-    cutoff.setMonth(cutoff.getMonth() - 3);
+    const today   = new Date(); today.setHours(0, 0, 0, 0);
 
-    const sheet  = getReservationSheet(configs);
-    const data   = sheet.getDataRange().getValues();
-    const h      = data[0];
-    const bkIdCol    = h.indexOf('予約ID');
-    const statusCol  = h.indexOf('ステータス');
-    const startCol   = h.indexOf('予約日時');
-    const doneStats  = ['来店', 'キャンセル', '無断キャンセル'];
+    let archived = 0;
+    archived += archivePastReservations_(configs, today);
+    archived += archiveInactiveCustomers_(configs);
+    cleanPastTimetable_(today);
 
-    const toArchive = [];
-    const rowNums   = [];
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      if (!row[bkIdCol]) continue;
-      if (!doneStats.includes(row[statusCol])) continue;
-      if (new Date(row[startCol]) >= cutoff) continue;
-      toArchive.push(row);
-      rowNums.push(i + 1);
+    if (archived > 0) Logger.log(`日次アーカイブ完了: ${archived}件を移動。`);
+    else              Logger.log('日次アーカイブ: 対象レコードなし。');
+  } catch (e) {
+    logError_('runDailyArchive', e);
+  }
+}
+
+/**
+ * 完了済み予約（来店/キャンセル/無断キャンセル）で予約日が昨日以前のものをアーカイブへ移動する。
+ * @returns {number} 移動件数
+ */
+function archivePastReservations_(configs, today) {
+  const sheet = getReservationSheet(configs);
+  const data  = sheet.getDataRange().getValues();
+  const h     = data[0];
+  const bkIdCol   = h.indexOf('予約ID');
+  const statusCol = h.indexOf('ステータス');
+  const startCol  = h.indexOf('予約日時');
+  const doneStats = ['来店', 'キャンセル', '無断キャンセル'];
+
+  const toArchive = [], rowNums = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[bkIdCol]) continue;
+    if (!doneStats.includes(row[statusCol])) continue;
+    if (new Date(row[startCol]) >= today) continue;
+    toArchive.push(row);
+    rowNums.push(i + 1);
+  }
+  if (!toArchive.length) return 0;
+
+  const archiveSS    = getOrCreateArchiveSpreadsheet_(configs);
+  let   archiveSheet = archiveSS.getSheetByName('予約');
+  if (!archiveSheet) {
+    archiveSheet = archiveSS.insertSheet('予約');
+    archiveSheet.getRange(1, 1, 1, h.length).setValues([h]);
+  }
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, toArchive.length, h.length)
+    .setValues(toArchive);
+  rowNums.reverse().forEach(r => sheet.deleteRow(r));
+  return toArchive.length;
+}
+
+/**
+ * ステータスが「無効」の顧客をアーカイブへ移動する。
+ * 離脱顧客データはチャーン分析や再獲得戦略に活用できるため削除せず保持する。
+ * @returns {number} 移動件数
+ */
+function archiveInactiveCustomers_(configs) {
+  const sheet = getCustomerSheet_();
+  if (!sheet) return 0;
+  const data  = sheet.getDataRange().getValues();
+  const h     = data[0];
+  const userIdCol = h.indexOf('LINE User ID');
+  const statusCol = h.indexOf('ステータス');
+
+  const toArchive = [], rowNums = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[userIdCol] || row[statusCol] !== '無効') continue;
+    toArchive.push(row);
+    rowNums.push(i + 1);
+  }
+  if (!toArchive.length) return 0;
+
+  const archiveSS    = getOrCreateArchiveSpreadsheet_(configs);
+  let   archiveSheet = archiveSS.getSheetByName('顧客マスタ');
+  if (!archiveSheet) {
+    archiveSheet = archiveSS.insertSheet('顧客マスタ');
+    archiveSheet.getRange(1, 1, 1, h.length).setValues([h]);
+  }
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, toArchive.length, h.length)
+    .setValues(toArchive);
+  rowNums.reverse().forEach(r => sheet.deleteRow(r));
+  return toArchive.length;
+}
+
+/**
+ * 満席タイムテーブルの過去エントリを削除する。
+ * キャッシュデータのため削除のみ（アーカイブ不要）。
+ * 予約データがあれば同等の分析は常に再現できる。
+ */
+function cleanPastTimetable_(today) {
+  const sheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+  if (!sheet || sheet.getLastRow() <= 1) return;
+  const todayStr = Utilities.formatDate(today, 'JST', 'yyyy-MM-dd');
+  const data     = sheet.getDataRange().getValues();
+  const rowNums  = [];
+  for (let i = 1; i < data.length; i++) {
+    const v = data[i][0];
+    const s = v instanceof Date ? Utilities.formatDate(v, 'JST', 'yyyy-MM-dd') : String(v);
+    if (s < todayStr) rowNums.push(i + 1);
+  }
+  rowNums.reverse().forEach(r => sheet.deleteRow(r));
+  if (rowNums.length) Logger.log(`満席テーブル: 過去${rowNums.length}件を削除。`);
+}
+
+/**
+ * アーカイブ用スプレッドシートを取得または新規作成する。
+ * 総行数が 50,000行を超えた場合は新ファイルを作成し Config を自動更新する。
+ */
+function getOrCreateArchiveSpreadsheet_(configs) {
+  const MAX_ROWS = 50000;
+  let ss = null;
+
+  if (configs.archiveSpreadsheetId) {
+    try {
+      ss = SpreadsheetApp.openById(configs.archiveSpreadsheetId);
+      let totalRows = 0;
+      ss.getSheets().forEach(sh => { totalRows += sh.getLastRow(); });
+      if (totalRows > MAX_ROWS) {
+        Logger.log(`アーカイブファイルが${totalRows}行を超えました。新ファイルを作成します。`);
+        ss = null;
+      }
+    } catch (e) {
+      ss = null;
     }
+  }
 
-    if (toArchive.length === 0) {
-      Logger.log('月次アーカイブ: 対象レコードなし。');
+  if (!ss) {
+    const label = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM');
+    ss = SpreadsheetApp.create(`予約アーカイブ_${configs.shopName || 'システム'}_${label}`);
+    updateConfigValue_('archiveSpreadsheetId', ss.getId());
+    Logger.log(`新規アーカイブファイルを作成しました。ID: ${ss.getId()}`);
+  }
+
+  return ss;
+}
+
+/**
+ * Config シートの指定キーの値を更新する。キーが存在しない場合は末尾に追加する。
+ */
+function updateConfigValue_(key, value) {
+  const sheet = SPREADSHEET.getSheetByName('Config');
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
       return;
     }
-
-    // アーカイブ先スプレッドシートを取得または新規作成
-    let archiveSS;
-    const archiveId = configs.archiveSpreadsheetId;
-    if (archiveId) {
-      try { archiveSS = SpreadsheetApp.openById(archiveId); }
-      catch (e) { archiveSS = null; }
-    }
-    if (!archiveSS) {
-      archiveSS = SpreadsheetApp.create(`予約アーカイブ_${configs.shopName || 'システム'}`);
-      Logger.log(`アーカイブ用スプレッドシートを新規作成しました。ID: ${archiveSS.getId()}\nConfigシートの「archiveSpreadsheetId」キーに上記IDを保存してください。`);
-    }
-
-    // 年月シート（yyyy-MM）に書き込む
-    const monthLabel = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM');
-    let archiveSheet = archiveSS.getSheetByName(monthLabel);
-    if (!archiveSheet) {
-      archiveSheet = archiveSS.insertSheet(monthLabel);
-      archiveSheet.getRange(1, 1, 1, h.length).setValues([h]);
-    }
-    archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, toArchive.length, h.length).setValues(toArchive);
-
-    // 本体シートから削除（後ろから削除してインデックスずれを防ぐ）
-    rowNums.reverse().forEach(r => sheet.deleteRow(r));
-
-    Logger.log(`月次アーカイブ完了: ${toArchive.length}件を「${monthLabel}」シートへ移動。`);
-  } catch (e) {
-    logError_('runMonthlyArchive', e);
   }
+  sheet.appendRow([key, value, '自動設定']);
 }
