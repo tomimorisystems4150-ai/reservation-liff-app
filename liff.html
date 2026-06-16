@@ -74,6 +74,8 @@
           <select id="staff-selector" class="form-control"></select>
         </div>
 
+        <div id="bulk-counter" class="bulk-counter" style="display: none;"></div>
+
         <div id="timetable-container">
           <div class="timetable-nav">
             <button id="prev-week-button">＜ 前の週</button>
@@ -96,7 +98,7 @@
 
         <div class="navigation-buttons">
           <button class="back-button" data-prev-step="step3-menu">戻る</button>
-          <button id="submitButton" class="submit-button" disabled>予約を確定</button>
+          <button id="submitButton" class="submit-button" disabled>日時を選択してください</button>
         </div>
       </section>
 
@@ -117,7 +119,7 @@
         <h2>ご予約が完了しました</h2>
         <p><span id="completeUserName"></span>様のご予約を承りました。</p>
         <div class="booking-details">
-          <p><strong>日時:</strong> <span id="completeDateTime"></span></p>
+          <div id="completeDateTimeList"></div>
           <p><strong>メニュー:</strong> <span id="completeMenuName"></span></p>
           <p id="completeStaffP" style="display: none;"><strong>担当者:</strong> <span id="completeStaffName"></span></p>
         </div>

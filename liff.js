@@ -28,7 +28,7 @@ const bookingState = {
   bookingType: null,
   menu: null,
   staff: null,
-  dateTime: null,
+  selectedSlots: [],
 };
 
 let initData = {};
@@ -160,10 +160,79 @@ function handleBackButtonClick(button) {
 }
 
 function handleSlotClick(slot) {
-  document.querySelectorAll('#timetable .slot.selected').forEach(s => s.classList.remove('selected'));
-  slot.classList.add('selected');
-  bookingState.dateTime = slot.dataset.datetime;
-  document.getElementById('submitButton').disabled = false;
+  if (slot.classList.contains('unavailable') || slot.classList.contains('bulk-limit-reached')) return;
+
+  const dateTime = slot.dataset.datetime;
+  const maxBulk = initData.maxBulkBookings || 1;
+
+  if (slot.classList.contains('selected')) {
+    // 選択解除
+    slot.classList.remove('selected');
+    bookingState.selectedSlots = bookingState.selectedSlots.filter(s => s !== dateTime);
+  } else {
+    // 新規選択（上限未満のみ）
+    if (bookingState.selectedSlots.length < maxBulk) {
+      slot.classList.add('selected');
+      bookingState.selectedSlots.push(dateTime);
+    }
+  }
+
+  updateSubmitButton();
+  updateBulkSlotAvailability();
+}
+
+/**
+ * 選択状況に応じてサブミットボタンのテキスト・活性を更新する。
+ */
+function updateSubmitButton() {
+  const submitButton = document.getElementById('submitButton');
+  const count = bookingState.selectedSlots.length;
+  const maxBulk = initData.maxBulkBookings || 1;
+
+  if (count === 0) {
+    submitButton.disabled = true;
+    submitButton.textContent = maxBulk > 1
+      ? `日時を選択してください（最大${maxBulk}件）`
+      : '日時を選択してください';
+  } else if (maxBulk > 1) {
+    submitButton.disabled = false;
+    submitButton.textContent = `まとめて予約を確定（${count}件）`;
+  } else {
+    submitButton.disabled = false;
+    submitButton.textContent = '予約を確定';
+  }
+}
+
+/**
+ * 一括予約の上限に達したとき、未選択スロットをグレーアウトする。
+ */
+function updateBulkSlotAvailability() {
+  const maxBulk = initData.maxBulkBookings || 1;
+  if (maxBulk <= 1) return;
+
+  const count = bookingState.selectedSlots.length;
+  const limitReached = count >= maxBulk;
+  document.querySelectorAll('#timetable .slot:not(.unavailable)').forEach(slot => {
+    if (slot.classList.contains('selected')) {
+      slot.classList.remove('bulk-limit-reached');
+    } else if (limitReached) {
+      slot.classList.add('bulk-limit-reached');
+    } else {
+      slot.classList.remove('bulk-limit-reached');
+    }
+  });
+}
+
+/**
+ * 現在週を再描画した後に selectedSlots の選択状態を視覚的に復元する。
+ */
+function restoreSlotSelections() {
+  if (bookingState.selectedSlots.length === 0) return;
+  document.querySelectorAll('#timetable .slot[data-datetime]').forEach(slot => {
+    if (bookingState.selectedSlots.includes(slot.dataset.datetime)) {
+      slot.classList.add('selected');
+    }
+  });
 }
 
 function handleStepCompletion(completedSectionId, selectedValue, targetElement) {
@@ -206,16 +275,17 @@ function prepareSection(sectionId) {
       renderMenuList();
       break;
     case 'section-step4-datetime':
-      // ▼▼▼【追加】選択されたメニューを画面にセット▼▼▼
+      bookingState.selectedSlots = [];
       if (bookingState.menu) {
         document.getElementById('current-selected-menu').textContent = `${bookingState.menu.name} (${bookingState.menu.duration}分)`;
       }
-      // ▲▲▲【追加】ここまで▲▲▲
       renderStaffSelector();
       const infoEl = document.getElementById('lookahead-days-info');
       if (initData.bookingLookaheadDays) {
         infoEl.textContent = `※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`;
       }
+      updateSubmitButton();
+      updateBulkCounter();
       renderTimetable();
       break;
   }
@@ -327,6 +397,27 @@ async function renderTimetable() {
     }
   }
   timetableBody.innerHTML = bodyHtml;
+
+  restoreSlotSelections();
+  updateBulkSlotAvailability();
+  updateBulkCounter();
+}
+
+/**
+ * バルク予約の選択件数カウンターを更新する。
+ */
+function updateBulkCounter() {
+  const counterEl = document.getElementById('bulk-counter');
+  if (!counterEl) return;
+  const maxBulk = initData.maxBulkBookings || 1;
+  if (maxBulk <= 1) {
+    counterEl.style.display = 'none';
+    return;
+  }
+  const count = bookingState.selectedSlots.length;
+  counterEl.style.display = 'block';
+  counterEl.textContent = `選択中: ${count} / ${maxBulk} 件`;
+  counterEl.className = `bulk-counter${count >= maxBulk ? ' bulk-counter--full' : ''}`;
 }
 
 function showApp() {
@@ -411,22 +502,35 @@ async function handleBookingSubmit() {
   submitButton.textContent = '予約処理中...';
 
   try {
-    if (!userProfile || !bookingState.menu || !bookingState.dateTime) {
+    if (!userProfile || !bookingState.menu || bookingState.selectedSlots.length === 0) {
       throw new Error('予約情報が不完全です。');
     }
 
-    const bookingData = {
+    const baseData = {
       lineUserId: userProfile.userId,
       userName: userProfile.displayName,
       menuName: bookingState.menu.name,
       duration: bookingState.menu.duration,
-      startDateTime: bookingState.dateTime,
       staffEmail: bookingState.staff ? bookingState.staff.email : '',
       staffName: bookingState.staff ? bookingState.staff.name : ''
     };
 
-    const result = await fetchApi('createBooking', { bookingData });
-    showBookingCompleteScreen(result);
+    let results;
+    if (bookingState.selectedSlots.length === 1) {
+      // 単一予約（既存の createBooking を使用）
+      const bookingData = { ...baseData, startDateTime: bookingState.selectedSlots[0] };
+      const result = await fetchApi('createBooking', { bookingData });
+      results = [result];
+    } else {
+      // 一括予約
+      const bookingDataList = bookingState.selectedSlots.map(slot => ({
+        ...baseData,
+        startDateTime: slot
+      }));
+      results = await fetchApi('createBulkBookings', { bookingDataList });
+    }
+
+    showBookingCompleteScreen(results);
 
   } catch (error) {
     console.error('予約の作成に失敗しました:', error);
@@ -436,26 +540,39 @@ async function handleBookingSubmit() {
     try {
       await renderTimetable();
     } finally {
-      submitButton.textContent = '予約を確定';
-      submitButton.disabled = true; // 予約失敗後は再度日時選択から
+      updateSubmitButton();
     }
   }
 }
 
-function showBookingCompleteScreen(bookingResult) {
-  const { eventTitle, startTime, shopName } = bookingResult;
+function showBookingCompleteScreen(results) {
+  // results は配列（単一予約・一括予約ともに配列で受け取る）
+  const sortedResults = results.slice().sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  const firstResult = sortedResults[0];
+  const { shopName } = firstResult;
 
-  // メインの予約画面を非表示に
   document.getElementById('app').style.display = 'none';
-
-  // 完了画面に情報を設定
   document.getElementById('completeShopName').textContent = shopName;
   document.getElementById('completeUserName').textContent = userProfile.displayName;
-  
-  const startTimeObj = new Date(startTime);
-  const formattedDateTime = `${startTimeObj.toLocaleDateString('ja-JP')} ${startTimeObj.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
-  document.getElementById('completeDateTime').textContent = formattedDateTime;
-  
+
+  // 日時リストを生成
+  const dateListEl = document.getElementById('completeDateTimeList');
+  const formatDT = (isoStr) => {
+    const d = new Date(isoStr);
+    return `${d.toLocaleDateString('ja-JP')} ${d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
+  if (sortedResults.length === 1) {
+    dateListEl.innerHTML = `<p><strong>日時:</strong> ${formatDT(firstResult.startTime)}</p>`;
+  } else {
+    let html = `<p><strong>日時（${sortedResults.length}件）:</strong></p><ul class="booking-date-list">`;
+    sortedResults.forEach(r => {
+      html += `<li>${formatDT(r.startTime)}</li>`;
+    });
+    html += '</ul>';
+    dateListEl.innerHTML = html;
+  }
+
   document.getElementById('completeMenuName').textContent = bookingState.menu.name;
 
   if (bookingState.staff && bookingState.staff.email !== 'any') {
@@ -463,15 +580,19 @@ function showBookingCompleteScreen(bookingResult) {
     document.getElementById('completeStaffP').style.display = 'block';
   }
 
+  // Googleカレンダーリンクは最初の予約日時で生成
   const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
-  const endTime = new Date(startTimeObj.getTime() + bookingState.menu.duration * 60000);
+  const gcStart = firstResult.startTime;
+  const gcEnd = new Date(new Date(gcStart).getTime() + bookingState.menu.duration * 60000).toISOString();
   const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
   googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
-  googleCalendarUrl.searchParams.append('text', eventTitle);
-  googleCalendarUrl.searchParams.append('dates', `${formatGCDate(startTime)}/${formatGCDate(endTime.toISOString())}`);
-  googleCalendarUrl.searchParams.append('details', `店舗: ${shopName}\nご予約ありがとうございます。`);
+  googleCalendarUrl.searchParams.append('text', firstResult.eventTitle);
+  googleCalendarUrl.searchParams.append('dates', `${formatGCDate(gcStart)}/${formatGCDate(gcEnd)}`);
+  const calDetails = sortedResults.length > 1
+    ? `店舗: ${shopName}\n全${sortedResults.length}件のご予約ありがとうございます。`
+    : `店舗: ${shopName}\nご予約ありがとうございます。`;
+  googleCalendarUrl.searchParams.append('details', calDetails);
   document.getElementById('googleCalendarLink').href = googleCalendarUrl.toString();
 
-  // 完了画面を表示
   document.getElementById('bookingComplete').style.display = 'block';
 }

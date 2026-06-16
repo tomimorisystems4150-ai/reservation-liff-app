@@ -411,3 +411,64 @@ header p {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 /* --- ▲▲▲【追加】ここまで ▲▲▲ --- */
+
+/* =================================================================
+   複数日程一括予約 スタイル
+   ================================================================= */
+
+/* 選択済みスロット */
+#timetable .slot.selected {
+  background-color: #27ae60;
+  color: white;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* 上限到達でグレーアウトされた未選択スロット */
+#timetable .slot.bulk-limit-reached {
+  background-color: #bdc3c7;
+  color: #7f8c8d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 一括選択カウンター */
+.bulk-counter {
+  text-align: center;
+  font-size: 0.95em;
+  font-weight: bold;
+  color: #2980b9;
+  background-color: #eaf4fb;
+  border: 1px solid #aed6f1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.bulk-counter.bulk-counter--full {
+  color: #c0392b;
+  background-color: #fdf2f0;
+  border-color: #f5b7b1;
+}
+
+/* 完了画面：複数日時リスト */
+.booking-date-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0 0;
+}
+.booking-date-list li {
+  padding: 5px 0 5px 18px;
+  position: relative;
+  border-bottom: 1px dashed #ddd;
+  font-size: 0.95em;
+}
+.booking-date-list li:last-child {
+  border-bottom: none;
+}
+.booking-date-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: #27ae60;
+}
