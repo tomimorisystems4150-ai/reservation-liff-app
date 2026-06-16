@@ -1,44 +1,115 @@
+/* =================================================================
+   LINE予約システム - LIFF UI
+   デザインテーマ: Dusty Rose × Warm Cream × Gold
+   ================================================================= */
+
+:root {
+  --color-bg:              #fdf6f3;
+  --color-surface:         #ffffff;
+  --color-primary:         #b5546a;
+  --color-primary-light:   #f5dde3;
+  --color-primary-hover:   #9c3d57;
+  --color-accent:          #c99a6a;
+  --color-success:         #7aaa8a;
+  --color-success-light:   #e6f4eb;
+  --color-text:            #3a2630;
+  --color-text-secondary:  #8a6b75;
+  --color-border:          #e8d4d8;
+  --color-slot-available:  #b5546a;
+  --shadow-sm:             0 2px 12px rgba(181,84,106,0.08);
+  --shadow-md:             0 4px 24px rgba(181,84,106,0.12);
+  --radius-sm:             10px;
+  --radius-md:             14px;
+  --radius-lg:             20px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+               'Noto Sans JP', 'Segoe UI', sans-serif;
   margin: 0;
-  padding: 15px;
-  background-color: #f4f4f9;
-  color: #333;
+  padding: 16px 12px;
+  background-color: var(--color-bg);
+  color: var(--color-text);
   font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 .container {
-  max-width: 600px;
+  max-width: 560px;
   margin: 0 auto;
-  background-color: #fff;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  background-color: var(--color-surface);
+  padding: 20px 18px 32px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* ================================================================
+   ヘッダー
+   ================================================================ */
+header {
+  text-align: center;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--color-border);
+  position: relative;
+}
+
+header::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  border-radius: 2px;
+  margin: 0 auto 14px;
 }
 
 header h1 {
-  font-size: 1.5em;
-  color: #2c3e50;
-  margin: 0 0 10px 0;
-  text-align: center;
+  font-size: 1.4em;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 6px 0;
+  letter-spacing: 0.04em;
 }
 
 header p {
-  font-size: 0.9em;
-  color: #7f8c8d;
-  margin: 0 0 15px 0;
-  text-align: center;
+  font-size: 0.85em;
+  color: var(--color-text-secondary);
+  margin: 0;
 }
 
+/* ================================================================
+   セクションタイトル
+   ================================================================ */
 .page-section h2 {
-  font-size: 1.2em;
-  padding-bottom: 8px;
-  margin-bottom: 20px;
-  color: #2c3e50;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--color-primary);
   text-align: center;
-  border: none;
+  margin: 0 0 18px 0;
+  letter-spacing: 0.05em;
+  position: relative;
+  padding-bottom: 10px;
 }
 
+.page-section h2::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  border-radius: 1px;
+}
+
+/* ================================================================
+   選択ボタン（メニュー・担当者選択など）
+   ================================================================ */
 .selection-group {
   display: flex;
   flex-direction: column;
@@ -48,99 +119,204 @@ header p {
 .selection-button {
   display: block;
   width: 100%;
-  padding: 15px;
-  font-size: 1em;
+  padding: 14px 16px;
+  font-size: 0.95em;
+  font-weight: 600;
   text-align: left;
-  background-color: #fff;
-  border: 1px solid #bdc3c7;
-  border-radius: 8px;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
   position: relative;
-  padding-right: 35px;
+  padding-right: 36px;
+  letter-spacing: 0.02em;
 }
 
 .selection-button:hover {
-  border-color: #3498db;
-  box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-light);
+  box-shadow: var(--shadow-sm);
 }
 
 .selection-button::after {
-  content: '>';
+  content: '›';
   position: absolute;
-  right: 15px;
+  right: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #bdc3c7;
-  font-weight: bold;
+  font-size: 1.4em;
+  color: var(--color-accent);
+  font-weight: 300;
 }
 
-.back-button {
-  padding: 10px 18px;
-  font-size: 0.9em;
-  background-color: #ecf0f1;
-  color: #7f8c8d;
-  border: 1px solid #bdc3c7;
-  border-radius: 8px;
-  cursor: pointer;
-  margin-top: 25px;
-}
-
-.info-text {
-  font-size: 0.8em;
-  color: #7f8c8d;
-  text-align: center;
-  margin: 10px 0;
-}
-
+/* ================================================================
+   フォーム
+   ================================================================ */
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .form-label {
   display: block;
-  margin-bottom: 8px;
-  font-weight: bold;
-  color: #555;
-  font-size: 1em;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.92em;
+  letter-spacing: 0.02em;
 }
 
 .required-badge {
   display: inline-block;
-  background-color: #e74c3c;
+  background: linear-gradient(135deg, var(--color-primary), #d4758a);
   color: #fff;
-  font-size: 0.7em;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
+  font-size: 0.68em;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
   margin-left: 6px;
   vertical-align: middle;
+  letter-spacing: 0.03em;
 }
 
 .optional-badge {
   display: inline-block;
-  background-color: #95a5a6;
+  background-color: #d4c4c8;
   color: #fff;
-  font-size: 0.7em;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
+  font-size: 0.68em;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
   margin-left: 6px;
   vertical-align: middle;
 }
 
 .form-control {
   width: 100%;
-  padding: 10px;
-  font-size: 1em;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  padding: 11px 13px;
+  font-size: 0.95em;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
   box-sizing: border-box;
-  margin-bottom: 15px;
+  background: #fffbfc;
+  color: var(--color-text);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+  margin-bottom: 0;
 }
 
+.form-control:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(181,84,106,0.12);
+}
+
+/* ================================================================
+   ボタン
+   ================================================================ */
+.submit-button {
+  width: 100%;
+  padding: 14px;
+  font-size: 1em;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
+  letter-spacing: 0.06em;
+  box-shadow: 0 3px 14px rgba(181,84,106,0.30);
+}
+
+.submit-button:hover {
+  opacity: 0.93;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 18px rgba(181,84,106,0.38);
+}
+
+.submit-button:active {
+  transform: translateY(0);
+}
+
+.submit-button:disabled {
+  background: #d4bfc3;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+  opacity: 1;
+}
+
+.back-button {
+  padding: 10px 18px;
+  font-size: 0.88em;
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  margin-top: 20px;
+  transition: background-color 0.2s;
+  font-weight: 600;
+}
+
+.back-button:hover {
+  background-color: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.navigation-buttons {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  margin-top: 22px;
+  gap: 10px;
+}
+
+.navigation-buttons .back-button {
+  margin-top: 0;
+  flex-basis: 90px;
+  flex-grow: 0;
+}
+
+.navigation-buttons .submit-button {
+  flex-grow: 1;
+  margin-top: 0;
+}
+
+/* ================================================================
+   補足テキスト
+   ================================================================ */
+.info-text {
+  font-size: 0.82em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin: 0 0 16px 0;
+  line-height: 1.7;
+}
+
+/* ================================================================
+   選択中メニュー情報バー
+   ================================================================ */
+.selected-menu-info {
+  background: linear-gradient(135deg, #fde8ec 0%, #fdf0e6 100%);
+  border: 1px solid #e8b8c4;
+  color: var(--color-text);
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.92em;
+  box-shadow: 0 1px 6px rgba(181,84,106,0.08);
+}
+
+/* ================================================================
+   タイムテーブル
+   ================================================================ */
 #timetable-container {
-  margin: 15px 0;
+  margin: 14px 0;
 }
 
 .timetable-nav {
@@ -148,48 +324,55 @@ header p {
   justify-content: center;
   align-items: center;
   margin-bottom: 10px;
-  gap: 10px;
+  gap: 12px;
 }
 
 .timetable-nav h3 {
   margin: 0;
-  font-size: 1em;
-  color: #2c3e50;
+  font-size: 0.92em;
+  font-weight: 700;
+  color: var(--color-text);
   width: 110px;
   text-align: center;
+  letter-spacing: 0.04em;
 }
 
 .timetable-nav button {
   padding: 6px 14px;
-  background-color: #fff;
-  border: 1px solid #3498db;
-  color: #3498db;
+  background-color: var(--color-surface);
+  border: 1.5px solid var(--color-primary);
+  color: var(--color-primary);
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.9em;
+  font-size: 0.88em;
+  font-weight: 600;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.timetable-nav button:hover {
+  background-color: var(--color-primary);
+  color: #fff;
 }
 
 .timetable-nav button:disabled {
-  border-color: #bdc3c7;
-  color: #bdc3c7;
+  border-color: #d4c4c8;
+  color: #c4adb2;
   cursor: not-allowed;
+  background-color: var(--color-surface);
 }
 
-/* --- ▼▼▼【ここからタイムテーブル用スタイルを全面的に見直し】▼▼▼ --- */
-
 .timetable-wrapper {
-  /* 横スクロールを廃止し、縦スクロールに備える */
   overflow-x: hidden;
   overflow-y: auto;
-  max-height: 40vh; /* ビューポートの高さの40%を最大高さに設定 */
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
+  max-height: 40vh;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
 }
 
 #timetable {
   width: 100%;
   border-collapse: collapse;
-  /* min-widthを削除 */
 }
 
 #timetable th, #timetable td {
@@ -197,48 +380,49 @@ header p {
   padding: 0;
   vertical-align: middle;
   border: none;
-  /* 列幅を均等にする */
-  width: 12.5%; 
+  width: 12.5%;
 }
 
 #timetable thead th {
-  padding: 8px 2px; /* 横のpaddingを詰める */
-  font-size: 0.75em; /* フォントをさらに小さく */
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-  font-weight: bold;
-  /* 日付ヘッダーを固定 */
+  padding: 8px 2px;
+  font-size: 0.72em;
+  background: linear-gradient(135deg, #fde8ec 0%, #fdf5f3 100%);
+  border-bottom: 1.5px solid var(--color-border);
+  font-weight: 700;
+  color: var(--color-text);
   position: sticky;
   top: 0;
   z-index: 2;
+  letter-spacing: 0.02em;
 }
 
 #timetable thead .day-of-week {
-  font-weight: normal;
+  font-weight: 500;
   font-size: 0.9em;
+  color: var(--color-text-secondary);
 }
 
-#timetable .is-saturday { color: #007bff; }
-#timetable .is-sunday { color: #dc3545; }
+#timetable .is-saturday { color: #5b8dd9; }
+#timetable .is-sunday   { color: var(--color-primary); }
 
 #timetable tbody th {
-  font-size: 0.75em;
-  padding: 8px 4px;
-  background-color: #f8f9fa;
-  font-weight: normal;
+  font-size: 0.72em;
+  padding: 6px 4px;
+  background-color: #fdf8f9;
+  font-weight: 500;
+  color: var(--color-text-secondary);
   height: 30px;
-  /* 時間列の固定を解除 */
-  position: static; 
-  border-right: 1px solid #dee2e6;
+  position: static;
+  border-right: 1.5px solid var(--color-border);
 }
 
 #timetable td {
-  border-bottom: 1px solid #ecf0f1;
-  border-left: 1px solid #ecf0f1;
+  border-bottom: 1px solid #f3e8eb;
+  border-left: 1px solid #f3e8eb;
 }
-#timetable tr td:first-child { border-left: none; }
-#timetable tbody tr:last-child td { border-bottom: none; }
 
+#timetable tr td:first-child      { border-left: none; }
+#timetable tbody tr:last-child td  { border-bottom: none; }
 
 .slot {
   display: flex;
@@ -247,22 +431,20 @@ header p {
   width: 100%;
   height: 100%;
   cursor: pointer;
-  font-size: 1.1em; /* ◯✕のサイズを調整 */
-  color: #3498db;
-  font-weight: bold;
+  font-size: 1em;
+  color: var(--color-slot-available);
+  font-weight: 700;
+  transition: background-color 0.15s;
 }
 
-/* --- ▲▲▲【ここまでタイムテーブル用スタイルを全面的に見直し】▲▲▲ --- */
-
-
 .slot:hover {
-  background-color: #ecf5ff;
+  background-color: var(--color-primary-light);
 }
 
 .slot.unavailable {
-  color: #bdc3c7;
+  color: #d4c4c8;
   cursor: not-allowed;
-  font-weight: normal;
+  font-weight: 400;
 }
 
 .slot.unavailable:hover {
@@ -270,219 +452,73 @@ header p {
 }
 
 .slot.selected {
-  background-color: #3498db;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
   color: #fff;
+  font-weight: 700;
 }
 
-.navigation-buttons {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  margin-top: 25px;
-  gap: 10px;
-}
-
-.navigation-buttons .back-button {
-  margin-top: 0;
-  flex-basis: 100px;
-  flex-grow: 0;
-}
-
-.navigation-buttons .submit-button {
-  flex-grow: 1;
-  margin-left: 0;
-  margin-top: 0;
-}
-
-.submit-button {
-  width: 100%;
-  padding: 12px;
-  font-size: 1.1em;
-  font-weight: bold;
-  color: #fff;
-  background-color: #2ecc71;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.submit-button:disabled {
-  background-color: #bdc3c7;
-  cursor: not-allowed;
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.9);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.spinner {
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 15px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.error-container {
-  text-align: center;
-  padding: 20px;
-}
-.error-container h2 {
-  color: #e74c3c;
-}
-
-.complete-message {
-  text-align: center;
-  padding: 20px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  margin-bottom: 25px;
-}
-.complete-message h2 {
-  color: #2ecc71;
-  font-size: 1.5em;
-}
-.booking-details {
-  margin: 20px 0;
-  text-align: left;
-  display: inline-block;
-}
-.booking-details p {
-  margin: 8px 0;
-  font-size: 1.1em;
-}
-
-.calendar-actions {
-  text-align: center;
-}
-.calendar-actions h3 {
-  font-size: 1.2em;
-  color: #2980b9;
-  margin-bottom: 15px;
-}
-.calendar-button {
-  display: block;
-  width: 100%;
-  padding: 15px;
-  margin-bottom: 10px;
-  border-radius: 5px;
-  text-decoration: none;
-  font-weight: bold;
-  font-size: 1.1em;
-  box-sizing: border-box;
-  transition: opacity 0.2s;
-}
-.calendar-button:hover {
-  opacity: 0.8;
-}
-.calendar-button.ics {
-  background-color: #27ae60;
-  color: white;
-}
-.calendar-button.google {
-  background-color: #4285F4;
-  color: white;
-}
-/* --- ▼▼▼【追加】選択中メニュー表示用スタイル ▼▼▼ --- */
-.selected-menu-info {
-  background-color: #e8f4fd;
-  border: 1px solid #3498db;
-  color: #2c3e50;
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  text-align: center;
-  font-weight: bold;
-  font-size: 1.05em;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-/* --- ▲▲▲【追加】ここまで ▲▲▲ --- */
-
-/* =================================================================
-   複数日程一括予約 スタイル
-   ================================================================= */
-
-/* 選択済みスロット */
+/* ================================================================
+   複数日程一括予約
+   ================================================================ */
 #timetable .slot.selected {
-  background-color: #27ae60;
-  color: white;
-  font-weight: bold;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
+  color: #fff;
+  font-weight: 700;
   border-radius: 4px;
-  cursor: pointer;
 }
 
-/* 上限到達でグレーアウトされた未選択スロット */
 #timetable .slot.bulk-limit-reached {
-  background-color: #bdc3c7;
-  color: #7f8c8d;
+  background-color: #ede8e9;
+  color: #c4adb2;
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
-/* 選択済みスロットと時間帯が重複するスロット */
 #timetable .slot.slot-conflict {
-  background-color: #fdebd0;
-  color: #a04000;
+  background-color: #fdf0e0;
+  color: #b87840;
   cursor: not-allowed;
-  font-size: 0.7em;
+  font-size: 0.68em;
 }
 
-/* チップコンテナ（カウンター＋ドロップダウンの基点） */
 .bulk-chip-container {
   position: relative;
   margin-bottom: 12px;
 }
 
-/* 一括選択カウンター（チップ） */
 .bulk-counter {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.95em;
-  font-weight: bold;
-  color: #2980b9;
-  background-color: #eaf4fb;
-  border: 1px solid #aed6f1;
-  border-radius: 8px;
-  padding: 8px 12px;
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: linear-gradient(135deg, #fde8ec 0%, #fdf5ef 100%);
+  border: 1.5px solid #e8b8c4;
+  border-radius: var(--radius-sm);
+  padding: 9px 13px;
   user-select: none;
+  cursor: pointer;
   transition: background-color 0.15s;
-}
-.bulk-counter:hover {
-  background-color: #d4e9f7;
-}
-.bulk-counter.bulk-counter--full {
-  color: #c0392b;
-  background-color: #fdf2f0;
-  border-color: #f5b7b1;
-}
-.bulk-counter.bulk-counter--full:hover {
-  background-color: #fae1de;
-}
-.bulk-counter-arrow {
-  font-size: 0.8em;
-  margin-left: 8px;
+  letter-spacing: 0.02em;
 }
 
-/* 選択済み日時ドロップダウンパネル（オーバーレイ） */
+.bulk-counter:hover {
+  background: linear-gradient(135deg, #f8d8e0 0%, #fdeee6 100%);
+}
+
+.bulk-counter.bulk-counter--full {
+  color: var(--color-primary-hover);
+  background: linear-gradient(135deg, #f8d0d8 0%, #fde8e0 100%);
+  border-color: var(--color-primary);
+}
+
+.bulk-counter-arrow {
+  font-size: 0.85em;
+  margin-left: 8px;
+  color: var(--color-accent);
+}
+
 .selected-dates-panel {
   display: none;
   position: absolute;
@@ -491,48 +527,55 @@ header p {
   right: 0;
   z-index: 200;
   background: #fff;
-  border: 1px solid #a9dfbf;
-  border-radius: 8px;
+  border: 1.5px solid #e8b8c4;
+  border-radius: var(--radius-sm);
   padding: 10px 14px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   max-height: 220px;
   overflow-y: auto;
 }
+
 .selected-dates-panel.is-open {
   display: block;
 }
+
 .selected-dates-header {
-  font-size: 0.82em;
-  font-weight: bold;
-  color: #1e8449;
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--color-primary);
   margin-bottom: 8px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
+
 .selected-dates-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
+
 .selected-date-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px dashed #a9dfbf;
-  font-size: 0.9em;
+  padding: 7px 0;
+  border-bottom: 1px dashed #f0d4d8;
+  font-size: 0.88em;
 }
+
 .selected-date-item:last-child {
   border-bottom: none;
 }
+
 .selected-date-label {
-  color: #1a5c33;
-  font-weight: bold;
+  color: var(--color-text);
+  font-weight: 600;
 }
+
 .remove-slot-btn {
   background: none;
-  border: 1px solid #c0392b;
-  color: #c0392b;
+  border: 1.5px solid var(--color-primary);
+  color: var(--color-primary);
   border-radius: 50%;
   width: 22px;
   height: 22px;
@@ -544,30 +587,186 @@ header p {
   flex-shrink: 0;
   padding: 0;
   line-height: 1;
-}
-.remove-slot-btn:hover {
-  background-color: #c0392b;
-  color: white;
+  transition: background-color 0.2s, color 0.2s;
 }
 
-/* 完了画面：複数日時リスト */
+.remove-slot-btn:hover {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+/* ================================================================
+   完了画面
+   ================================================================ */
+.complete-message {
+  text-align: center;
+  padding: 24px 16px 20px;
+  background: linear-gradient(135deg, #fde8ec 0%, #fdf5ef 100%);
+  border-radius: var(--radius-md);
+  margin-bottom: 22px;
+  border: 1px solid #e8c8d0;
+}
+
+.complete-message h2 {
+  color: var(--color-primary);
+  font-size: 1.4em;
+  margin: 0 0 6px 0;
+  letter-spacing: 0.04em;
+}
+
+.complete-message h2::before {
+  content: '✦ ';
+  font-size: 0.7em;
+  color: var(--color-accent);
+}
+
+.complete-message h2::after {
+  content: ' ✦';
+  font-size: 0.7em;
+  color: var(--color-accent);
+}
+
+.booking-details {
+  margin: 18px 0;
+  text-align: left;
+  display: inline-block;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.booking-details p {
+  margin: 7px 0;
+  font-size: 0.95em;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
 .booking-date-list {
   list-style: none;
   padding: 0;
   margin: 4px 0 0 0;
 }
+
 .booking-date-list li {
   padding: 5px 0 5px 18px;
   position: relative;
-  border-bottom: 1px dashed #ddd;
-  font-size: 0.95em;
+  border-bottom: 1px dashed var(--color-border);
+  font-size: 0.9em;
 }
+
 .booking-date-list li:last-child {
   border-bottom: none;
 }
+
 .booking-date-list li::before {
-  content: '▸';
+  content: '✿';
   position: absolute;
   left: 0;
-  color: #27ae60;
+  color: var(--color-primary);
+  font-size: 0.75em;
+  top: 6px;
+}
+
+/* ================================================================
+   カレンダーボタン
+   ================================================================ */
+.calendar-actions {
+  text-align: center;
+}
+
+.calendar-actions h3 {
+  font-size: 1em;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.calendar-button {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.95em;
+  box-sizing: border-box;
+  transition: opacity 0.2s, transform 0.1s;
+  letter-spacing: 0.04em;
+  border: none;
+  cursor: pointer;
+}
+
+.calendar-button:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.calendar-button.ics {
+  background: linear-gradient(135deg, var(--color-success) 0%, #5a9470 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(122,170,138,0.30);
+}
+
+.calendar-button.google {
+  background: linear-gradient(135deg, #5a8dee 0%, #4072d8 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(90,141,238,0.30);
+}
+
+/* ================================================================
+   ローディング・エラー
+   ================================================================ */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(253,246,243,0.95);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.loading-overlay p {
+  color: var(--color-text-secondary);
+  font-size: 0.88em;
+  margin-top: 4px;
+  letter-spacing: 0.04em;
+}
+
+.spinner {
+  border: 3px solid #f0d8dc;
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  animation: spin 0.9s linear infinite;
+  margin-bottom: 14px;
+}
+
+@keyframes spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-container {
+  text-align: center;
+  padding: 30px 20px;
+}
+
+.error-container h2 {
+  color: var(--color-primary);
+  margin-bottom: 10px;
+}
+
+.error-container p {
+  color: var(--color-text-secondary);
+  font-size: 0.9em;
 }
