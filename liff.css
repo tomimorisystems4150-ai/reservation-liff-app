@@ -441,19 +441,69 @@ header p {
   font-size: 0.7em;
 }
 
-/* 選択済み日時パネル */
+/* チップコンテナ（カウンター＋ドロップダウンの基点） */
+.bulk-chip-container {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+/* 一括選択カウンター（チップ） */
+.bulk-counter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95em;
+  font-weight: bold;
+  color: #2980b9;
+  background-color: #eaf4fb;
+  border: 1px solid #aed6f1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+.bulk-counter:hover {
+  background-color: #d4e9f7;
+}
+.bulk-counter.bulk-counter--full {
+  color: #c0392b;
+  background-color: #fdf2f0;
+  border-color: #f5b7b1;
+}
+.bulk-counter.bulk-counter--full:hover {
+  background-color: #fae1de;
+}
+.bulk-counter-arrow {
+  font-size: 0.8em;
+  margin-left: 8px;
+}
+
+/* 選択済み日時ドロップダウンパネル（オーバーレイ） */
 .selected-dates-panel {
-  background-color: #f0faf4;
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #fff;
   border: 1px solid #a9dfbf;
   border-radius: 8px;
   padding: 10px 14px;
-  margin-bottom: 12px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.selected-dates-panel.is-open {
+  display: block;
 }
 .selected-dates-header {
-  font-size: 0.85em;
+  font-size: 0.82em;
   font-weight: bold;
   color: #1e8449;
   margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 .selected-dates-list {
   list-style: none;
@@ -464,7 +514,7 @@ header p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 6px 0;
   border-bottom: 1px dashed #a9dfbf;
   font-size: 0.9em;
 }
@@ -494,24 +544,6 @@ header p {
 .remove-slot-btn:hover {
   background-color: #c0392b;
   color: white;
-}
-
-/* 一括選択カウンター */
-.bulk-counter {
-  text-align: center;
-  font-size: 0.95em;
-  font-weight: bold;
-  color: #2980b9;
-  background-color: #eaf4fb;
-  border: 1px solid #aed6f1;
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-}
-.bulk-counter.bulk-counter--full {
-  color: #c0392b;
-  background-color: #fdf2f0;
-  border-color: #f5b7b1;
 }
 
 /* 完了画面：複数日時リスト */

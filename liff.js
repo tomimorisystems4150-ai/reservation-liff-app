@@ -130,10 +130,27 @@ function setupEventListeners() {
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
+  // カウンターチップのタップ → パネル開閉
+  document.getElementById('bulk-counter').addEventListener('click', () => {
+    toggleDatesPanel();
+  });
+
   // 選択済み日時パネルの✕ボタン（イベントデリゲーション）
   document.getElementById('selected-dates-panel').addEventListener('click', (e) => {
     const btn = e.target.closest('.remove-slot-btn');
     if (btn) removeSlot(btn.dataset.datetime);
+  });
+
+  // チップコンテナ外をクリックしたらパネルを閉じる
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#bulk-chip-container')) {
+      const panel = document.getElementById('selected-dates-panel');
+      if (panel && panel.classList.contains('is-open')) {
+        panel.classList.remove('is-open');
+        panel.setAttribute('aria-hidden', 'true');
+        updateBulkCounter();
+      }
+    }
   });
 }
 
@@ -442,25 +459,43 @@ async function renderTimetable() {
 }
 
 /**
- * バルク予約の選択件数カウンターを更新する。
+ * バルク予約のカウンターチップを更新する。
+ * スロットが1件以上あるときは件数と展開矢印を表示し、タップでパネルを開閉できる。
  */
 function updateBulkCounter() {
   const counterEl = document.getElementById('bulk-counter');
   if (!counterEl) return;
   const maxBulk = initData.maxBulkBookings || 1;
+
   if (maxBulk <= 1) {
     counterEl.style.display = 'none';
-  } else {
-    const count = bookingState.selectedSlots.length;
-    counterEl.style.display = 'block';
-    counterEl.textContent = `選択中: ${count} / ${maxBulk} 件`;
-    counterEl.className = `bulk-counter${count >= maxBulk ? ' bulk-counter--full' : ''}`;
+    return;
   }
+
+  const count = bookingState.selectedSlots.length;
+  const panel = document.getElementById('selected-dates-panel');
+  const isOpen = panel ? panel.classList.contains('is-open') : false;
+
+  counterEl.style.display = 'flex';
+  if (count > 0) {
+    counterEl.innerHTML =
+      `<span>選択中: <strong>${count}</strong> / ${maxBulk} 件</span>`
+      + `<span class="bulk-counter-arrow">${isOpen ? '▲' : '▼'}</span>`;
+    counterEl.style.cursor = 'pointer';
+    counterEl.setAttribute('aria-expanded', isOpen);
+  } else {
+    counterEl.innerHTML = `<span>日時を選択してください（最大${maxBulk}件）</span>`;
+    counterEl.style.cursor = 'default';
+    counterEl.setAttribute('aria-expanded', 'false');
+  }
+  counterEl.className = `bulk-counter${count >= maxBulk ? ' bulk-counter--full' : ''}`;
+
   updateSelectedDatesPanel();
 }
 
 /**
- * 選択済み日時の一覧パネルを更新する。
+ * 選択済み日時の一覧パネルのリスト内容だけを更新する。
+ * 表示・非表示は toggleDatesPanel / is-open クラスで管理する。
  */
 function updateSelectedDatesPanel() {
   const panel = document.getElementById('selected-dates-panel');
@@ -468,16 +503,16 @@ function updateSelectedDatesPanel() {
   if (!panel || !list) return;
 
   const slots = bookingState.selectedSlots;
+
+  // スロットが0になったら強制的に閉じる
   if (slots.length === 0) {
-    panel.style.display = 'none';
+    panel.classList.remove('is-open');
+    panel.setAttribute('aria-hidden', 'true');
     return;
   }
 
-  panel.style.display = 'block';
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-  const sorted = slots.slice().sort();
-
-  list.innerHTML = sorted.map(dt => {
+  list.innerHTML = slots.slice().sort().map(dt => {
     const d = new Date(dt);
     const label = `${d.getMonth() + 1}月${d.getDate()}日（${dayNames[d.getDay()]}）`
       + `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -486,6 +521,17 @@ function updateSelectedDatesPanel() {
       <button class="remove-slot-btn" data-datetime="${dt}" aria-label="取り消し">✕</button>
     </li>`;
   }).join('');
+}
+
+/**
+ * カウンターチップのタップでパネルを開閉する。
+ */
+function toggleDatesPanel() {
+  const panel = document.getElementById('selected-dates-panel');
+  if (!panel || bookingState.selectedSlots.length === 0) return;
+  const isOpen = panel.classList.toggle('is-open');
+  panel.setAttribute('aria-hidden', !isOpen);
+  updateBulkCounter(); // 矢印の向きを更新
 }
 
 /**

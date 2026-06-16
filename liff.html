@@ -74,11 +74,12 @@
           <select id="staff-selector" class="form-control"></select>
         </div>
 
-        <div id="bulk-counter" class="bulk-counter" style="display: none;"></div>
-
-        <div id="selected-dates-panel" class="selected-dates-panel" style="display: none;">
-          <div class="selected-dates-header">選択中の日時</div>
-          <ul id="selected-dates-list" class="selected-dates-list"></ul>
+        <div id="bulk-chip-container" class="bulk-chip-container">
+          <div id="bulk-counter" class="bulk-counter" role="button" tabindex="0" aria-expanded="false" style="display: none;"></div>
+          <div id="selected-dates-panel" class="selected-dates-panel" aria-hidden="true">
+            <div class="selected-dates-header">選択中の日時</div>
+            <ul id="selected-dates-list" class="selected-dates-list"></ul>
+          </div>
         </div>
 
         <div id="timetable-container">
