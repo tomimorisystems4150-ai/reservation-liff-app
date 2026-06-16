@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>予約管理</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; color: #333; font-size: 14px; }
+
+    /* Header */
+    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 1.1em; }
+    .header-sub { font-size: 0.78em; opacity: 0.75; margin-top: 2px; }
+    .header-user { font-size: 0.78em; opacity: 0.75; text-align: right; }
+
+    /* Tabs */
+    .tab-nav { display: flex; background: #34495e; }
+    .tab-btn { flex: 1; padding: 11px 4px; background: none; border: none; color: rgba(255,255,255,0.65); cursor: pointer; font-size: 0.82em; border-bottom: 3px solid transparent; transition: all 0.2s; position: relative; }
+    .tab-btn.active { color: #fff; border-bottom-color: #3498db; }
+    .count-badge { background: #e74c3c; color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 0.72em; font-weight: bold; margin-left: 4px; }
+
+    /* Content */
+    .tab-content { display: none; padding: 14px; }
+    .tab-content.active { display: block; }
+
+    /* Filter */
+    .filter-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .filter-btn { padding: 5px 12px; border: 1px solid #3498db; background: #fff; color: #3498db; border-radius: 16px; cursor: pointer; font-size: 0.82em; transition: all 0.15s; }
+    .filter-btn.active { background: #3498db; color: #fff; }
+
+    /* Cards */
+    .card { background: #fff; border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .card-datetime { font-weight: bold; font-size: 0.97em; color: #2c3e50; }
+    .card-name { font-size: 0.9em; color: #444; margin-bottom: 3px; }
+    .card-meta { font-size: 0.82em; color: #888; }
+    .card-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+    /* Status badges */
+    .badge { padding: 3px 9px; border-radius: 10px; font-size: 0.75em; font-weight: bold; white-space: nowrap; }
+    .badge-予約, .badge-仮予約 { background: #d6eaf8; color: #2471a3; }
+    .badge-来店 { background: #d5f5e3; color: #1e8449; }
+    .badge-キャンセル { background: #eaecee; color: #626567; }
+    .badge-無断キャンセル { background: #fadbd8; color: #cb4335; }
+
+    /* Buttons */
+    .btn { padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.82em; font-weight: bold; transition: opacity 0.18s; }
+    .btn:hover:not(:disabled) { opacity: 0.78; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-visit   { background: #27ae60; color: #fff; }
+    .btn-noshow  { background: #e74c3c; color: #fff; }
+    .btn-cancel  { background: #95a5a6; color: #fff; }
+    .btn-primary { background: #3498db; color: #fff; }
+    .btn-success { background: #27ae60; color: #fff; }
+    .btn-outline { background: #fff; border: 1px solid #3498db; color: #3498db; }
+    .btn-block   { display: block; width: 100%; margin-top: 10px; padding: 10px; }
+
+    /* Action bar */
+    .action-bar { margin-bottom: 14px; display: flex; gap: 8px; align-items: center; }
+    .section-label { font-size: 0.8em; font-weight: bold; color: #999; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+
+    /* Search */
+    .search-box { width: 100%; padding: 9px 13px; border: 1px solid #d5d8dc; border-radius: 8px; font-size: 0.93em; margin-bottom: 12px; outline: none; }
+    .search-box:focus { border-color: #3498db; }
+
+    /* Customer card */
+    .cust-card { background: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .cust-name { font-weight: bold; font-size: 0.95em; }
+    .cust-sub { font-size: 0.8em; color: #888; margin-top: 2px; }
+    .cust-status-有効 { color: #1e8449; font-size: 0.78em; font-weight: bold; }
+    .cust-status-無効 { color: #cb4335; font-size: 0.78em; font-weight: bold; }
+
+    /* Empty / Loading */
+    .empty { text-align: center; padding: 40px 20px; color: #bbb; }
+    .empty-icon { font-size: 2.2em; margin-bottom: 8px; }
+
+    /* Modal */
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.48); z-index: 1000; justify-content: flex-end; align-items: flex-end; }
+    .modal-backdrop.open { display: flex; }
+    .modal-sheet { background: #fff; border-radius: 18px 18px 0 0; padding: 20px 18px 30px; width: 100%; max-width: 500px; max-height: 85vh; overflow-y: auto; }
+    .modal-title { font-size: 1.05em; font-weight: bold; margin-bottom: 16px; }
+    .modal-close { float: right; background: none; border: none; font-size: 1.3em; cursor: pointer; color: #aaa; line-height: 1; }
+    .form-group { margin-bottom: 13px; }
+    .form-label { display: block; font-size: 0.82em; font-weight: bold; color: #555; margin-bottom: 5px; }
+    .form-control { width: 100%; padding: 9px 11px; border: 1px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; }
+    textarea.form-control { height: 76px; resize: vertical; }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 22px; border-radius: 8px; z-index: 2000; font-size: 0.88em; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+    .toast.show { opacity: 1; }
+    .toast.ok  { background: #27ae60; }
+    .toast.err { background: #e74c3c; }
+  </style>
+</head>
+<body>
+
+<!-- App -->
+<div id="app">
+  <header class="header">
+    <div>
+      <h1>予約管理</h1>
+      <div class="header-sub" id="shop-name-display"></div>
+    </div>
+    <div class="header-user" id="user-display"></div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="booking">予約一覧</button>
+    <button class="tab-btn" data-tab="endofday">終業後処理<span id="eod-badge" class="count-badge" style="display:none;"></span></button>
+    <button class="tab-btn" data-tab="customer">顧客管理</button>
+  </nav>
+
+  <!-- Tab: 予約一覧 -->
+  <div id="tab-booking" class="tab-content active">
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="today">本日</button>
+      <button class="filter-btn" data-filter="recent">直近3日</button>
+      <button class="filter-btn" data-filter="upcoming">全件（今後）</button>
+    </div>
+    <div id="booking-list"><div class="empty"><div class="empty-icon">📅</div><div>読み込み中...</div></div></div>
+  </div>
+
+  <!-- Tab: 終業後処理 -->
+  <div id="tab-endofday" class="tab-content">
+    <div class="action-bar">
+      <button id="batch-visit-btn" class="btn btn-success" disabled>全員 来店確定</button>
+    </div>
+    <div class="section-label">本日の未確定予約</div>
+    <div id="endofday-list"><div class="empty"><div class="empty-icon">📋</div><div>読み込み中...</div></div></div>
+  </div>
+
+  <!-- Tab: 顧客管理 -->
+  <div id="tab-customer" class="tab-content">
+    <input type="text" id="customer-search" class="search-box" placeholder="顧客名で検索...">
+    <div id="customer-list"><div class="empty"><div class="empty-icon">👤</div><div>読み込み中...</div></div></div>
+  </div>
+</div>
+
+<!-- 顧客編集モーダル -->
+<div id="cust-modal" class="modal-backdrop">
+  <div class="modal-sheet">
+    <button class="modal-close" id="cust-modal-close">✕</button>
+    <div class="modal-title">顧客情報の編集</div>
+    <input type="hidden" id="modal-uid">
+    <div class="form-group">
+      <label class="form-label">お名前 *</label>
+      <input type="text" id="modal-name" class="form-control" placeholder="山田 太郎">
+    </div>
+    <div class="form-group">
+      <label class="form-label">電話番号</label>
+      <input type="tel" id="modal-phone" class="form-control" placeholder="090-0000-0000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">メモ</label>
+      <textarea id="modal-memo" class="form-control"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">ステータス</label>
+      <select id="modal-status" class="form-control">
+        <option value="有効">有効</option>
+        <option value="無効">無効（論理削除）</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-block" id="modal-save-btn">保存する</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// GASテンプレート変数
+const SHOP_NAME    = <?!= JSON.stringify(shopName) ?>;
+const CURRENT_USER = <?!= JSON.stringify(currentUser) ?>;
+
+document.getElementById('shop-name-display').textContent = SHOP_NAME;
+document.getElementById('user-display').textContent = CURRENT_USER;
+
+// ===== State =====
+let currentFilter    = 'today';
+let allBookings      = [];
+let allCustomers     = [];
+let todayUnconfirmed = [];
+
+// ===== Tab navigation =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'booking')   loadBookings(currentFilter);
+    if (tab === 'endofday')  loadEndOfDay();
+    if (tab === 'customer' && allCustomers.length === 0) loadCustomers();
+  });
+});
+
+// ===== Filter buttons =====
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    loadBookings(currentFilter);
+  });
+});
+
+// ===== Customer search =====
+document.getElementById('customer-search').addEventListener('input', e => {
+  const q = e.target.value.trim();
+  renderCustomers(q ? allCustomers.filter(c => c.name.includes(q)) : allCustomers);
+});
+
+// ===== Batch visit =====
+document.getElementById('batch-visit-btn').addEventListener('click', () => {
+  const ids = todayUnconfirmed.map(b => b.bookingId);
+  if (!ids.length || !confirm('本日の未確定予約 ' + ids.length + ' 件をすべて「来店確定」にしますか？')) return;
+  setLoading('endofday-list');
+  google.script.run
+    .withSuccessHandler(() => { toast('一括来店確定が完了しました', 'ok'); loadEndOfDay(); })
+    .withFailureHandler(e => toast('エラー: ' + e.message, 'err'))
+    .batchConfirmStatuses(ids, '来店');
+});
+
+// ===== Customer modal =====
+document.getElementById('cust-modal-close').addEventListener('click', closeModal);
+document.getElementById('cust-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('modal-save-btn').addEventListener('click', saveCustomer);
+
+// ===== Load bookings =====
+function loadBookings(filter) {
+  setLoading('booking-list');
+  google.script.run
+    .withSuccessHandler(data => { allBookings = data; renderBookings(data); })
+    .withFailureHandler(e => setError('booking-list', e.message))
+    .getBookingsForManagement(filter);
+}
+
+function renderBookings(bookings) {
+  const el = document.getElementById('booking-list');
+  if (!bookings || !bookings.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><div>該当する予約はありません</div></div>';
+    return;
+  }
+  el.innerHTML = bookings.map(b => bookingCard(b, false)).join('');
+}
+
+// ===== Load end-of-day =====
+function loadEndOfDay() {
+  setLoading('endofday-list');
+  google.script.run
+    .withSuccessHandler(data => {
+      todayUnconfirmed = data;
+      renderEOD(data);
+      const badge = document.getElementById('eod-badge');
+      if (data.length) { badge.textContent = data.length; badge.style.display = 'inline'; }
+      else { badge.style.display = 'none'; }
+      document.getElementById('batch-visit-btn').disabled = !data.length;
+    })
+    .withFailureHandler(e => setError('endofday-list', e.message))
+    .getUnconfirmedTodayBookings();
+}
+
+function renderEOD(bookings) {
+  const el = document.getElementById('endofday-list');
+  if (!bookings || !bookings.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div>本日の未確定予約はありません</div></div>';
+    return;
+  }
+  el.innerHTML = bookings.map(b => bookingCard(b, true)).join('');
+}
+
+// ===== Booking card HTML =====
+function bookingCard(b, eodMode) {
+  const d    = new Date(b.startTime);
+  const days = ['日','月','火','水','木','金','土'];
+  const dt   = eodMode
+    ? pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' 〜'
+    : (d.getMonth()+1) + '月' + d.getDate() + '日(' + days[d.getDay()] + ') ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const staff  = b.staffName && b.staffName !== '指名なし' ? ' / ' + b.staffName : '';
+  const isPend = b.status === '予約' || b.status === '仮予約';
+  const prefix = eodMode ? 'eod' : 'bk';
+  const actions = isPend ? `
+    <button class="btn btn-visit"   onclick="doConfirm('${b.bookingId}','来店','${prefix}')">来店確定</button>
+    <button class="btn btn-noshow"  onclick="doConfirm('${b.bookingId}','無断キャンセル','${prefix}')">無断キャンセル</button>
+    <button class="btn btn-cancel"  onclick="doConfirm('${b.bookingId}','キャンセル','${prefix}')">キャンセル</button>` : '';
+  return `<div class="card" id="${prefix}-${b.bookingId}">
+    <div class="card-header">
+      <div class="card-datetime">${dt}</div>
+      <span class="badge badge-${b.status}">${b.status}</span>
+    </div>
+    <div class="card-name">👤 ${b.userName}</div>
+    <div class="card-meta">📋 ${b.menuName}${staff}</div>
+    ${isPend ? '<div class="card-actions">' + actions + '</div>' : ''}
+  </div>`;
+}
+
+function doConfirm(bookingId, status, prefix) {
+  const labels = { '来店':'来店確定', 'キャンセル':'キャンセル', '無断キャンセル':'無断キャンセル' };
+  if (!confirm('「' + labels[status] + '」で確定しますか？')) return;
+  const card = document.getElementById(prefix + '-' + bookingId);
+  if (card) card.style.opacity = '0.45';
+  google.script.run
+    .withSuccessHandler(() => {
+      toast(labels[status] + 'に更新しました', 'ok');
+      if (prefix === 'eod') loadEndOfDay(); else loadBookings(currentFilter);
+    })
+    .withFailureHandler(e => { toast('エラー: ' + e.message, 'err'); if (card) card.style.opacity = '1'; })
+    .confirmBookingStatus(bookingId, status);
+}
+
+// ===== Load customers =====
+function loadCustomers() {
+  setLoading('customer-list');
+  google.script.run
+    .withSuccessHandler(data => { allCustomers = data; renderCustomers(data); })
+    .withFailureHandler(e => setError('customer-list', e.message))
+    .getCustomersForManagement();
+}
+
+function renderCustomers(list) {
+  const el = document.getElementById('customer-list');
+  if (!list || !list.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">👤</div><div>顧客データがありません</div></div>';
+    return;
+  }
+  el.innerHTML = list.map(c => {
+    const lastVisit = c.lastVisit ? '最終来店: ' + new Date(c.lastVisit).toLocaleDateString('ja-JP') : '来店履歴なし';
+    return `<div class="cust-card">
+      <div>
+        <div class="cust-name">${c.name} <span class="cust-status-${c.status}">${c.status}</span></div>
+        <div class="cust-sub">📞 ${c.phone || '未登録'}</div>
+        <div class="cust-sub">🗓 ${lastVisit}</div>
+        ${c.memo ? '<div class="cust-sub">📝 ' + c.memo + '</div>' : ''}
+      </div>
+      <button class="btn btn-outline" onclick="openModal('${c.lineUserId}')">編集</button>
+    </div>`;
+  }).join('');
+}
+
+// ===== Customer modal =====
+function openModal(uid) {
+  const c = allCustomers.find(x => x.lineUserId === uid);
+  if (!c) return;
+  document.getElementById('modal-uid').value       = uid;
+  document.getElementById('modal-name').value      = c.name || '';
+  document.getElementById('modal-phone').value     = c.phone || '';
+  document.getElementById('modal-memo').value      = c.memo || '';
+  document.getElementById('modal-status').value    = c.status || '有効';
+  document.getElementById('cust-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('cust-modal').classList.remove('open');
+}
+
+function saveCustomer() {
+  const uid  = document.getElementById('modal-uid').value;
+  const name = document.getElementById('modal-name').value.trim();
+  if (!name) { alert('お名前を入力してください。'); return; }
+  const changes = {
+    name:   name,
+    phone:  document.getElementById('modal-phone').value.trim(),
+    memo:   document.getElementById('modal-memo').value.trim(),
+    status: document.getElementById('modal-status').value
+  };
+  document.getElementById('modal-save-btn').disabled = true;
+  google.script.run
+    .withSuccessHandler(() => { toast('顧客情報を更新しました', 'ok'); closeModal(); loadCustomers(); })
+    .withFailureHandler(e => { toast('エラー: ' + e.message, 'err'); document.getElementById('modal-save-btn').disabled = false; })
+    .updateCustomerInfo(uid, changes);
+}
+
+// ===== Helpers =====
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function setLoading(id) {
+  document.getElementById(id).innerHTML = '<div class="empty"><div>読み込み中...</div></div>';
+}
+function setError(id, msg) {
+  document.getElementById(id).innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div>' + msg + '</div></div>';
+}
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + (type || '') + ' show';
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ===== Initial load =====
+loadBookings('today');
+loadEndOfDay();
+</script>
+</body>
+</html>

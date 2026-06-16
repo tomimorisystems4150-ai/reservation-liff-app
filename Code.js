@@ -65,9 +65,18 @@ function doGet(e) {
     return HtmlService.createTemplateFromFile('unauthorized').evaluate().setTitle('アクセスエラー');
   }
 
+  // ページルーティング（?page=kanri で管理画面を表示）
+  const page = (e && e.parameter && e.parameter.page) || 'settings';
+
+  if (page === 'kanri') {
+    const tmpl = HtmlService.createTemplateFromFile('kanri');
+    tmpl.shopName    = configs.shopName || '';
+    tmpl.currentUser = currentUser;
+    return tmpl.evaluate().setTitle('予約管理');
+  }
+
   const template = HtmlService.createTemplateFromFile('settings');
   template.allConfigsAsJson = JSON.stringify(configs);
-  
   return template.evaluate().setTitle('システム設定');
 }
 
@@ -1357,4 +1366,350 @@ function registerCustomer(lineUserId, customerName, phone) {
     '登録日時': now.toISOString(),
     'ステータス': '有効'
   };
+}
+
+// =================================================================
+// 店舗向け管理機能（kanri.html から google.script.run で呼び出す）
+// =================================================================
+
+/**
+ * 予約一覧を返す（管理画面用）。
+ * @param {string} filterType - 'today' | 'upcoming' | 'recent'（直近3日）
+ */
+function getBookingsForManagement(filterType) {
+  const configs = getConfigs();
+  const sheet   = getReservationSheet(configs);
+  const data    = sheet.getDataRange().getValues();
+  const h       = data[0];
+  const bookingIdCol  = h.indexOf('予約ID');
+  const statusCol     = h.indexOf('ステータス');
+  const userIdCol     = h.indexOf('LINE User ID');
+  const userNameCol   = h.indexOf('顧客名');
+  const menuNameCol   = h.indexOf('メニュー名');
+  const startTimeCol  = h.indexOf('予約日時');
+  const endTimeCol    = h.indexOf('終了日時');
+  const eventIdCol    = h.indexOf('イベントID');
+  const staffNameCol  = h.indexOf('担当者名');
+
+  const now        = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  const recentEnd  = new Date(todayStart.getTime() + 3 * 86400000);
+
+  const bookings = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[bookingIdCol]) continue;
+    const startTime = new Date(row[startTimeCol]);
+    let include = false;
+    if      (filterType === 'today')    include = startTime >= todayStart && startTime <= todayEnd;
+    else if (filterType === 'upcoming') include = startTime >= todayStart;
+    else if (filterType === 'recent')   include = startTime >= todayStart && startTime < recentEnd;
+    if (!include) continue;
+
+    const toISO = (v) => v instanceof Date ? v.toISOString() : String(v);
+    bookings.push({
+      bookingId: row[bookingIdCol],
+      status:    row[statusCol],
+      lineUserId:row[userIdCol],
+      userName:  row[userNameCol],
+      menuName:  row[menuNameCol],
+      startTime: toISO(row[startTimeCol]),
+      endTime:   toISO(row[endTimeCol]),
+      eventId:   row[eventIdCol],
+      staffName: row[staffNameCol]
+    });
+  }
+  return bookings.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+}
+
+/**
+ * 本日の未確定予約（ステータスが「予約」または「仮予約」）一覧を返す。
+ */
+function getUnconfirmedTodayBookings() {
+  const configs = getConfigs();
+  const sheet   = getReservationSheet(configs);
+  const data    = sheet.getDataRange().getValues();
+  const h       = data[0];
+  const bookingIdCol = h.indexOf('予約ID');
+  const statusCol    = h.indexOf('ステータス');
+  const userNameCol  = h.indexOf('顧客名');
+  const menuNameCol  = h.indexOf('メニュー名');
+  const startTimeCol = h.indexOf('予約日時');
+  const endTimeCol   = h.indexOf('終了日時');
+  const staffNameCol = h.indexOf('担当者名');
+
+  const now        = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+  const bookings = [];
+  for (let i = 1; i < data.length; i++) {
+    const row    = data[i];
+    const status = row[statusCol];
+    if (!row[bookingIdCol] || (status !== '予約' && status !== '仮予約')) continue;
+    const startTime = new Date(row[startTimeCol]);
+    if (startTime < todayStart || startTime > todayEnd) continue;
+    bookings.push({
+      bookingId: row[bookingIdCol],
+      status:    status,
+      userName:  row[userNameCol],
+      menuName:  row[menuNameCol],
+      startTime: startTime.toISOString(),
+      endTime:   new Date(row[endTimeCol]).toISOString(),
+      staffName: row[staffNameCol]
+    });
+  }
+  return bookings.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+}
+
+/**
+ * 予約ステータスを確定する。
+ * - 来店: カレンダーイベントを緑（Basil）に変更、顧客マスタの最終来店日を更新
+ * - 無断キャンセル: カレンダーイベントを赤（Tomato）に変更
+ * - キャンセル: カレンダーイベントを削除
+ * @param {string} bookingId
+ * @param {string} newStatus - '来店' | '無断キャンセル' | 'キャンセル'
+ */
+function confirmBookingStatus(bookingId, newStatus) {
+  const configs = getConfigs();
+  const sheet   = getReservationSheet(configs);
+  const data    = sheet.getDataRange().getValues();
+  const h       = data[0];
+  const bookingIdCol = h.indexOf('予約ID');
+  const statusCol    = h.indexOf('ステータス');
+  const eventIdCol   = h.indexOf('イベントID');
+  const startTimeCol = h.indexOf('予約日時');
+  const endTimeCol   = h.indexOf('終了日時');
+  const userIdCol    = h.indexOf('LINE User ID');
+
+  let targetRow = -1, eventId = '', lineUserId = '', startTime = null, endTime = null;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][bookingIdCol] === bookingId) {
+      targetRow  = i + 1;
+      eventId    = data[i][eventIdCol];
+      lineUserId = data[i][userIdCol];
+      startTime  = new Date(data[i][startTimeCol]);
+      endTime    = new Date(data[i][endTimeCol]);
+      break;
+    }
+  }
+  if (targetRow === -1) throw new Error(`予約ID「${bookingId}」が見つかりません。`);
+
+  sheet.getRange(targetRow, statusCol + 1).setValue(newStatus);
+
+  if (eventId) {
+    try {
+      const calendar = CalendarApp.getCalendarById(configs.reservationCalendarId);
+      const event    = calendar.getEventById(eventId);
+      if (event) {
+        if      (newStatus === '来店')       event.setColor('10');   // Basil（緑）
+        else if (newStatus === '無断キャンセル') event.setColor('11'); // Tomato（赤）
+        else if (newStatus === 'キャンセル')  event.deleteEvent();
+      }
+    } catch (calErr) {
+      Logger.log(`カレンダー更新エラー: ${calErr.message}`);
+    }
+  }
+
+  if (newStatus === '来店' && lineUserId) {
+    updateCustomerLastVisit_(lineUserId, startTime);
+  }
+
+  Logger.log(`ステータス更新: ${bookingId} → ${newStatus}`);
+}
+
+/**
+ * 複数予約を一括でステータス確定する。
+ * @param {string[]} bookingIds
+ * @param {string} status
+ */
+function batchConfirmStatuses(bookingIds, status) {
+  bookingIds.forEach(id => {
+    try { confirmBookingStatus(id, status); }
+    catch (e) { Logger.log(`バッチ確定エラー (${id}): ${e.message}`); }
+  });
+}
+
+/** 顧客マスタの最終来店日を更新する。 */
+function updateCustomerLastVisit_(lineUserId, visitDate) {
+  const sheet = getCustomerSheet_();
+  const data  = sheet.getDataRange().getValues();
+  const h     = data[0];
+  const userIdCol    = h.indexOf('LINE User ID');
+  const lastVisitCol = h.indexOf('最終来店日');
+  if (lastVisitCol === -1) return;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][userIdCol] === lineUserId) {
+      sheet.getRange(i + 1, lastVisitCol + 1).setValue(visitDate);
+      return;
+    }
+  }
+}
+
+/**
+ * 顧客マスタ一覧を返す（管理画面用）。
+ */
+function getCustomersForManagement() {
+  const sheet = getCustomerSheet_();
+  const data  = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const h = data[0];
+  const userIdCol    = h.indexOf('LINE User ID');
+  const nameCol      = h.indexOf('顧客名');
+  const phoneCol     = h.indexOf('電話番号');
+  const regDateCol   = h.indexOf('登録日時');
+  const lastVisitCol = h.indexOf('最終来店日');
+  const memoCol      = h.indexOf('メモ');
+  const statusCol    = h.indexOf('ステータス');
+  const toISO = (v) => v instanceof Date ? v.toISOString() : String(v || '');
+
+  return data.slice(1)
+    .filter(row => row[userIdCol])
+    .map(row => ({
+      lineUserId:   row[userIdCol],
+      name:         row[nameCol],
+      phone:        row[phoneCol] || '',
+      registeredAt: toISO(row[regDateCol]),
+      lastVisit:    row[lastVisitCol] ? toISO(row[lastVisitCol]) : '',
+      memo:         row[memoCol] || '',
+      status:       row[statusCol] || '有効'
+    }));
+}
+
+/**
+ * 顧客情報を更新する（管理画面から呼び出される）。
+ */
+function updateCustomerInfo(lineUserId, changes) {
+  const sheet = getCustomerSheet_();
+  const data  = sheet.getDataRange().getValues();
+  const h     = data[0];
+  const userIdCol = h.indexOf('LINE User ID');
+  const nameCol   = h.indexOf('顧客名');
+  const phoneCol  = h.indexOf('電話番号');
+  const memoCol   = h.indexOf('メモ');
+  const statusCol = h.indexOf('ステータス');
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][userIdCol] === lineUserId) {
+      const r = i + 1;
+      if (changes.name   !== undefined) sheet.getRange(r, nameCol   + 1).setValue(changes.name);
+      if (changes.phone  !== undefined) sheet.getRange(r, phoneCol  + 1).setValue(changes.phone);
+      if (changes.memo   !== undefined) sheet.getRange(r, memoCol   + 1).setValue(changes.memo);
+      if (changes.status !== undefined) sheet.getRange(r, statusCol + 1).setValue(changes.status);
+      return;
+    }
+  }
+  throw new Error('顧客が見つかりません。');
+}
+
+// =================================================================
+// 夜間バッチ・トリガー管理・終業後処理
+// =================================================================
+
+/**
+ * 夜間バッチ: 満席タイムテーブルを全件再計算する。
+ * 毎日深夜2時にトリガーで自動実行する。
+ */
+function runNightlyBatch() {
+  const configs  = getConfigs();
+  const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
+  const sheet    = getReservationSheet(configs);
+  const data     = sheet.getDataRange().getValues();
+  const h        = data[0];
+  const statusCol    = h.indexOf('ステータス');
+  const startTimeCol = h.indexOf('予約日時');
+  const endTimeCol   = h.indexOf('終了日時');
+
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+
+  const slotMap = new Map();
+  for (let i = 1; i < data.length; i++) {
+    const row    = data[i];
+    const status = row[statusCol];
+    if (status !== '予約' && status !== '仮予約') continue;
+    const startTime = new Date(row[startTimeCol]);
+    if (startTime < now) continue;
+    const endTime = new Date(row[endTimeCol]);
+    let t = new Date(startTime);
+    while (t < endTime) {
+      const key = Utilities.formatDate(t, 'JST', 'yyyy-MM-dd') + ' ' + Utilities.formatDate(t, 'JST', 'HH:mm');
+      slotMap.set(key, (slotMap.get(key) || 0) + 1);
+      t.setMinutes(t.getMinutes() + timeUnit);
+    }
+  }
+
+  const timetableSheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+  if (!timetableSheet) return;
+  const lastRow = timetableSheet.getLastRow();
+  if (lastRow > 1) timetableSheet.deleteRows(2, lastRow - 1);
+
+  if (slotMap.size > 0) {
+    const rows = [];
+    slotMap.forEach((count, key) => {
+      const [date, time] = key.split(' ');
+      rows.push([date, time, count]);
+    });
+    rows.sort((a, b) => `${a[0]} ${a[1]}`.localeCompare(`${b[0]} ${b[1]}`));
+    timetableSheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+
+  Logger.log(`夜間バッチ完了: ${slotMap.size}スロットを再計算`);
+}
+
+/**
+ * システムトリガーを設定する（初期セットアップ時または設定リセット時に実行）。
+ * GASエディタから手動実行するか、設定画面のボタンから呼び出す。
+ */
+function setupTriggers() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('runNightlyBatch')
+    .timeBased().everyDays(1).atHour(2).create();
+
+  ScriptApp.newTrigger('syncBlockCalendars')
+    .timeBased().everyHours(1).create();
+
+  ScriptApp.newTrigger('createEndOfDayUnconfirmedEvent')
+    .timeBased().everyDays(1).atHour(21).create();
+
+  Logger.log('トリガーを設定しました（夜間バッチ/ブロック同期/終業後予定）。');
+  return { success: true };
+}
+
+/**
+ * 終業後トリガー: 当日の未確定予約がある場合、管理カレンダーに確認用予定を自動作成する。
+ * 予定の説明欄には管理画面URL（?page=kanri）を埋め込む。
+ */
+function createEndOfDayUnconfirmedEvent() {
+  const configs    = getConfigs();
+  const now        = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+  const sheet = getReservationSheet(configs);
+  const data  = sheet.getDataRange().getValues();
+  const h     = data[0];
+  const statusCol    = h.indexOf('ステータス');
+  const startTimeCol = h.indexOf('予約日時');
+
+  const unconfirmedCount = data.slice(1).filter(row => {
+    if (!row[statusCol]) return false;
+    const t = new Date(row[startTimeCol]);
+    return t >= todayStart && t <= todayEnd && (row[statusCol] === '予約' || row[statusCol] === '仮予約');
+  }).length;
+
+  if (unconfirmedCount === 0) return;
+
+  const calendar  = CalendarApp.getCalendarById(configs.reservationCalendarId);
+  const kanriUrl  = `${ScriptApp.getService().getUrl()}?page=kanri`;
+  const evtStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0);
+  const evtEnd    = new Date(evtStart.getTime() + 30 * 60000);
+
+  calendar.createEvent(
+    `【要確認】本日の未確定予約: ${unconfirmedCount}件`,
+    evtStart, evtEnd,
+    { description: `本日の未確定予約が${unconfirmedCount}件あります。\n管理画面から確認・確定してください:\n${kanriUrl}` }
+  );
+  Logger.log(`終業後未確定予定を作成: ${unconfirmedCount}件`);
 }
