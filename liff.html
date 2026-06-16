@@ -12,12 +12,12 @@
     <p>読み込んでいます...</p>
   </div>
 
-  <div id="app" class="container" style="display: none;">
-    <header>
-      <h1 id="shopName"></h1>
-      <p id="welcomeMessage"></p>
-    </header>
+  <header class="liff-header" id="liff-header" style="display: none;">
+    <h1 id="shopName"></h1>
+    <p id="welcomeMessage"></p>
+  </header>
 
+  <div id="app" class="container" style="display: none;">
     <main>
       <!-- ステップ1: 予約経験の選択 -->
       <section id="section-step1-visit-experience" class="page-section">
@@ -111,7 +111,7 @@
     </main>
   </div>
 
-  <div id="error" class="error-container" style="display: none;">
+  <div id="error" class="error-container" style="display: none; margin: 20px 14px;">
     <h2>エラーが発生しました</h2>
     <p id="errorMessage"></p>
   </div>

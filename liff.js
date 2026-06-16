@@ -119,8 +119,11 @@ function setupEventListeners() {
 
   document.getElementById('staff-selector').addEventListener('change', (e) => {
     const staffEmail = e.target.value;
+    if (!staffEmail) return; // プレースホルダー選択時は無視
     const staff = initData.staffs.find(s => s.email === staffEmail);
     bookingState.staff = staff || { name: '指名なし', email: 'any' };
+    // 担当者が選択されたらカレンダーを表示
+    document.getElementById('timetable-container').style.display = 'block';
     renderTimetable();
   });
 
@@ -377,7 +380,8 @@ function renderStaffSelector() {
   const selector = document.getElementById('staff-selector');
   
   if (initData.isStaffFeatureEnabled && initData.staffs.length > 0) {
-    selector.innerHTML = '<option value="any">指名なし</option>';
+    // プレースホルダーを先頭に配置し、初期状態では未選択にする
+    selector.innerHTML = '<option value="" disabled selected>担当者を選択してください</option><option value="any">指名なし</option>';
     initData.staffs.forEach(staff => {
       const option = document.createElement('option');
       option.value = staff.email;
@@ -385,10 +389,14 @@ function renderStaffSelector() {
       selector.appendChild(option);
     });
     container.style.display = 'block';
-    bookingState.staff = { name: '指名なし', email: 'any' };
+    // 初期状態は未選択（カレンダー非表示）
+    bookingState.staff = null;
+    document.getElementById('timetable-container').style.display = 'none';
   } else {
     container.style.display = 'none';
     bookingState.staff = null;
+    // 担当者機能OFF の場合はカレンダーをそのまま表示
+    document.getElementById('timetable-container').style.display = 'block';
   }
 }
 
@@ -564,6 +572,7 @@ function removeSlot(datetime) {
 
 function showApp() {
   document.getElementById('loading').style.display = 'none';
+  document.getElementById('liff-header').style.display = 'block';
   document.getElementById('app').style.display = 'block';
 }
 

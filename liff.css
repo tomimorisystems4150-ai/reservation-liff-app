@@ -1,373 +1,269 @@
 /* =================================================================
    LINE予約システム - LIFF UI
-   デザインテーマ: Dusty Rose × Warm Cream × Gold
+   デザインテーマ: settings.html / kanri.html と統一
    ================================================================= */
 
-:root {
-  --color-bg:              #fdf6f3;
-  --color-surface:         #ffffff;
-  --color-primary:         #b5546a;
-  --color-primary-light:   #f5dde3;
-  --color-primary-hover:   #9c3d57;
-  --color-accent:          #c99a6a;
-  --color-success:         #7aaa8a;
-  --color-success-light:   #e6f4eb;
-  --color-text:            #3a2630;
-  --color-text-secondary:  #8a6b75;
-  --color-border:          #e8d4d8;
-  --color-slot-available:  #b5546a;
-  --shadow-sm:             0 2px 12px rgba(181,84,106,0.08);
-  --shadow-md:             0 4px 24px rgba(181,84,106,0.12);
-  --radius-sm:             10px;
-  --radius-md:             14px;
-  --radius-lg:             20px;
-}
-
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
-               'Noto Sans JP', 'Segoe UI', sans-serif;
-  margin: 0;
-  padding: 16px 12px;
-  background-color: var(--color-bg);
-  color: var(--color-text);
+  font-family: 'Helvetica Neue', Arial, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
+  background: #f0f2f5;
+  color: #333;
   font-size: 14px;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-}
-
-.container {
-  max-width: 560px;
-  margin: 0 auto;
-  background-color: var(--color-surface);
-  padding: 20px 18px 32px;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  min-height: 100vh;
 }
 
 /* ================================================================
-   ヘッダー
+   ヘッダー (settings.html と同一)
    ================================================================ */
-header {
+.liff-header {
+  background: #2c3e50;
+  color: #fff;
+  padding: 14px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   text-align: center;
-  padding-bottom: 20px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border);
-  position: relative;
 }
 
-header::before {
-  content: '';
-  display: block;
-  width: 40px;
-  height: 3px;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-  border-radius: 2px;
-  margin: 0 auto 14px;
-}
-
-header h1 {
-  font-size: 1.4em;
-  font-weight: 700;
-  color: var(--color-text);
-  margin: 0 0 6px 0;
+.liff-header h1 {
+  font-size: 1.05em;
+  font-weight: bold;
   letter-spacing: 0.04em;
 }
 
-header p {
-  font-size: 0.85em;
-  color: var(--color-text-secondary);
-  margin: 0;
+.liff-header p {
+  font-size: 0.78em;
+  color: rgba(255,255,255,0.65);
+  margin-top: 3px;
 }
 
 /* ================================================================
-   セクションタイトル
+   コンテンツエリア
    ================================================================ */
-.page-section h2 {
-  font-size: 1.05em;
-  font-weight: 700;
-  color: var(--color-primary);
-  text-align: center;
-  margin: 0 0 18px 0;
-  letter-spacing: 0.05em;
-  position: relative;
-  padding-bottom: 10px;
-}
-
-.page-section h2::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 36px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-  border-radius: 1px;
+.container {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 14px 14px 40px;
 }
 
 /* ================================================================
-   選択ボタン（メニュー・担当者選択など）
+   セクションカード (settings.html の .section-card と同一)
+   ================================================================ */
+.page-section {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.09);
+}
+
+.page-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95em;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef0f3;
+}
+
+/* ================================================================
+   選択ボタン
    ================================================================ */
 .selection-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .selection-button {
   display: block;
   width: 100%;
-  padding: 14px 16px;
-  font-size: 0.95em;
-  font-weight: 600;
+  padding: 13px 14px;
+  font-size: 0.93em;
+  font-weight: bold;
   text-align: left;
-  background-color: var(--color-surface);
-  color: var(--color-text);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: #fff;
+  color: #333;
+  border: 1.5px solid #d5d8dc;
+  border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.15s, background 0.15s;
   position: relative;
-  padding-right: 36px;
-  letter-spacing: 0.02em;
+  padding-right: 32px;
 }
 
 .selection-button:hover {
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
-  box-shadow: var(--shadow-sm);
+  border-color: #3498db;
+  background: #eaf4fd;
+  color: #2471a3;
 }
 
 .selection-button::after {
   content: '›';
   position: absolute;
-  right: 16px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.4em;
-  color: var(--color-accent);
+  font-size: 1.3em;
+  color: #aaa;
   font-weight: 300;
+  line-height: 1;
 }
 
 /* ================================================================
    フォーム
    ================================================================ */
 .form-group {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
+}
+
+.form-group:last-of-type {
+  margin-bottom: 0;
 }
 
 .form-label {
   display: block;
-  margin-bottom: 6px;
-  font-weight: 600;
-  color: var(--color-text);
-  font-size: 0.92em;
-  letter-spacing: 0.02em;
+  font-size: 0.82em;
+  font-weight: bold;
+  color: #555;
+  margin-bottom: 5px;
 }
 
 .required-badge {
   display: inline-block;
-  background: linear-gradient(135deg, var(--color-primary), #d4758a);
+  background: #e74c3c;
   color: #fff;
-  font-size: 0.68em;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 20px;
-  margin-left: 6px;
+  font-size: 0.7em;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 5px;
   vertical-align: middle;
-  letter-spacing: 0.03em;
 }
 
 .optional-badge {
   display: inline-block;
-  background-color: #d4c4c8;
+  background: #95a5a6;
   color: #fff;
-  font-size: 0.68em;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 20px;
-  margin-left: 6px;
+  font-size: 0.7em;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 5px;
   vertical-align: middle;
 }
 
 .form-control {
   width: 100%;
-  padding: 11px 13px;
-  font-size: 0.95em;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  box-sizing: border-box;
-  background: #fffbfc;
-  color: var(--color-text);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  padding: 9px 11px;
+  border: 1.5px solid #d5d8dc;
+  border-radius: 7px;
+  font-size: 0.93em;
+  background: #fff;
+  color: #333;
+  transition: border-color 0.15s;
   outline: none;
-  margin-bottom: 0;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .form-control:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(181,84,106,0.12);
+  border-color: #3498db;
 }
 
-/* ================================================================
-   ボタン
-   ================================================================ */
-.submit-button {
-  width: 100%;
-  padding: 14px;
-  font-size: 1em;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
-  border: none;
-  border-radius: var(--radius-md);
+select.form-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23aaa' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
   cursor: pointer;
-  transition: opacity 0.2s, transform 0.1s, box-shadow 0.2s;
-  letter-spacing: 0.06em;
-  box-shadow: 0 3px 14px rgba(181,84,106,0.30);
-}
-
-.submit-button:hover {
-  opacity: 0.93;
-  transform: translateY(-1px);
-  box-shadow: 0 5px 18px rgba(181,84,106,0.38);
-}
-
-.submit-button:active {
-  transform: translateY(0);
-}
-
-.submit-button:disabled {
-  background: #d4bfc3;
-  box-shadow: none;
-  cursor: not-allowed;
-  transform: none;
-  opacity: 1;
-}
-
-.back-button {
-  padding: 10px 18px;
-  font-size: 0.88em;
-  background-color: var(--color-surface);
-  color: var(--color-text-secondary);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  margin-top: 20px;
-  transition: background-color 0.2s;
-  font-weight: 600;
-}
-
-.back-button:hover {
-  background-color: var(--color-primary-light);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.navigation-buttons {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  margin-top: 22px;
-  gap: 10px;
-}
-
-.navigation-buttons .back-button {
-  margin-top: 0;
-  flex-basis: 90px;
-  flex-grow: 0;
-}
-
-.navigation-buttons .submit-button {
-  flex-grow: 1;
-  margin-top: 0;
 }
 
 /* ================================================================
    補足テキスト
    ================================================================ */
 .info-text {
-  font-size: 0.82em;
-  color: var(--color-text-secondary);
+  font-size: 0.8em;
+  color: #999;
   text-align: center;
-  margin: 0 0 16px 0;
-  line-height: 1.7;
+  margin: 10px 0 0;
+  line-height: 1.5;
 }
 
 /* ================================================================
    選択中メニュー情報バー
    ================================================================ */
 .selected-menu-info {
-  background: linear-gradient(135deg, #fde8ec 0%, #fdf0e6 100%);
-  border: 1px solid #e8b8c4;
-  color: var(--color-text);
-  padding: 11px 14px;
-  border-radius: var(--radius-sm);
+  background: #eaf4fd;
+  border-left: 3px solid #3498db;
+  color: #2471a3;
+  padding: 9px 12px;
+  border-radius: 0 7px 7px 0;
   margin-bottom: 14px;
-  text-align: center;
-  font-weight: 600;
-  font-size: 0.92em;
-  box-shadow: 0 1px 6px rgba(181,84,106,0.08);
+  font-size: 0.88em;
+  font-weight: bold;
+  line-height: 1.4;
 }
 
 /* ================================================================
    タイムテーブル
    ================================================================ */
 #timetable-container {
-  margin: 14px 0;
+  margin-top: 14px;
 }
 
 .timetable-nav {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 10px;
-  gap: 12px;
+  margin-bottom: 8px;
+  gap: 10px;
 }
 
 .timetable-nav h3 {
   margin: 0;
-  font-size: 0.92em;
-  font-weight: 700;
-  color: var(--color-text);
+  font-size: 0.88em;
+  font-weight: bold;
+  color: #2c3e50;
   width: 110px;
   text-align: center;
-  letter-spacing: 0.04em;
 }
 
 .timetable-nav button {
-  padding: 6px 14px;
-  background-color: var(--color-surface);
-  border: 1.5px solid var(--color-primary);
-  color: var(--color-primary);
+  padding: 5px 12px;
+  background: #fff;
+  border: 1.5px solid #3498db;
+  color: #3498db;
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.88em;
-  font-weight: 600;
-  transition: background-color 0.2s, color 0.2s;
+  font-size: 0.82em;
+  font-weight: bold;
+  transition: background 0.15s, color 0.15s;
 }
 
 .timetable-nav button:hover {
-  background-color: var(--color-primary);
+  background: #3498db;
   color: #fff;
 }
 
 .timetable-nav button:disabled {
-  border-color: #d4c4c8;
-  color: #c4adb2;
+  border-color: #d5d8dc;
+  color: #bdc3c7;
   cursor: not-allowed;
-  background-color: var(--color-surface);
+  background: #fff;
 }
 
 .timetable-wrapper {
   overflow-x: hidden;
   overflow-y: auto;
   max-height: 40vh;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: #fff;
+  border: 1px solid #e0e4e8;
+  border-radius: 8px;
 }
 
 #timetable {
@@ -386,39 +282,38 @@ header p {
 #timetable thead th {
   padding: 8px 2px;
   font-size: 0.72em;
-  background: linear-gradient(135deg, #fde8ec 0%, #fdf5f3 100%);
-  border-bottom: 1.5px solid var(--color-border);
-  font-weight: 700;
-  color: var(--color-text);
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e4e8;
+  font-weight: bold;
+  color: #555;
   position: sticky;
   top: 0;
   z-index: 2;
-  letter-spacing: 0.02em;
 }
 
 #timetable thead .day-of-week {
-  font-weight: 500;
+  font-weight: normal;
   font-size: 0.9em;
-  color: var(--color-text-secondary);
+  color: #888;
 }
 
-#timetable .is-saturday { color: #5b8dd9; }
-#timetable .is-sunday   { color: var(--color-primary); }
+#timetable .is-saturday { color: #2471a3; }
+#timetable .is-sunday   { color: #c0392b; }
 
 #timetable tbody th {
   font-size: 0.72em;
   padding: 6px 4px;
-  background-color: #fdf8f9;
-  font-weight: 500;
-  color: var(--color-text-secondary);
+  background: #f8f9fa;
+  font-weight: normal;
+  color: #888;
   height: 30px;
   position: static;
-  border-right: 1.5px solid var(--color-border);
+  border-right: 1px solid #e0e4e8;
 }
 
 #timetable td {
-  border-bottom: 1px solid #f3e8eb;
-  border-left: 1px solid #f3e8eb;
+  border-bottom: 1px solid #f0f2f5;
+  border-left: 1px solid #f0f2f5;
 }
 
 #timetable tr td:first-child      { border-left: none; }
@@ -431,92 +326,90 @@ header p {
   width: 100%;
   height: 100%;
   cursor: pointer;
-  font-size: 1em;
-  color: var(--color-slot-available);
-  font-weight: 700;
-  transition: background-color 0.15s;
+  font-size: 1.1em;
+  color: #3498db;
+  font-weight: bold;
+  transition: background 0.1s;
 }
 
 .slot:hover {
-  background-color: var(--color-primary-light);
+  background: #eaf4fd;
 }
 
 .slot.unavailable {
-  color: #d4c4c8;
+  color: #d5d8dc;
   cursor: not-allowed;
-  font-weight: 400;
+  font-weight: normal;
 }
 
 .slot.unavailable:hover {
-  background-color: transparent;
+  background: transparent;
 }
 
-.slot.selected {
-  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
+.slot.selected,
+#timetable .slot.selected {
+  background: #3498db;
   color: #fff;
-  font-weight: 700;
+  font-weight: bold;
+  border-radius: 3px;
 }
 
 /* ================================================================
    複数日程一括予約
    ================================================================ */
-#timetable .slot.selected {
-  background: linear-gradient(135deg, var(--color-primary) 0%, #d4758a 100%);
-  color: #fff;
-  font-weight: 700;
-  border-radius: 4px;
-}
-
 #timetable .slot.bulk-limit-reached {
-  background-color: #ede8e9;
-  color: #c4adb2;
+  background: #f0f2f5;
+  color: #bdc3c7;
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 #timetable .slot.slot-conflict {
-  background-color: #fdf0e0;
-  color: #b87840;
+  background: #fef9ec;
+  color: #9a6110;
   cursor: not-allowed;
   font-size: 0.68em;
 }
 
 .bulk-chip-container {
   position: relative;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .bulk-counter {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.9em;
-  font-weight: 700;
-  color: var(--color-primary);
-  background: linear-gradient(135deg, #fde8ec 0%, #fdf5ef 100%);
-  border: 1.5px solid #e8b8c4;
-  border-radius: var(--radius-sm);
-  padding: 9px 13px;
+  font-size: 0.88em;
+  font-weight: bold;
+  color: #2471a3;
+  background: #eaf4fd;
+  border: 1.5px solid #aed6f1;
+  border-radius: 8px;
+  padding: 8px 12px;
   user-select: none;
   cursor: pointer;
-  transition: background-color 0.15s;
-  letter-spacing: 0.02em;
+  transition: background 0.15s;
 }
 
 .bulk-counter:hover {
-  background: linear-gradient(135deg, #f8d8e0 0%, #fdeee6 100%);
+  background: #d4e9f7;
 }
 
 .bulk-counter.bulk-counter--full {
-  color: var(--color-primary-hover);
-  background: linear-gradient(135deg, #f8d0d8 0%, #fde8e0 100%);
-  border-color: var(--color-primary);
+  color: #c0392b;
+  background: #fdf2f0;
+  border-color: #f5b7b1;
+}
+
+.bulk-counter.bulk-counter--full:hover {
+  background: #fae1de;
 }
 
 .bulk-counter-arrow {
-  font-size: 0.85em;
+  font-size: 0.8em;
   margin-left: 8px;
-  color: var(--color-accent);
+  color: #aaa;
 }
 
 .selected-dates-panel {
@@ -527,10 +420,10 @@ header p {
   right: 0;
   z-index: 200;
   background: #fff;
-  border: 1.5px solid #e8b8c4;
-  border-radius: var(--radius-sm);
+  border: 1px solid #a9dfbf;
+  border-radius: 8px;
   padding: 10px 14px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
   max-height: 220px;
   overflow-y: auto;
 }
@@ -541,11 +434,11 @@ header p {
 
 .selected-dates-header {
   font-size: 0.78em;
-  font-weight: 700;
-  color: var(--color-primary);
+  font-weight: bold;
+  color: #1e8449;
   margin-bottom: 8px;
-  letter-spacing: 0.06em;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .selected-dates-list {
@@ -558,8 +451,8 @@ header p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 0;
-  border-bottom: 1px dashed #f0d4d8;
+  padding: 6px 0;
+  border-bottom: 1px dashed #a9dfbf;
   font-size: 0.88em;
 }
 
@@ -568,14 +461,14 @@ header p {
 }
 
 .selected-date-label {
-  color: var(--color-text);
-  font-weight: 600;
+  color: #1a5c33;
+  font-weight: bold;
 }
 
 .remove-slot-btn {
   background: none;
-  border: 1.5px solid var(--color-primary);
-  color: var(--color-primary);
+  border: 1px solid #c0392b;
+  color: #c0392b;
   border-radius: 50%;
   width: 22px;
   height: 22px;
@@ -587,12 +480,75 @@ header p {
   flex-shrink: 0;
   padding: 0;
   line-height: 1;
-  transition: background-color 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .remove-slot-btn:hover {
-  background-color: var(--color-primary);
+  background: #c0392b;
   color: #fff;
+}
+
+/* ================================================================
+   ボタン
+   ================================================================ */
+.submit-button {
+  width: 100%;
+  padding: 13px;
+  font-size: 0.98em;
+  font-weight: bold;
+  color: #fff;
+  background: #27ae60;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.18s;
+  letter-spacing: 0.04em;
+}
+
+.submit-button:hover {
+  opacity: 0.85;
+}
+
+.submit-button:disabled {
+  background: #bdc3c7;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.back-button {
+  padding: 10px 16px;
+  font-size: 0.88em;
+  font-weight: bold;
+  background: #fff;
+  color: #7f8c8d;
+  border: 1.5px solid #d5d8dc;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 20px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.back-button:hover {
+  background: #ecf0f1;
+}
+
+.navigation-buttons {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  margin-top: 20px;
+  gap: 10px;
+}
+
+.navigation-buttons .back-button {
+  margin-top: 0;
+  flex-basis: 90px;
+  flex-grow: 0;
+}
+
+.navigation-buttons .submit-button {
+  flex-grow: 1;
+  margin-top: 0;
 }
 
 /* ================================================================
@@ -600,49 +556,34 @@ header p {
    ================================================================ */
 .complete-message {
   text-align: center;
-  padding: 24px 16px 20px;
-  background: linear-gradient(135deg, #fde8ec 0%, #fdf5ef 100%);
-  border-radius: var(--radius-md);
-  margin-bottom: 22px;
-  border: 1px solid #e8c8d0;
+  padding: 20px 16px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border: 1px solid #e0e4e8;
 }
 
 .complete-message h2 {
-  color: var(--color-primary);
-  font-size: 1.4em;
-  margin: 0 0 6px 0;
-  letter-spacing: 0.04em;
-}
-
-.complete-message h2::before {
-  content: '✦ ';
-  font-size: 0.7em;
-  color: var(--color-accent);
-}
-
-.complete-message h2::after {
-  content: ' ✦';
-  font-size: 0.7em;
-  color: var(--color-accent);
+  color: #27ae60;
+  font-size: 1.3em;
+  margin-bottom: 6px;
 }
 
 .booking-details {
-  margin: 18px 0;
+  margin: 16px 0;
   text-align: left;
-  display: inline-block;
   background: #fff;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 14px 18px;
+  border: 1px solid #e0e4e8;
+  border-radius: 8px;
+  padding: 12px 16px;
   width: 100%;
-  box-sizing: border-box;
 }
 
 .booking-details p {
-  margin: 7px 0;
-  font-size: 0.95em;
-  color: var(--color-text);
+  margin: 6px 0;
+  font-size: 0.93em;
   line-height: 1.6;
+  color: #333;
 }
 
 .booking-date-list {
@@ -652,10 +593,10 @@ header p {
 }
 
 .booking-date-list li {
-  padding: 5px 0 5px 18px;
+  padding: 4px 0 4px 16px;
   position: relative;
-  border-bottom: 1px dashed var(--color-border);
-  font-size: 0.9em;
+  border-bottom: 1px dashed #e0e4e8;
+  font-size: 0.92em;
 }
 
 .booking-date-list li:last-child {
@@ -663,60 +604,49 @@ header p {
 }
 
 .booking-date-list li::before {
-  content: '✿';
+  content: '▸';
   position: absolute;
   left: 0;
-  color: var(--color-primary);
-  font-size: 0.75em;
-  top: 6px;
+  color: #27ae60;
 }
 
-/* ================================================================
-   カレンダーボタン
-   ================================================================ */
 .calendar-actions {
   text-align: center;
 }
 
 .calendar-actions h3 {
-  font-size: 1em;
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 0.92em;
+  color: #7f8c8d;
+  margin-bottom: 10px;
+  font-weight: bold;
 }
 
 .calendar-button {
   display: block;
   width: 100%;
   padding: 13px;
-  margin-bottom: 10px;
-  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  border-radius: 8px;
   text-decoration: none;
-  font-weight: 700;
-  font-size: 0.95em;
+  font-weight: bold;
+  font-size: 0.93em;
   box-sizing: border-box;
-  transition: opacity 0.2s, transform 0.1s;
-  letter-spacing: 0.04em;
+  transition: opacity 0.15s;
   border: none;
   cursor: pointer;
+  letter-spacing: 0.03em;
 }
 
-.calendar-button:hover {
-  opacity: 0.88;
-  transform: translateY(-1px);
-}
+.calendar-button:hover { opacity: 0.85; }
 
 .calendar-button.ics {
-  background: linear-gradient(135deg, var(--color-success) 0%, #5a9470 100%);
+  background: #27ae60;
   color: #fff;
-  box-shadow: 0 3px 12px rgba(122,170,138,0.30);
 }
 
 .calendar-button.google {
-  background: linear-gradient(135deg, #5a8dee 0%, #4072d8 100%);
+  background: #4285F4;
   color: #fff;
-  box-shadow: 0 3px 12px rgba(90,141,238,0.30);
 }
 
 /* ================================================================
@@ -726,7 +656,7 @@ header p {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  background: rgba(253,246,243,0.95);
+  background: rgba(240,242,245,0.96);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -735,20 +665,19 @@ header p {
 }
 
 .loading-overlay p {
-  color: var(--color-text-secondary);
-  font-size: 0.88em;
+  color: #7f8c8d;
+  font-size: 0.85em;
   margin-top: 4px;
-  letter-spacing: 0.04em;
 }
 
 .spinner {
-  border: 3px solid #f0d8dc;
-  border-top: 3px solid var(--color-primary);
+  border: 4px solid #e0e4e8;
+  border-top: 4px solid #3498db;
   border-radius: 50%;
   width: 38px;
   height: 38px;
   animation: spin 0.9s linear infinite;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 @keyframes spin {
@@ -759,14 +688,19 @@ header p {
 .error-container {
   text-align: center;
   padding: 30px 20px;
+  background: #fff;
+  border-radius: 12px;
+  margin: 20px auto;
+  max-width: 500px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.09);
 }
 
 .error-container h2 {
-  color: var(--color-primary);
+  color: #e74c3c;
   margin-bottom: 10px;
 }
 
 .error-container p {
-  color: var(--color-text-secondary);
+  color: #7f8c8d;
   font-size: 0.9em;
 }
