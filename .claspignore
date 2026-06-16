@@ -1,0 +1,18 @@
+# GitHub Pages用ファイル（GASにはプッシュしない）
+liff.html
+liff.js
+liff.css
+
+# ドキュメント類
+README.md
+*.md
+
+# Cursor / VSCode設定
+.cursorrules
+.vscode/
+
+# clasp設定自体
+.clasp.json
+
+# Cloudflare Workers（GASとは別プロジェクト）
+cloudflare-worker/**

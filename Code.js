@@ -5,7 +5,12 @@
 // =================================================================
 // 定数定義
 // =================================================================
-const SPREADSHEET = SpreadsheetApp.getActiveSpreadsheet();
+// オンボーディング時にプロビジョニングスクリプトが実スプレッドシートIDに置換する。
+// 開発環境（バインドスクリプト）ではプレースホルダーのままとなり getActiveSpreadsheet() を使用する。
+const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';
+const SPREADSHEET = (_PROVISIONED_SS_ID !== 'PLACEHOLDER_SPREADSHEET_ID')
+  ? SpreadsheetApp.openById(_PROVISIONED_SS_ID)
+  : SpreadsheetApp.getActiveSpreadsheet();
 const CONFIG_SHEET = SPREADSHEET.getSheetByName('Config');
 
 // =================================================================

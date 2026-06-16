@@ -1,0 +1,560 @@
+/**
+ * LINE予約システム 自動オンボーディングサーバー
+ * Cloudflare Workers で動作する OAuth 2.0 フローと GAS プロビジョニングを処理する。
+ *
+ * ルート:
+ *   GET /          - ランディングページ（導入開始ボタン）
+ *   GET /start     - Google OAuth 認可フロー開始
+ *   GET /callback  - OAuth コールバック・プロビジョニング実行
+ *   GET /complete  - 完了ページ（URLと次の手順を表示）
+ */
+
+const GOOGLE_AUTH_URL  = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const DRIVE_API        = 'https://www.googleapis.com/drive/v3';
+const SHEETS_API       = 'https://sheets.googleapis.com/v4/spreadsheets';
+const SCRIPT_API       = 'https://script.googleapis.com/v1';
+
+// GAS デプロイに必要な OAuth スコープ
+const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/script.projects',
+  'https://www.googleapis.com/auth/script.deployments',
+  'email',
+  'profile',
+].join(' ');
+
+// GitHub から取得するスクリプトファイル定義
+const SCRIPT_FILES_META = [
+  { name: 'Code',          type: 'SERVER_JS', file: 'Code.js' },
+  { name: 'settings',      type: 'HTML',      file: 'settings.html' },
+  { name: 'kanri',         type: 'HTML',      file: 'kanri.html' },
+  { name: 'unauthorized',  type: 'HTML',      file: 'unauthorized.html' },
+  { name: 'appsscript',   type: 'JSON',      file: 'appsscript.json' },
+];
+
+// ============================================================
+// メインルーター
+// ============================================================
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    try {
+      switch (url.pathname) {
+        case '/':          return handleIndex(env);
+        case '/start':     return handleStart(request, env);
+        case '/callback':  return handleCallback(request, env);
+        case '/complete':  return handleComplete(url);
+        default:           return new Response('Not Found', { status: 404 });
+      }
+    } catch (err) {
+      console.error('Unhandled error:', err);
+      return renderError(`予期しないエラーが発生しました。<br><code>${escapeHtml(err.message)}</code>`);
+    }
+  },
+};
+
+// ============================================================
+// ランディングページ
+// ============================================================
+function handleIndex(env) {
+  const html = buildPage('LINE予約システム 導入ガイド', `
+    <div class="hero">
+      <div class="logo">📅</div>
+      <h1>LINE予約システム</h1>
+      <p class="subtitle">3ステップで導入完了</p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Googleアカウントでログイン</strong>
+          <span>スプレッドシートとスクリプトの作成権限を許可します</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>自動セットアップ（約30秒）</strong>
+          <span>スプレッドシート・GASプロジェクト・デプロイを自動作成します</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>LINE DevelopersにURLを設定</strong>
+          <span>発行されたURLを2箇所に貼り付けるだけで完了です</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cta-area">
+      <a href="/start" class="btn-start">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+          <polyline points="10 17 15 12 10 7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        Googleアカウントで導入開始
+      </a>
+      <p class="note">※ Googleドライブにスプレッドシートとスクリプトが作成されます</p>
+    </div>
+  `);
+  return htmlResponse(html);
+}
+
+// ============================================================
+// OAuth 開始 — state を KV に保存してリダイレクト
+// ============================================================
+async function handleStart(request, env) {
+  const state = crypto.randomUUID();
+  // 10分間有効
+  await env.ONBOARDING_KV.put(`state:${state}`, '1', { expirationTtl: 600 });
+
+  const params = new URLSearchParams({
+    client_id:     env.GOOGLE_CLIENT_ID,
+    redirect_uri:  `${env.WORKER_URL}/callback`,
+    response_type: 'code',
+    scope:         OAUTH_SCOPES,
+    access_type:   'offline',
+    prompt:        'consent',
+    state,
+  });
+  return Response.redirect(`${GOOGLE_AUTH_URL}?${params}`, 302);
+}
+
+// ============================================================
+// OAuth コールバック → プロビジョニング
+// ============================================================
+async function handleCallback(request, env) {
+  const url    = new URL(request.url);
+  const code   = url.searchParams.get('code');
+  const state  = url.searchParams.get('state');
+  const error  = url.searchParams.get('error');
+
+  if (error) {
+    return renderError(`Google認証でエラーが発生しました: <strong>${escapeHtml(error)}</strong>`);
+  }
+  if (!code || !state) {
+    return renderError('必要なパラメーターが不足しています。もう一度最初からお試しください。');
+  }
+
+  // state 検証
+  const stored = await env.ONBOARDING_KV.get(`state:${state}`);
+  if (!stored) {
+    return renderError('セッションが無効または期限切れです。もう一度最初からお試しください。');
+  }
+  await env.ONBOARDING_KV.delete(`state:${state}`);
+
+  // プログレス画面を先に返し、裏でプロビジョニングを実行
+  // → Workers の waitUntil を使って非同期実行
+  // ただし Worker は streaming response が限定的なので、同期的に進捗表示なしで実行する
+  const progressHtml = buildPage('セットアップ中...', `
+    <div style="text-align:center; padding: 60px 20px;">
+      <div class="spinner"></div>
+      <h2 style="margin-top:24px; color:#333;">セットアップ中です...</h2>
+      <p style="color:#666; margin-top:8px;">スプレッドシートとGASプロジェクトを自動作成しています。<br>このまましばらくお待ちください（約30秒）。</p>
+    </div>
+    <style>
+      .spinner { width:56px; height:56px; border:5px solid #e0e0e0; border-top-color:#06c755;
+                 border-radius:50%; animation:spin 1s linear infinite; margin:0 auto; }
+      @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
+    <script>
+      // トークン交換とプロビジョニングは別リクエストで実行させるため、
+      // このページからAPI呼び出しを行う
+      (async () => {
+        try {
+          const res = await fetch('/provision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: ${JSON.stringify(code)}, state: ${JSON.stringify(state)} })
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          const params = new URLSearchParams({
+            deployUrl: data.deployUrl,
+            ssUrl:     data.ssUrl,
+            gasUrl:    data.gasUrl,
+          });
+          location.href = '/complete?' + params;
+        } catch(e) {
+          document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#d32f2f;font-size:16px;">エラーが発生しました: ' + e.message + '<br><br><a href="/">最初からやり直す</a></div>';
+        }
+      })();
+    </script>
+  `);
+
+  // 実際はシンプルに同期実行してリダイレクトする方式に変更
+  // (Workers Streaming の制限を回避)
+  let result;
+  try {
+    const tokens = await exchangeCodeForTokens(code, env);
+    if (!tokens.access_token) {
+      throw new Error(`トークン取得失敗: ${JSON.stringify(tokens.error || tokens)}`);
+    }
+    result = await provision(tokens.access_token, env);
+  } catch (err) {
+    console.error('Provision error:', err);
+    return renderError(`セットアップ中にエラーが発生しました。<br><code>${escapeHtml(err.message)}</code><br><br>
+      もう一度 <a href="/">最初から</a> お試しください。`);
+  }
+
+  const params = new URLSearchParams({
+    deployUrl: result.deployUrl,
+    ssUrl:     result.ssUrl,
+    gasUrl:    result.gasUrl,
+  });
+  return Response.redirect(`${env.WORKER_URL}/complete?${params}`, 302);
+}
+
+// ============================================================
+// 完了ページ
+// ============================================================
+function handleComplete(url) {
+  const deployUrl = url.searchParams.get('deployUrl') || '';
+  const ssUrl     = url.searchParams.get('ssUrl') || '';
+  const gasUrl    = url.searchParams.get('gasUrl') || '';
+
+  const html = buildPage('セットアップ完了！', `
+    <div class="success-banner">
+      <div class="success-icon">✅</div>
+      <h1>セットアップ完了！</h1>
+      <p>スプレッドシートとGASプロジェクトの自動作成が完了しました。</p>
+    </div>
+
+    <div class="url-card">
+      <div class="url-label">🌐 GAS デプロイURL（最重要）</div>
+      <div class="url-value" id="deployUrl">${escapeHtml(deployUrl)}</div>
+      <button class="copy-btn" onclick="copyText('deployUrl', this)">コピー</button>
+      <p class="url-note">LINE DevelopersのWebhook URLとLIFFのAPIエンドポイントに設定してください</p>
+    </div>
+
+    <div class="url-card secondary">
+      <div class="url-label">📊 スプレッドシート</div>
+      <div class="url-value"><a href="${escapeHtml(ssUrl)}" target="_blank">${escapeHtml(ssUrl)}</a></div>
+    </div>
+
+    <div class="url-card secondary">
+      <div class="url-label">⚙️ GASプロジェクト（設定画面・管理画面もこちらから）</div>
+      <div class="url-value"><a href="${escapeHtml(gasUrl)}" target="_blank">${escapeHtml(gasUrl)}</a></div>
+    </div>
+
+    <div class="next-steps">
+      <h2>📋 残りの設定手順</h2>
+      <ol>
+        <li>
+          <strong>LINE Developers → Messaging API チャンネル</strong><br>
+          「Webhook URL」に上記デプロイURLを設定し「検証」をクリック
+        </li>
+        <li>
+          <strong>LINE Developers → LIFFアプリ</strong><br>
+          「エンドポイントURL」に上記デプロイURLを設定
+        </li>
+        <li>
+          <strong>スプレッドシートの初期設定</strong><br>
+          <a href="${escapeHtml(ssUrl)}" target="_blank">スプレッドシートを開き</a>、
+          ConfigシートにshopName・lineChannelAccessToken等を入力
+        </li>
+        <li>
+          <strong>GASの初回認証</strong><br>
+          <a href="${escapeHtml(gasUrl)}" target="_blank">GASエディタを開き</a>、
+          「setupTriggers」関数を手動実行してトリガーを設定
+        </li>
+      </ol>
+    </div>
+
+    <script>
+      function copyText(id, btn) {
+        const text = document.getElementById(id).textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = 'コピーしました！';
+          btn.style.background = '#06c755';
+          setTimeout(() => { btn.textContent = 'コピー'; btn.style.background = ''; }, 2000);
+        });
+      }
+    </script>
+  `);
+  return htmlResponse(html);
+}
+
+// ============================================================
+// トークン交換
+// ============================================================
+async function exchangeCodeForTokens(code, env) {
+  const res = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id:     env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri:  `${env.WORKER_URL}/callback`,
+      grant_type:    'authorization_code',
+    }),
+  });
+  return res.json();
+}
+
+// ============================================================
+// プロビジョニング本体
+// ============================================================
+async function provision(accessToken, env) {
+  const auth = `Bearer ${accessToken}`;
+
+  // Step 1: テンプレートスプレッドシートをコピー
+  console.log('Step 1: Copying template spreadsheet...');
+  const ssCopy = await callApi(
+    `${DRIVE_API}/files/${env.TEMPLATE_SS_ID}/copy`,
+    'POST',
+    auth,
+    { name: '予約管理システム' }
+  );
+  if (ssCopy.error) throw new Error(`スプレッドシートのコピーに失敗: ${ssCopy.error.message}`);
+  const ssId  = ssCopy.id;
+  const ssUrl = `https://docs.google.com/spreadsheets/d/${ssId}/edit`;
+
+  // Step 2: スタンドアロン GAS プロジェクト作成
+  console.log('Step 2: Creating GAS project...');
+  const proj = await callApi(
+    `${SCRIPT_API}/projects`,
+    'POST',
+    auth,
+    {
+      title: '予約管理システム_GAS',
+      parentId: ssId,  // スプレッドシートフォルダに配置（任意）
+    }
+  );
+  if (proj.error) throw new Error(`GASプロジェクト作成に失敗: ${proj.error.message}`);
+  const scriptId = proj.scriptId;
+  const gasUrl   = `https://script.google.com/d/${scriptId}/edit`;
+
+  // Step 3: GitHubからスクリプトファイルを取得してスプレッドシートIDを埋め込む
+  console.log('Step 3: Fetching script files from GitHub...');
+  const files = await fetchAndPrepareFiles(ssId, env);
+
+  // Step 4: GASプロジェクトにコンテンツをプッシュ
+  console.log('Step 4: Pushing content to GAS project...');
+  const content = await callApi(
+    `${SCRIPT_API}/projects/${scriptId}/content`,
+    'PUT',
+    auth,
+    { files }
+  );
+  if (content.error) throw new Error(`スクリプトのアップロードに失敗: ${content.error.message}`);
+
+  // Step 5: バージョン作成
+  console.log('Step 5: Creating version...');
+  const version = await callApi(
+    `${SCRIPT_API}/projects/${scriptId}/versions`,
+    'POST',
+    auth,
+    { description: '初回デプロイ (自動オンボーディング)' }
+  );
+  if (version.error) throw new Error(`バージョン作成に失敗: ${version.error.message}`);
+
+  // Step 6: Webアプリデプロイ
+  console.log('Step 6: Deploying web app...');
+  const deploy = await callApi(
+    `${SCRIPT_API}/projects/${scriptId}/deployments`,
+    'POST',
+    auth,
+    {
+      versionNumber:        version.versionNumber,
+      manifestFileName:     'appsscript',
+      description:          '初回デプロイ (自動オンボーディング)',
+    }
+  );
+  if (deploy.error) throw new Error(`デプロイに失敗: ${deploy.error.message}`);
+
+  // デプロイURLを取得
+  const webAppEntryPoint = (deploy.entryPoints || []).find(ep => ep.entryPointType === 'WEB_APP');
+  const deployUrl = webAppEntryPoint?.webApp?.url || `https://script.google.com/macros/s/${deploy.deploymentId}/exec`;
+
+  console.log('Provisioning complete!', { ssId, scriptId, deployUrl });
+  return { deployUrl, ssUrl, gasUrl };
+}
+
+// ============================================================
+// GitHubからスクリプトファイルを取得し、スプレッドシートIDを埋め込む
+// ============================================================
+async function fetchAndPrepareFiles(spreadsheetId, env) {
+  const repo   = env.GITHUB_REPO;   // e.g. "tomimorisystems4150-ai/reservation-liff-app"
+  const branch = env.GITHUB_BRANCH || 'main';
+  const base   = `https://raw.githubusercontent.com/${repo}/${branch}`;
+
+  const files = await Promise.all(
+    SCRIPT_FILES_META.map(async ({ name, type, file }) => {
+      const res = await fetch(`${base}/${file}`);
+      if (!res.ok) throw new Error(`GitHubからのファイル取得失敗: ${file} (${res.status})`);
+      let source = await res.text();
+
+      // Code.js のプレースホルダーを実際のスプレッドシートIDで置換
+      if (file === 'Code.js') {
+        source = source.replace(/PLACEHOLDER_SPREADSHEET_ID/g, spreadsheetId);
+      }
+
+      return { name, type, source };
+    })
+  );
+  return files;
+}
+
+// ============================================================
+// 汎用 API 呼び出しヘルパー
+// ============================================================
+async function callApi(url, method, authHeader, body) {
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type':  'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+// ============================================================
+// HTML ページビルダー
+// ============================================================
+function buildPage(title, content) {
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)} | LINE予約システム</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      padding: 48px 40px;
+      max-width: 640px;
+      width: 100%;
+    }
+    /* Hero */
+    .hero { text-align: center; margin-bottom: 40px; }
+    .logo { font-size: 56px; margin-bottom: 12px; }
+    .hero h1 { font-size: 28px; font-weight: 700; color: #111; }
+    .subtitle { color: #666; margin-top: 6px; font-size: 15px; }
+    /* Steps */
+    .steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 40px; }
+    .step { display: flex; align-items: flex-start; gap: 16px; }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #06c755; color: #fff;
+      font-weight: 700; font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-body { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
+    .step-body strong { font-size: 15px; color: #111; }
+    .step-body span { font-size: 13px; color: #666; }
+    /* CTA */
+    .cta-area { text-align: center; }
+    .btn-start {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: #06c755; color: #fff;
+      padding: 16px 32px; border-radius: 50px;
+      font-size: 16px; font-weight: 700;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-start:hover { background: #05a548; transform: translateY(-1px); }
+    .note { color: #999; font-size: 12px; margin-top: 12px; }
+    /* Success */
+    .success-banner { text-align: center; margin-bottom: 36px; }
+    .success-icon { font-size: 56px; margin-bottom: 12px; }
+    .success-banner h1 { font-size: 26px; font-weight: 700; color: #111; }
+    .success-banner p { color: #555; margin-top: 8px; }
+    /* URL Cards */
+    .url-card {
+      background: #f0faf4; border: 1.5px solid #06c755;
+      border-radius: 12px; padding: 20px; margin-bottom: 16px; position: relative;
+    }
+    .url-card.secondary { background: #f8f9fa; border-color: #dee2e6; }
+    .url-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; }
+    .url-value {
+      font-family: 'Courier New', monospace; font-size: 13px;
+      color: #111; word-break: break-all; background: #fff;
+      border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .url-value a { color: #0066cc; text-decoration: none; }
+    .url-note { font-size: 12px; color: #666; }
+    .copy-btn {
+      background: #06c755; color: #fff; border: none; border-radius: 6px;
+      padding: 6px 14px; font-size: 13px; cursor: pointer; font-weight: 600;
+      transition: background 0.2s;
+    }
+    .copy-btn:hover { background: #05a548; }
+    /* Next Steps */
+    .next-steps { margin-top: 32px; }
+    .next-steps h2 { font-size: 18px; font-weight: 700; color: #111; margin-bottom: 16px; }
+    .next-steps ol { padding-left: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .next-steps li { font-size: 14px; color: #333; line-height: 1.6; }
+    .next-steps li strong { display: block; color: #111; margin-bottom: 2px; }
+    .next-steps a { color: #0066cc; }
+    /* Error */
+    .error-box {
+      background: #fff5f5; border: 1.5px solid #f44336;
+      border-radius: 12px; padding: 24px; text-align: center;
+    }
+    .error-box h2 { color: #d32f2f; margin-bottom: 12px; }
+    .error-box p { color: #555; font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+    .error-box a {
+      display: inline-block; background: #d32f2f; color: #fff;
+      padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;
+    }
+    @media (max-width: 480px) {
+      .card { padding: 32px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${content}
+  </div>
+</body>
+</html>`;
+}
+
+function renderError(message) {
+  const html = buildPage('エラーが発生しました', `
+    <div class="error-box">
+      <h2>⚠️ エラーが発生しました</h2>
+      <p>${message}</p>
+      <a href="/">最初からやり直す</a>
+    </div>
+  `);
+  return htmlResponse(html, 500);
+}
+
+function htmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
