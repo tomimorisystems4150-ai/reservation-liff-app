@@ -130,6 +130,19 @@ function setupEventListeners() {
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
+  // ICSダウンロードボタン（data属性に格納したURLを使用）
+  document.getElementById('icsDownloadLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    const url = e.currentTarget.dataset.icsUrl;
+    if (!url) return;
+    // LIFFのiOS環境ではSafariで外部開く（LIFF内では.icsが処理されないため）
+    if (typeof liff !== 'undefined' && liff.isInClient()) {
+      liff.openWindow({ url, external: true });
+    } else {
+      window.open(url, '_blank');
+    }
+  });
+
   // カウンターチップのタップ → パネル開閉
   document.getElementById('bulk-counter').addEventListener('click', () => {
     toggleDatesPanel();
@@ -709,13 +722,12 @@ function showBookingCompleteScreen(results) {
     document.getElementById('completeStaffP').style.display = 'block';
   }
 
-  // ICSファイルを生成してダウンロードリンクにセット（全機種・複数イベント対応）
-  const icsContent = generateICS(sortedResults, shopName);
-  const icsBlob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-  const icsUrl = URL.createObjectURL(icsBlob);
+  // ICSダウンロードURLをGASエンドポイントで構築（iOS LIFF対応）
+  const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
+  const icsUrl = `${GAS_API_URL}?action=downloadICS&bookingIds=${encodeURIComponent(bookingIdParams)}`;
   const icsLink = document.getElementById('icsDownloadLink');
-  icsLink.href = icsUrl;
-  icsLink.download = `reservation_${firstResult.bookingId}.ics`;
+  icsLink.dataset.icsUrl = icsUrl;
+  icsLink.href = '#';
 
   // Googleカレンダーリンクは単一予約時のみ表示
   const googleCalendarLink = document.getElementById('googleCalendarLink');
@@ -734,41 +746,4 @@ function showBookingCompleteScreen(results) {
   }
 
   document.getElementById('bookingComplete').style.display = 'block';
-}
-
-/**
- * ICS（iCalendar）形式の文字列を生成する。
- * 1ファイルに複数イベントを含められるため、一括予約にも対応。
- * @param {Array} results - 予約結果の配列（startTime, endTime, eventTitle, bookingId を含む）
- * @param {string} shopName - 店舗名
- * @returns {string} ICS文字列
- */
-function generateICS(results, shopName) {
-  const formatICSDate = (isoStr) =>
-    new Date(isoStr).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const now = formatICSDate(new Date().toISOString());
-
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//ReservationSystem//JP',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH'
-  ];
-
-  results.forEach(result => {
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:${result.bookingId}@reservation-system`,
-      `DTSTAMP:${now}`,
-      `DTSTART:${formatICSDate(result.startTime)}`,
-      `DTEND:${formatICSDate(result.endTime)}`,
-      `SUMMARY:${result.eventTitle}`,
-      `DESCRIPTION:店舗: ${shopName}\\nご予約ありがとうございます。`,
-      'END:VEVENT'
-    );
-  });
-
-  lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
 }

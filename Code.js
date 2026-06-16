@@ -37,7 +37,12 @@ function showSettingsUrl() {
 // Webアプリ エントリーポイント
 // =================================================================
 
-function doGet() {
+function doGet(e) {
+  // ICSダウンロードは認証不要（先行処理）
+  if (e && e.parameter && e.parameter.action === 'downloadICS') {
+    return handleICSDownload_(e);
+  }
+
   const configs = getConfigs();
   const currentUser = Session.getActiveUser().getEmail();
   
@@ -64,6 +69,74 @@ function doGet() {
   template.allConfigsAsJson = JSON.stringify(configs);
   
   return template.evaluate().setTitle('システム設定');
+}
+
+/**
+ * 予約IDリストを受け取り、ICSファイルを返す（doGet経由）。
+ * ?action=downloadICS&bookingIds=BK001,BK002 の形式でアクセスする。
+ */
+function handleICSDownload_(e) {
+  try {
+    const bookingIds = (e.parameter.bookingIds || '')
+      .split(',').map(id => id.trim()).filter(Boolean);
+    if (bookingIds.length === 0) {
+      return ContentService.createTextOutput('予約IDが指定されていません。')
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    const configs = getConfigs();
+    const sheet = getReservationSheet(configs);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const bookingIdCol  = headers.indexOf('予約ID');
+    const startTimeCol  = headers.indexOf('予約日時');
+    const endTimeCol    = headers.indexOf('終了日時');
+    const menuNameCol   = headers.indexOf('メニュー名');
+    const userNameCol   = headers.indexOf('顧客名');
+
+    const formatICSDate = (date) =>
+      Utilities.formatDate(date instanceof Date ? date : new Date(date), 'UTC', "yyyyMMdd'T'HHmmss'Z'");
+    const now = formatICSDate(new Date());
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//ReservationSystem//JP',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH'
+    ];
+
+    let found = 0;
+    bookingIds.forEach(bookingId => {
+      const row = data.find((r, i) => i > 0 && r[bookingIdCol] === bookingId);
+      if (!row) return;
+      found++;
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${bookingId}@reservation-system`,
+        `DTSTAMP:${now}`,
+        `DTSTART:${formatICSDate(row[startTimeCol])}`,
+        `DTEND:${formatICSDate(row[endTimeCol])}`,
+        `SUMMARY:【${row[userNameCol]}様】${row[menuNameCol]}`,
+        `DESCRIPTION:店舗: ${configs.shopName}\\nご予約ありがとうございます。`,
+        'END:VEVENT'
+      );
+    });
+
+    if (found === 0) {
+      return ContentService.createTextOutput('該当する予約が見つかりませんでした。')
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    lines.push('END:VCALENDAR');
+    return ContentService.createTextOutput(lines.join('\r\n'))
+      .setMimeType(ContentService.MimeType.ICAL);
+
+  } catch (err) {
+    Logger.log(`ICSダウンロードエラー: ${err.message}`);
+    return ContentService.createTextOutput(`エラー: ${err.message}`)
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
 }
 
 function doPost(e) {
