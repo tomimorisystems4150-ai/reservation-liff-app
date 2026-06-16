@@ -500,12 +500,12 @@ function updateBulkCounter() {
   counterEl.style.display = 'flex';
   if (count > 0) {
     counterEl.innerHTML =
-      `<span>選択中: <strong>${count}</strong> / ${maxBulk} 件</span>`
+      `<span>選択済み: <strong>${count}</strong> / ${maxBulk} 件　<small style="font-weight:normal;color:#5d9ec4;">（タップで確認）</small></span>`
       + `<span class="bulk-counter-arrow">${isOpen ? '▲' : '▼'}</span>`;
     counterEl.style.cursor = 'pointer';
     counterEl.setAttribute('aria-expanded', isOpen);
   } else {
-    counterEl.innerHTML = `<span>日時を選択してください（最大${maxBulk}件）</span>`;
+    counterEl.innerHTML = `<span style="font-weight:normal;color:#5d9ec4;">カレンダーから日時を選んでください（最大${maxBulk}件）</span>`;
     counterEl.style.cursor = 'default';
     counterEl.setAttribute('aria-expanded', 'false');
   }

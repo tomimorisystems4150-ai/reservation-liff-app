@@ -376,17 +376,22 @@ select.form-control {
   margin-bottom: 10px;
 }
 
+/* 担当者セレクタ下の余白 */
+#staff-selector-container {
+  margin-bottom: 16px;
+}
+
 .bulk-counter {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.88em;
+  font-size: 0.85em;
   font-weight: bold;
   color: #2471a3;
   background: #eaf4fd;
   border: 1.5px solid #aed6f1;
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   user-select: none;
   cursor: pointer;
   transition: background 0.15s;
@@ -406,10 +411,12 @@ select.form-control {
   background: #fae1de;
 }
 
+/* 矢印は「開閉ボタン」であることを示すシェブロン */
 .bulk-counter-arrow {
-  font-size: 0.8em;
+  font-size: 0.75em;
   margin-left: 8px;
-  color: #aaa;
+  color: #7fb3d3;
+  flex-shrink: 0;
 }
 
 .selected-dates-panel {

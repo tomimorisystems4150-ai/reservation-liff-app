@@ -477,14 +477,14 @@ function handleTextMessage(event, configs) {
         const formattedDateTime = `${datePart}(${dayChar}) ${timePart}`;
 
         replyText += `【予約${index + 1}】\n`;
-        replyText += `📆 ${formattedDateTime}\n`;
-        replyText += `✂️ メニュー: ${booking.menuName}\n`;
+        replyText += `日時: ${formattedDateTime}\n`;
+        replyText += `メニュー: ${booking.menuName}\n`;
         if (booking.staffName && booking.staffName !== '指名なし') {
-          replyText += `👤 担当: ${booking.staffName}\n`;
+          replyText += `担当: ${booking.staffName}\n`;
         }
         replyText += '\n';
       });
-      replyText += 'ご来店をお待ちしております😊';
+      replyText += 'ご来店をお待ちしております。';
     } else {
       replyText = '現在、今後のご予約はございません。\n\nご予約はLINEのメニューから承ります。';
     }
