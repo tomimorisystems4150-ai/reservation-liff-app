@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>予約システム設定</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; color: #333; font-size: 14px; }
+
+    /* Header */
+    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 1.1em; }
+    .header-link { color: rgba(255,255,255,0.75); font-size: 0.82em; text-decoration: none; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; }
+    .header-link:hover { background: rgba(255,255,255,0.1); }
+
+    /* Content */
+    .content { padding: 16px; max-width: 680px; margin: 0 auto; padding-bottom: 32px; }
+
+    /* Section card */
+    .section-card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); }
+    .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #eef0f3; }
+    .section-icon { font-size: 1.05em; }
+    .section-title { font-size: 0.95em; font-weight: bold; color: #2c3e50; }
+
+    /* Form elements */
+    .form-group { margin-bottom: 14px; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-label { display: block; font-size: 0.82em; font-weight: bold; color: #555; margin-bottom: 5px; }
+    .form-hint { font-size: 0.78em; color: #999; margin-top: 4px; line-height: 1.4; }
+    .form-control { width: 100%; padding: 9px 11px; border: 1.5px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; transition: border-color 0.15s; background: #fff; }
+    .form-control:focus { outline: none; border-color: #3498db; }
+    .form-control.input-error { border-color: #e74c3c !important; }
+
+    .time-row { display: flex; align-items: center; gap: 8px; }
+    .time-row input { flex: 1; }
+    .time-sep { color: #aaa; font-size: 0.9em; flex-shrink: 0; }
+
+    /* Toggle buttons (radio) */
+    .toggle-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .toggle-opt { flex: 1; min-width: 100px; }
+    .toggle-opt input[type="radio"] { display: none; }
+    .toggle-opt label {
+      display: block; padding: 9px 10px; border: 1.5px solid #d5d8dc; border-radius: 8px;
+      cursor: pointer; text-align: center; font-size: 0.85em; font-weight: bold; color: #aaa;
+      transition: all 0.15s; user-select: none;
+    }
+    .toggle-opt input:checked + label { border-color: #3498db; background: #eaf4fd; color: #2471a3; }
+
+    /* Info box */
+    .info-box { background: #eaf4fd; border-left: 3px solid #3498db; padding: 9px 12px; border-radius: 0 7px 7px 0; font-size: 0.8em; color: #2471a3; margin-top: 8px; line-height: 1.5; }
+    .info-box.warn { background: #fef9ec; border-color: #f39c12; color: #9a6110; }
+
+    /* Dynamic list items (menu / staff) */
+    .dynamic-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .dynamic-item { display: flex; align-items: flex-end; gap: 8px; background: #f8f9fa; border-radius: 8px; padding: 10px 12px; }
+    .item-field { flex: 1; }
+    .item-field .form-label { margin-bottom: 4px; }
+    .item-field input { width: 100%; padding: 8px 10px; border: 1.5px solid #d5d8dc; border-radius: 6px; font-size: 0.88em; }
+    .item-field input:focus { outline: none; border-color: #3498db; }
+    .item-field input.input-error { border-color: #e74c3c; }
+
+    /* Buttons */
+    .btn-remove { background: #fadbd8; color: #cb4335; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 0.78em; font-weight: bold; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px; }
+    .btn-remove:hover { background: #f5b7b1; }
+    .btn-add { display: block; width: 100%; padding: 9px; background: #fff; border: 1.5px dashed #3498db; color: #2471a3; border-radius: 8px; cursor: pointer; font-size: 0.85em; font-weight: bold; text-align: center; transition: background 0.15s; }
+    .btn-add:hover { background: #eaf4fd; }
+    .btn-save { display: block; width: 100%; padding: 14px; background: #27ae60; color: #fff; border: none; border-radius: 10px; cursor: pointer; font-size: 1em; font-weight: bold; margin-top: 6px; transition: opacity 0.18s; }
+    .btn-save:hover { opacity: 0.85; }
+    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 22px; border-radius: 8px; z-index: 2000; font-size: 0.88em; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+    .toast.show { opacity: 1; }
+    .toast.ok  { background: #27ae60; }
+    .toast.err { background: #e74c3c; }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <h1>⚙️ 予約システム設定</h1>
+  <a class="header-link" href="?page=kanri">📋 予約管理</a>
+</header>
+
+<div class="content">
+
+  <!-- 店舗基本情報 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">🏪</span>
+      <span class="section-title">店舗基本情報</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">店舗名 *</label>
+      <input type="text" id="shopName" class="form-control" placeholder="〇〇サロン">
+    </div>
+    <div class="form-group">
+      <label class="form-label">営業時間 *</label>
+      <div class="time-row">
+        <input type="time" id="businessHoursStart" class="form-control">
+        <span class="time-sep">〜</span>
+        <input type="time" id="businessHoursEnd" class="form-control">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">予約の時間単位（分） *</label>
+      <input type="number" id="bookingTimeUnit" class="form-control" placeholder="15">
+      <div class="form-hint">予約開始時刻の間隔です（例: 15・30・60）。15〜60の間で5の倍数を設定してください。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">予約可能な先行日数 *</label>
+      <input type="number" id="bookingLookaheadDays" class="form-control" min="1" max="365" placeholder="90">
+      <div class="form-hint">本日から何日先まで予約を受け付けるか。3ヶ月先なら「90」。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">同時予約の上限数 *</label>
+      <input type="number" id="maxConcurrentBookings" class="form-control" min="1" placeholder="1">
+      <div class="form-hint">同じ時間帯に受け付ける最大予約件数。ベッド数・席数が目安です。</div>
+    </div>
+  </div>
+
+  <!-- 一括予約設定 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">📅</span>
+      <span class="section-title">複数日程一括予約設定</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">1回で選択できる最大予約件数</label>
+      <input type="number" id="maxBulkBookings" class="form-control" min="1" max="52" placeholder="1">
+      <div class="form-hint">「1」で通常の単一予約。「2以上」で複数日時の一括予約が可能になります（上限52件）。</div>
+    </div>
+  </div>
+
+  <!-- 担当者機能 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">👤</span>
+      <span class="section-title">担当者機能</span>
+    </div>
+    <div class="form-group">
+      <div class="toggle-group">
+        <div class="toggle-opt">
+          <input type="radio" name="staffFeature" id="staffOff" value="false">
+          <label for="staffOff">利用しない</label>
+        </div>
+        <div class="toggle-opt">
+          <input type="radio" name="staffFeature" id="staffOn" value="true">
+          <label for="staffOn">利用する</label>
+        </div>
+      </div>
+    </div>
+    <div id="staffSettings" style="display:none;">
+      <div class="dynamic-list" id="staffList"></div>
+      <button type="button" class="btn-add" onclick="addStaff()">＋ 担当者を追加</button>
+    </div>
+  </div>
+
+  <!-- メニュー管理 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">📋</span>
+      <span class="section-title">提供メニュー</span>
+    </div>
+    <div class="dynamic-list" id="menuList"></div>
+    <button type="button" class="btn-add" onclick="addMenuItem()">＋ メニューを追加</button>
+  </div>
+
+  <!-- リマインド設定 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">🔔</span>
+      <span class="section-title">リマインド設定</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">リマインドモード</label>
+      <div class="toggle-group">
+        <div class="toggle-opt">
+          <input type="radio" name="reminderMode" id="reminderICS" value="ICS">
+          <label for="reminderICS">📅 ICSモード</label>
+        </div>
+        <div class="toggle-opt">
+          <input type="radio" name="reminderMode" id="reminderLINE" value="LINE">
+          <label for="reminderLINE">💬 LINEモード</label>
+        </div>
+      </div>
+      <div id="hint-ics" class="info-box" style="display:none;">
+        予約完了時にICSファイルを配布します。端末カレンダーに追加するだけで、1時間前に自動通知されます。
+      </div>
+      <div id="hint-line" class="info-box" style="display:none;">
+        GASが自動で <strong>前日18:00</strong> と <strong>当日60分前</strong> にLINE Push通知を送信します。トリガーの設定が必要です。
+      </div>
+    </div>
+  </div>
+
+  <!-- LINE連携設定 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">💬</span>
+      <span class="section-title">LINE連携設定</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">チャネルアクセストークン *</label>
+      <input type="text" id="lineChannelAccessToken" class="form-control" placeholder="LINE Developers › Messaging API">
+    </div>
+    <div class="form-group">
+      <label class="form-label">チャネルシークレット *</label>
+      <input type="text" id="lineChannelSecret" class="form-control">
+    </div>
+    <div class="form-group">
+      <label class="form-label">LIFFチャネルID *</label>
+      <input type="text" id="liffChannelId" class="form-control">
+    </div>
+  </div>
+
+  <button type="button" class="btn-save" id="saveButton" onclick="saveSettings()">設定を保存する</button>
+
+</div><!-- /content -->
+
+<div id="toast" class="toast"></div>
+
+<script>
+  const allConfigsAsJsonString = '<?= allConfigsAsJson ?>';
+  const configs = JSON.parse(allConfigsAsJsonString);
+  let serviceMenus = configs.serviceMenus || [];
+  let staffs       = configs.staffs       || [];
+
+  // ===== Populate =====
+  function populateForm() {
+    document.getElementById('shopName').value             = configs.shopName || '';
+    document.getElementById('businessHoursStart').value   = (configs.businessHours && configs.businessHours.start) || '10:00';
+    document.getElementById('businessHoursEnd').value     = (configs.businessHours && configs.businessHours.end)   || '19:00';
+    document.getElementById('bookingTimeUnit').value      = configs.bookingTimeUnit      || 30;
+    document.getElementById('bookingLookaheadDays').value = configs.bookingLookaheadDays || 90;
+    document.getElementById('maxConcurrentBookings').value= configs.maxConcurrentBookings|| 1;
+    document.getElementById('maxBulkBookings').value      = configs.maxBulkBookings      || 1;
+    document.getElementById('lineChannelAccessToken').value = configs.lineChannelAccessToken || '';
+    document.getElementById('lineChannelSecret').value    = configs.lineChannelSecret    || '';
+    document.getElementById('liffChannelId').value        = configs.liffChannelId        || '';
+
+    // Staff feature radio
+    const staffEnabled = configs.isStaffFeatureEnabled || false;
+    document.getElementById(staffEnabled ? 'staffOn' : 'staffOff').checked = true;
+    toggleStaffSettings(staffEnabled);
+    renderStaffList();
+    if (staffEnabled && staffs.length === 0) addStaff();
+
+    // Menus
+    renderMenuList();
+    if (serviceMenus.length === 0) addMenuItem();
+
+    // Reminder mode
+    const mode = configs.reminderMode || 'ICS';
+    const modeEl = document.getElementById(mode === 'LINE' ? 'reminderLINE' : 'reminderICS');
+    if (modeEl) modeEl.checked = true;
+    updateReminderHint(mode);
+  }
+
+  // ===== Sync UI → data arrays =====
+  function syncUiToData() {
+    serviceMenus = [];
+    document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
+      const name     = item.querySelector('.menu-name').value.trim();
+      const duration = parseInt(item.querySelector('.menu-duration').value, 10) || 0;
+      serviceMenus.push({ name, duration });
+    });
+    staffs = [];
+    document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
+      const name  = item.querySelector('.staff-name').value.trim();
+      const email = item.querySelector('.staff-email').value.trim();
+      staffs.push({ name, email });
+    });
+  }
+
+  // ===== Staff =====
+  function toggleStaffSettings(show) {
+    document.getElementById('staffSettings').style.display = show ? 'block' : 'none';
+  }
+
+  function renderStaffList() {
+    const el = document.getElementById('staffList');
+    el.innerHTML = '';
+    staffs.forEach((s, i) => el.appendChild(createStaffItem(s.name, s.email, i)));
+  }
+
+  function createStaffItem(name, email, index) {
+    const div = document.createElement('div');
+    div.className = 'dynamic-item';
+    div.dataset.index = index;
+    div.innerHTML = `
+      <div class="item-field" style="flex:1">
+        <label class="form-label">担当者名</label>
+        <input type="text" class="staff-name" value="${name}">
+      </div>
+      <div class="item-field" style="flex:2">
+        <label class="form-label">Gmailアドレス</label>
+        <input type="email" class="staff-email" value="${email}">
+      </div>
+      <button type="button" class="btn-remove" onclick="removeStaff(this)">削除</button>`;
+    return div;
+  }
+
+  function addStaff() {
+    syncUiToData(); staffs.push({ name: '', email: '' }); renderStaffList();
+  }
+  function removeStaff(btn) {
+    syncUiToData();
+    staffs.splice(parseInt(btn.parentElement.dataset.index, 10), 1);
+    renderStaffList();
+  }
+
+  // ===== Menu =====
+  function renderMenuList() {
+    const el = document.getElementById('menuList');
+    el.innerHTML = '';
+    serviceMenus.forEach((m, i) => el.appendChild(createMenuItem(m.name, m.duration, i)));
+  }
+
+  function createMenuItem(name, duration, index) {
+    const div = document.createElement('div');
+    div.className = 'dynamic-item';
+    div.dataset.index = index;
+    div.innerHTML = `
+      <div class="item-field" style="flex:2">
+        <label class="form-label">メニュー名</label>
+        <input type="text" class="menu-name" value="${name}">
+      </div>
+      <div class="item-field" style="flex:1">
+        <label class="form-label">所要時間（分）</label>
+        <input type="number" class="menu-duration" value="${duration > 0 ? duration : ''}" min="1">
+      </div>
+      <button type="button" class="btn-remove" onclick="removeMenuItem(this)">削除</button>`;
+    return div;
+  }
+
+  function addMenuItem() {
+    syncUiToData(); serviceMenus.push({ name: '', duration: 0 }); renderMenuList();
+  }
+  function removeMenuItem(btn) {
+    syncUiToData();
+    serviceMenus.splice(parseInt(btn.parentElement.dataset.index, 10), 1);
+    renderMenuList();
+  }
+
+  // ===== Reminder hint =====
+  function updateReminderHint(mode) {
+    document.getElementById('hint-ics').style.display  = mode === 'ICS'  ? 'block' : 'none';
+    document.getElementById('hint-line').style.display = mode === 'LINE' ? 'block' : 'none';
+  }
+
+  // ===== Validate =====
+  function clearErrors() {
+    document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
+  }
+
+  function markError(el) { el.classList.add('input-error'); }
+
+  function validateForm() {
+    clearErrors();
+    let ok = true;
+
+    const required = ['shopName','businessHoursStart','businessHoursEnd','bookingTimeUnit',
+                      'bookingLookaheadDays','maxConcurrentBookings',
+                      'lineChannelAccessToken','lineChannelSecret','liffChannelId'];
+    required.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el.value.trim()) { markError(el); ok = false; }
+    });
+
+    const maxEl = document.getElementById('maxConcurrentBookings');
+    if (parseInt(maxEl.value, 10) < 1) { markError(maxEl); ok = false; }
+
+    const startEl = document.getElementById('businessHoursStart');
+    const endEl   = document.getElementById('businessHoursEnd');
+    if (startEl.value && endEl.value && startEl.value >= endEl.value) {
+      markError(startEl); markError(endEl); ok = false;
+    }
+
+    const unitEl  = document.getElementById('bookingTimeUnit');
+    const unitVal = parseInt(unitEl.value, 10);
+    if (isNaN(unitVal) || unitVal < 15 || unitVal > 60 || unitVal % 5 !== 0) { markError(unitEl); ok = false; }
+
+    const bulkEl  = document.getElementById('maxBulkBookings');
+    const bulkVal = parseInt(bulkEl.value, 10);
+    if (isNaN(bulkVal) || bulkVal < 1 || bulkVal > 52) { markError(bulkEl); ok = false; }
+
+    if (document.getElementById('staffOn').checked) {
+      const names = [], emails = [];
+      document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
+        const nEl = item.querySelector('.staff-name');
+        const eEl = item.querySelector('.staff-email');
+        const n   = nEl.value.trim();
+        const e   = eEl.value.trim().toLowerCase();
+        const validGmail = e.endsWith('@gmail.com') && e.length > '@gmail.com'.length;
+        if (!n)          { markError(nEl); ok = false; }
+        if (!validGmail) { markError(eEl); ok = false; }
+        if (n && validGmail) {
+          if (names.includes(n))   { markError(nEl); ok = false; }
+          if (emails.includes(e))  { markError(eEl); ok = false; }
+          names.push(n); emails.push(e);
+        }
+      });
+      if (names.length === 0) ok = false;
+    }
+
+    const menuNames = [];
+    let hasMenu = false;
+    document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
+      const nEl = item.querySelector('.menu-name');
+      const dEl = item.querySelector('.menu-duration');
+      const n   = nEl.value.trim();
+      const d   = parseInt(dEl.value, 10);
+      const hasN = n !== '', hasD = d > 0;
+      if (hasN !== hasD) {
+        if (!hasN) markError(nEl);
+        if (!hasD) markError(dEl);
+        ok = false;
+      }
+      if (hasN && hasD) {
+        if (menuNames.includes(n)) { markError(nEl); ok = false; }
+        menuNames.push(n);
+        hasMenu = true;
+      }
+    });
+    if (!hasMenu) ok = false;
+
+    return ok;
+  }
+
+  // ===== Save =====
+  function saveSettings() {
+    syncUiToData();
+    if (!validateForm()) { toast('入力内容を確認してください。', 'err'); return; }
+
+    document.getElementById('saveButton').disabled = true;
+    toast('保存中...', '');
+
+    const isStaffEnabled = document.getElementById('staffOn').checked;
+    const reminderMode   = document.querySelector('input[name="reminderMode"]:checked')?.value || 'ICS';
+
+    const configsToSave = {
+      shopName:              document.getElementById('shopName').value.trim(),
+      businessHours: {
+        start: document.getElementById('businessHoursStart').value,
+        end:   document.getElementById('businessHoursEnd').value
+      },
+      bookingTimeUnit:       parseInt(document.getElementById('bookingTimeUnit').value, 10),
+      bookingLookaheadDays:  parseInt(document.getElementById('bookingLookaheadDays').value, 10),
+      maxConcurrentBookings: parseInt(document.getElementById('maxConcurrentBookings').value, 10),
+      maxBulkBookings:       parseInt(document.getElementById('maxBulkBookings').value, 10),
+      isStaffFeatureEnabled: isStaffEnabled,
+      staffs:                isStaffEnabled ? staffs.filter(s => s.name && s.email) : [],
+      serviceMenus:          serviceMenus.filter(m => m.name && m.duration > 0),
+      lineChannelAccessToken:document.getElementById('lineChannelAccessToken').value.trim(),
+      lineChannelSecret:     document.getElementById('lineChannelSecret').value.trim(),
+      liffChannelId:         document.getElementById('liffChannelId').value.trim(),
+      reminderMode:          reminderMode
+    };
+
+    google.script.run
+      .withSuccessHandler(result => {
+        document.getElementById('saveButton').disabled = false;
+        if (result) toast('設定を保存しました ✓', 'ok');
+        else        toast('保存に失敗しました。', 'err');
+      })
+      .withFailureHandler(err => {
+        document.getElementById('saveButton').disabled = false;
+        toast('エラー: ' + err.message, 'err');
+      })
+      .saveConfigs(configsToSave);
+  }
+
+  // ===== Toast =====
+  function toast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast ' + (type || '') + ' show';
+    if (type !== '') setTimeout(() => el.classList.remove('show'), 3500);
+  }
+
+  // ===== Init =====
+  window.onload = function() {
+    populateForm();
+
+    document.querySelectorAll('input[name="staffFeature"]').forEach(r => {
+      r.addEventListener('change', function() {
+        const on = this.value === 'true';
+        toggleStaffSettings(on);
+        if (on && staffs.length === 0) addStaff();
+      });
+    });
+
+    document.querySelectorAll('input[name="reminderMode"]').forEach(r => {
+      r.addEventListener('change', function() { updateReminderHint(this.value); });
+    });
+  };
+</script>
+</body>
+</html>
