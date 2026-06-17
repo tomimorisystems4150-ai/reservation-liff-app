@@ -65,7 +65,9 @@ function doGet(e) {
   
   authorizedUsers = [...new Set(authorizedUsers)];
 
-  if (!currentUser || !authorizedUsers.includes(currentUser.toLowerCase())) {
+  // adminEmailが未設定の場合は初回セットアップとみなしアクセスを許可する
+  // （オンボーディング直後にadminEmailが書き込まれる前のアクセスに対応）
+  if (authorizedUsers.length > 0 && (!currentUser || !authorizedUsers.includes(currentUser.toLowerCase()))) {
     Logger.log(`アクセス拒否: ${currentUser} (許可リスト: ${authorizedUsers.join(', ')})`);
     return HtmlService.createTemplateFromFile('unauthorized').evaluate().setTitle('アクセスエラー');
   }
@@ -185,6 +187,13 @@ function doPost(e) {
             isRegistered: isRegistered,
             maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10)
           };
+          break;
+        }
+
+        case 'runTests': {
+          // 自動テスト実行（CI/CD連携用）
+          // テスト結果をJSONで返しつつ「テスト結果」シートに証跡を保存する
+          response = runAllGASTests();
           break;
         }
 
