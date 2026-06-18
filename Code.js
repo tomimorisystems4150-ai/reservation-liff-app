@@ -305,7 +305,8 @@ function saveConfigs(configs) {
     }
     authorizedUsers = [...new Set(authorizedUsers)];
 
-    if (!currentUser || !authorizedUsers.includes(currentUser.toLowerCase())) {
+    // adminEmailが未設定の場合は初回セットアップとみなし保存を許可する
+    if (authorizedUsers.length > 0 && (!currentUser || !authorizedUsers.includes(currentUser.toLowerCase()))) {
       Logger.log(`保存拒否: ${currentUser} は許可されたユーザーではありません。(許可リスト: ${authorizedUsers.join(', ')})`);
       return false;
     }
