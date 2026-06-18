@@ -5,83 +5,169 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>予約システム設定</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --sage:       #6B9E78;
+      --sage-dark:  #4E7A5A;
+      --sage-light: #EBF4ED;
+      --terra:      #C47A5A;
+      --bg:         #F6F4F1;
+      --surface:    #FFFFFF;
+      --border:     #E3DDD8;
+      --text:       #2A2A2A;
+      --text-sub:   #747474;
+      --radius-card:14px;
+      --radius-inp: 10px;
+      --shadow:     0 2px 14px rgba(0,0,0,0.06);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; color: #333; font-size: 14px; }
+    body { font-family: 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
 
     /* Header */
-    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
-    .header h1 { font-size: 1.1em; }
-    .header-link { color: rgba(255,255,255,0.75); font-size: 0.82em; text-decoration: none; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; }
-    .header-link:hover { background: rgba(255,255,255,0.1); }
+    .header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--sage-light);
+      padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+    }
+    .header h1 { font-size: 1.05em; font-weight: 700; color: var(--sage-dark); letter-spacing: 0.02em; }
+    .header-link {
+      color: var(--sage-dark); font-size: 0.82em; text-decoration: none;
+      padding: 6px 14px; border: 1.5px solid var(--sage);
+      border-radius: 20px; font-weight: 500; transition: all 0.18s;
+    }
+    .header-link:hover { background: var(--sage); color: #fff; }
 
     /* Content */
-    .content { padding: 16px; max-width: 680px; margin: 0 auto; padding-bottom: 32px; }
+    .content { padding: 18px 16px; max-width: 680px; margin: 0 auto; padding-bottom: 40px; }
 
     /* Section card */
-    .section-card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); }
-    .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #eef0f3; }
-    .section-icon { font-size: 1.05em; }
-    .section-title { font-size: 0.95em; font-weight: bold; color: #2c3e50; }
+    .section-card {
+      background: var(--surface); border-radius: var(--radius-card);
+      padding: 20px; margin-bottom: 14px;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+    }
+    .section-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px; padding-bottom: 12px;
+      border-bottom: 1.5px solid var(--sage-light);
+    }
+    .section-icon { font-size: 1.1em; }
+    .section-title { font-size: 0.95em; font-weight: 700; color: var(--sage-dark); }
 
     /* Form elements */
-    .form-group { margin-bottom: 14px; }
+    .form-group { margin-bottom: 16px; }
     .form-group:last-child { margin-bottom: 0; }
-    .form-label { display: block; font-size: 0.82em; font-weight: bold; color: #555; margin-bottom: 5px; }
-    .form-hint { font-size: 0.78em; color: #999; margin-top: 4px; line-height: 1.4; }
-    .form-control { width: 100%; padding: 9px 11px; border: 1.5px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; transition: border-color 0.15s; background: #fff; }
-    .form-control:focus { outline: none; border-color: #3498db; }
-    .form-control.input-error { border-color: #e74c3c !important; }
+    .form-label { display: block; font-size: 0.8em; font-weight: 700; color: var(--text-sub); margin-bottom: 6px; letter-spacing: 0.03em; }
+    .form-hint { font-size: 0.76em; color: #a0a0a0; margin-top: 5px; line-height: 1.5; }
+    .form-control {
+      width: 100%; padding: 10px 13px;
+      border: 1.5px solid var(--border); border-radius: var(--radius-inp);
+      font-size: 0.92em; font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s; background: var(--surface);
+      color: var(--text);
+    }
+    .form-control:focus { outline: none; border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107,158,120,0.15); }
+    .form-control.input-error { border-color: #C05252 !important; box-shadow: 0 0 0 3px rgba(192,82,82,0.12) !important; }
 
-    .time-row { display: flex; align-items: center; gap: 8px; }
+    .time-row { display: flex; align-items: center; gap: 10px; }
     .time-row input { flex: 1; }
-    .time-sep { color: #aaa; font-size: 0.9em; flex-shrink: 0; }
+    .time-sep { color: var(--text-sub); font-size: 0.9em; flex-shrink: 0; }
 
     /* Toggle buttons (radio) */
     .toggle-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .toggle-opt { flex: 1; min-width: 100px; }
     .toggle-opt input[type="radio"] { display: none; }
     .toggle-opt label {
-      display: block; padding: 9px 10px; border: 1.5px solid #d5d8dc; border-radius: 8px;
-      cursor: pointer; text-align: center; font-size: 0.85em; font-weight: bold; color: #aaa;
-      transition: all 0.15s; user-select: none;
+      display: block; padding: 10px 10px;
+      border: 1.5px solid var(--border); border-radius: 10px;
+      cursor: pointer; text-align: center; font-size: 0.84em; font-weight: 500;
+      color: var(--text-sub); transition: all 0.18s; user-select: none;
+      background: var(--surface);
     }
-    .toggle-opt input:checked + label { border-color: #3498db; background: #eaf4fd; color: #2471a3; }
+    .toggle-opt label:hover { border-color: var(--sage); color: var(--sage-dark); }
+    .toggle-opt input:checked + label {
+      border-color: var(--sage); background: var(--sage-light);
+      color: var(--sage-dark); font-weight: 700;
+    }
 
     /* Info box */
-    .info-box { background: #eaf4fd; border-left: 3px solid #3498db; padding: 9px 12px; border-radius: 0 7px 7px 0; font-size: 0.8em; color: #2471a3; margin-top: 8px; line-height: 1.5; }
-    .info-box.warn { background: #fef9ec; border-color: #f39c12; color: #9a6110; }
+    .info-box {
+      background: var(--sage-light); border-left: 3px solid var(--sage);
+      padding: 10px 13px; border-radius: 0 8px 8px 0;
+      font-size: 0.8em; color: var(--sage-dark); margin-top: 9px; line-height: 1.55;
+    }
+    .info-box.warn { background: #FEF7EE; border-color: #D4923A; color: #8C5E1A; }
 
     /* Dynamic list items (menu / staff) */
     .dynamic-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .dynamic-item { display: flex; align-items: flex-end; gap: 8px; background: #f8f9fa; border-radius: 8px; padding: 10px 12px; }
+    .dynamic-item {
+      display: flex; align-items: flex-end; gap: 8px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 13px;
+    }
     .item-field { flex: 1; }
     .item-field .form-label { margin-bottom: 4px; }
-    .item-field input { width: 100%; padding: 8px 10px; border: 1.5px solid #d5d8dc; border-radius: 6px; font-size: 0.88em; }
-    .item-field input:focus { outline: none; border-color: #3498db; }
-    .item-field input.input-error { border-color: #e74c3c; }
+    .item-field input {
+      width: 100%; padding: 8px 11px;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 0.88em; font-family: inherit; background: var(--surface);
+    }
+    .item-field input:focus { outline: none; border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107,158,120,0.12); }
+    .item-field input.input-error { border-color: #C05252; }
 
     /* Buttons */
-    .btn-remove { background: #fadbd8; color: #cb4335; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 0.78em; font-weight: bold; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px; }
-    .btn-remove:hover { background: #f5b7b1; }
-    .btn-add { display: block; width: 100%; padding: 9px; background: #fff; border: 1.5px dashed #3498db; color: #2471a3; border-radius: 8px; cursor: pointer; font-size: 0.85em; font-weight: bold; text-align: center; transition: background 0.15s; }
-    .btn-add:hover { background: #eaf4fd; }
-    .btn-save { display: block; width: 100%; padding: 14px; background: #27ae60; color: #fff; border: none; border-radius: 10px; cursor: pointer; font-size: 1em; font-weight: bold; margin-top: 6px; transition: opacity 0.18s; }
-    .btn-save:hover { opacity: 0.85; }
-    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-remove {
+      background: #FDF0EE; color: #B04040; border: 1px solid #E8C0B8;
+      border-radius: 8px; padding: 7px 11px; cursor: pointer;
+      font-size: 0.78em; font-weight: 700; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px;
+      transition: background 0.15s;
+    }
+    .btn-remove:hover { background: #F5D5D0; }
+    .btn-add {
+      display: block; width: 100%; padding: 10px;
+      background: var(--surface); border: 1.5px dashed var(--sage);
+      color: var(--sage-dark); border-radius: 10px; cursor: pointer;
+      font-size: 0.85em; font-weight: 700; text-align: center;
+      font-family: inherit; transition: background 0.15s;
+    }
+    .btn-add:hover { background: var(--sage-light); }
+    .btn-save {
+      display: block; width: 100%; padding: 15px;
+      background: linear-gradient(135deg, var(--sage) 0%, var(--sage-dark) 100%);
+      color: #fff; border: none; border-radius: 12px;
+      cursor: pointer; font-size: 1em; font-weight: 700;
+      font-family: inherit; margin-top: 8px;
+      letter-spacing: 0.04em; transition: opacity 0.18s, transform 0.1s;
+      box-shadow: 0 4px 14px rgba(78,122,90,0.35);
+    }
+    .btn-save:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-save:active { transform: translateY(0); }
+    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
     /* Toast */
-    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 22px; border-radius: 8px; z-index: 2000; font-size: 0.88em; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: var(--text); color: #fff;
+      padding: 11px 24px; border-radius: 24px; z-index: 2000;
+      font-size: 0.87em; font-weight: 500; opacity: 0;
+      transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
     .toast.show { opacity: 1; }
-    .toast.ok  { background: #27ae60; }
-    .toast.err { background: #e74c3c; }
+    .toast.ok  { background: var(--sage-dark); }
+    .toast.err { background: #B84040; }
   </style>
 </head>
 <body>
 
 <header class="header">
-  <h1>⚙️ 予約システム設定</h1>
-  <a class="header-link" href="?page=kanri">📋 予約管理</a>
+  <h1>予約システム設定</h1>
+  <a class="header-link" href="?page=kanri">予約管理へ</a>
 </header>
 
 <div class="content">
@@ -130,7 +216,7 @@
     <div class="form-group">
       <label class="form-label">1回で選択できる最大予約件数</label>
       <input type="number" id="maxBulkBookings" class="form-control" min="1" max="52" placeholder="1">
-      <div class="form-hint">「1」で通常の単一予約。「2以上」で複数日時の一括予約が可能になります（上限52件）。</div>
+      <div class="form-hint">「<strong>1</strong>」に設定すると一括予約機能が<strong>無効</strong>になり、通常の単一予約のみになります。「2以上」で複数日時の一括予約が有効になります（上限52件）。</div>
     </div>
   </div>
 
