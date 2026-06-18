@@ -271,6 +271,7 @@ async function handleCallback(request, env) {
 // ============================================================
 function handleComplete(url) {
   const deployUrl = url.searchParams.get('deployUrl') || '';
+  const gasUrl    = url.searchParams.get('gasUrl')    || '';
 
   const html = buildPage('セットアップ完了！', `
     <div class="success-banner">
@@ -286,25 +287,32 @@ function handleComplete(url) {
       <p class="url-note">⚠️ このURLは必ずメモ・ブックマークしてください</p>
     </div>
 
+    <div class="url-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
+      <div class="url-label">⚙️ GASエディタURL（手順1で使用）</div>
+      <a class="url-value url-link" id="gasUrl" href="${escapeHtml(gasUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(gasUrl)}</a>
+      <button class="copy-btn" onclick="copyText('gasUrl', this)">コピー</button>
+    </div>
+
     <div class="next-steps">
       <h2>📋 残りの設定手順</h2>
       <ol>
         <li>
-          <strong>GASの初回認証（システムURLを開く）</strong><br>
-          上記システムURLをクリック → Googleの認証画面で「許可」を押す →
-          設定画面（予約システム設定）が表示されれば完了
+          <strong>【必須】GASの権限付与（GASエディタで実行）</strong><br>
+          上記「GASエディタURL」を開く → 画面上部のドロップダウンで <code>onOpen</code> を選択 →
+          <strong>▶ 実行</strong> をクリック → 「権限を確認」→「詳細」→「移動」→「許可」<br>
+          <em style="color:#b45309;">※ この手順を完了するまでシステムURLにアクセスできません</em>
         </li>
         <li>
           <strong>設定画面から初期設定を入力</strong><br>
-          店舗名・営業時間・メニュー・担当者・LINEトークン等を設定画面に入力して保存
+          システムURLをクリック → 設定画面が表示されたら、店舗名・営業時間・メニュー・LINEトークン等を入力して保存
         </li>
         <li>
           <strong>LINE Developers → Messaging API チャンネル</strong><br>
-          「Webhook URL」に上記システムURLを設定し「検証」をクリック
+          「Webhook URL」にシステムURLを設定し「検証」をクリック
         </li>
         <li>
           <strong>LINE Developers → LIFFアプリ</strong><br>
-          「エンドポイントURL」に上記システムURLを設定
+          「エンドポイントURL」にシステムURLを設定
         </li>
       </ol>
     </div>
