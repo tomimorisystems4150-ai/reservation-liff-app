@@ -49,6 +49,7 @@ export default {
         case '/complete':           return handleComplete(url);
         case '/admin':              return handleAdmin(request, env);
         case '/admin/push-update':  return handlePushUpdate(request, env);
+        case '/admin/kv-cleanup':   return handleKvCleanup(request, env);
         case '/privacy':            return handlePrivacy();
         default:           return new Response('Not Found', { status: 404 });
       }
@@ -299,7 +300,9 @@ function handleComplete(url) {
           設定画面を開く
         </a>
         <p style="margin:16px 0 0; color:#555; font-size:14px; line-height:1.6;">
-          Googleの権限確認ダイアログが表示されたら <strong>「許可」</strong> をクリックしてください。
+          1. 開いた画面で <strong>「権限を確認する」</strong> ボタンをクリック<br>
+          2. Google の権限確認画面で <strong>「許可」</strong> をクリック<br>
+          3. 元の画面を更新すると設定画面が表示されます
         </p>
       </div>
 
@@ -679,6 +682,9 @@ async function handlePushUpdate(request, env) {
   const list    = await env.ONBOARDING_KV.list({ prefix: 'store:' });
   const results = [];
 
+  // GitHub ファイルはループ外で1回だけ取得（subrequest 節約）
+  const rawFiles = await fetchRawFiles(env);
+
   for (const kvKey of list.keys) {
     const raw    = await env.ONBOARDING_KV.get(kvKey.name);
     const record = raw ? JSON.parse(raw) : null;
@@ -706,8 +712,8 @@ async function handlePushUpdate(request, env) {
         await env.ONBOARDING_KV.put(kvKey.name, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
       }
 
-      // 最新コードを GitHub から取得
-      const files = await fetchAndPrepareFiles(ssId, env);
+      // 取得済みファイルに顧客のスプレッドシートIDを埋め込む（外部リクエストなし）
+      const files = substituteSpreadsheetId(rawFiles, ssId);
 
       // GAS プロジェクトにコンテンツをプッシュ
       const content = await callApi(`${SCRIPT_API}/projects/${scriptId}/content`, 'PUT', auth, { files });
@@ -780,6 +786,113 @@ async function handlePushUpdate(request, env) {
 }
 
 // ============================================================
+// GET /admin/kv-cleanup?key=<ADMIN_SECRET_KEY>
+// 壊れた KV エントリ（refreshToken 未保存 or GASプロジェクト削除済み）を削除する。
+// ============================================================
+async function handleKvCleanup(request, env) {
+  const url    = new URL(request.url);
+  const secret = url.searchParams.get('key');
+  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const list    = await env.ONBOARDING_KV.list({ prefix: 'store:' });
+  const deleted = [];
+  const kept    = [];
+
+  for (const kvKey of list.keys) {
+    const raw    = await env.ONBOARDING_KV.get(kvKey.name);
+    const record = raw ? JSON.parse(raw) : null;
+
+    if (!record) {
+      await env.ONBOARDING_KV.delete(kvKey.name);
+      deleted.push({ key: kvKey.name, ssId: '(不明)', reason: 'レコードなし' });
+      continue;
+    }
+
+    const { ssId, scriptId, deploymentId, refreshToken } = record;
+
+    // refreshToken / scriptId / deploymentId が揃っていないエントリは再オンボーディング不可 → 削除
+    if (!refreshToken || !scriptId || !deploymentId) {
+      await env.ONBOARDING_KV.delete(kvKey.name);
+      deleted.push({ ssId, key: kvKey.name, reason: 'refreshToken/scriptId/deploymentId 未保存' });
+      continue;
+    }
+
+    // GASプロジェクトが実際に存在するか確認
+    try {
+      const tokens = await refreshAccessToken(refreshToken, env);
+      if (!tokens.access_token) {
+        await env.ONBOARDING_KV.delete(kvKey.name);
+        deleted.push({ ssId, key: kvKey.name, reason: 'トークンリフレッシュ失敗（アクセス権が失効した可能性）' });
+        continue;
+      }
+      // refresh_token がローテーションされた場合はKVを更新しておく
+      if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+        record.refreshToken = tokens.refresh_token;
+        await env.ONBOARDING_KV.put(kvKey.name, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
+      }
+      const projRes = await fetch(`${SCRIPT_API}/projects/${scriptId}`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      if (projRes.status === 404) {
+        await env.ONBOARDING_KV.delete(kvKey.name);
+        deleted.push({ ssId, key: kvKey.name, reason: 'GASプロジェクトが存在しない (404)' });
+        continue;
+      }
+      kept.push({ ssId, key: kvKey.name });
+    } catch (err) {
+      // 確認中にエラーが出たエントリは念のため残す
+      kept.push({ ssId, key: kvKey.name, note: `確認エラー（保持）: ${err.message}` });
+    }
+  }
+
+  const html = buildPage('KV クリーンアップ結果', `
+    <h2 style="margin-bottom:20px;">🧹 KV クリーンアップ結果</h2>
+    <p style="margin-bottom:16px; color:#555;">
+      削除: <strong style="color:#d32f2f;">${deleted.length}</strong> 件 ／
+      保持: <strong style="color:#06c755;">${kept.length}</strong> 件
+    </p>
+
+    <h3 style="margin:24px 0 12px; font-size:15px;">✅ 保持（有効な顧客）</h3>
+    <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:24px;">
+      <thead>
+        <tr style="background:#f0f4f8;">
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">備考</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${kept.length === 0 ? '<tr><td colspan="2" style="padding:8px; color:#999;">なし</td></tr>' :
+          kept.map(r => `<tr>
+            <td style="padding:8px; border-bottom:1px solid #eee; font-family:monospace; font-size:12px;">${escapeHtml(r.ssId)}</td>
+            <td style="padding:8px; border-bottom:1px solid #eee; color:#666;">${escapeHtml(r.note || '正常')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <h3 style="margin:0 0 12px; font-size:15px;">🗑️ 削除済み</h3>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#f0f4f8;">
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">削除理由</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${deleted.length === 0 ? '<tr><td colspan="2" style="padding:8px; color:#999;">なし</td></tr>' :
+          deleted.map(r => `<tr>
+            <td style="padding:8px; border-bottom:1px solid #eee; font-family:monospace; font-size:12px;">${escapeHtml(r.ssId || r.key)}</td>
+            <td style="padding:8px; border-bottom:1px solid #eee; color:#666;">${escapeHtml(r.reason)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:20px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
+  `);
+  return htmlResponse(html);
+}
+
+// ============================================================
 // id_token（JWT）のペイロードからメールアドレスを取得（最優先）
 // ============================================================
 function getEmailFromIdToken(idToken) {
@@ -813,28 +926,41 @@ async function getUserEmail(accessToken) {
   }
 }
 
-// GitHubからスクリプトファイルを取得し、スプレッドシートIDを埋め込む
+// GitHubからスクリプトファイルを取得する（プレースホルダーはそのまま）
+// push-update では全顧客共通なのでループ外で1回だけ呼ぶ。
 // ============================================================
-async function fetchAndPrepareFiles(spreadsheetId, env) {
-  const repo   = env.GITHUB_REPO;   // e.g. "tomimorisystems4150-ai/reservation-liff-app"
+async function fetchRawFiles(env) {
+  const repo   = env.GITHUB_REPO;
   const branch = env.GITHUB_BRANCH || 'main';
   const base   = `https://raw.githubusercontent.com/${repo}/${branch}`;
 
-  const files = await Promise.all(
+  return Promise.all(
     SCRIPT_FILES_META.map(async ({ name, type, file }) => {
       const res = await fetch(`${base}/${file}`);
       if (!res.ok) throw new Error(`GitHubからのファイル取得失敗: ${file} (${res.status})`);
-      let source = await res.text();
-
-      // Code.js のプレースホルダーを実際のスプレッドシートIDで置換
-      if (file === 'Code.js') {
-        source = source.replace(/PLACEHOLDER_SPREADSHEET_ID/g, spreadsheetId);
-      }
-
-      return { name, type, source };
+      const source = await res.text();
+      return { name, type, file, source };
     })
   );
-  return files;
+}
+
+// 取得済みファイル配列に顧客固有のスプレッドシートIDを埋め込む（外部リクエストなし）
+// ============================================================
+function substituteSpreadsheetId(rawFiles, spreadsheetId) {
+  return rawFiles.map(({ name, type, file, source }) => ({
+    name,
+    type,
+    source: file === 'Code.js'
+      ? source.replace(/PLACEHOLDER_SPREADSHEET_ID/g, spreadsheetId)
+      : source,
+  }));
+}
+
+// オンボーディング時など単一顧客向けにまとめて呼ぶラッパー
+// ============================================================
+async function fetchAndPrepareFiles(spreadsheetId, env) {
+  const rawFiles = await fetchRawFiles(env);
+  return substituteSpreadsheetId(rawFiles, spreadsheetId);
 }
 
 // ============================================================

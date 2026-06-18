@@ -68,37 +68,43 @@ function doGet(e) {
     configs = getConfigs();
   } catch (err) {
     // GASランタイムの権限が未承認の場合。
-    // meta refresh だと GAS のサンドボックス iframe 内でのナビゲーションになり
-    // X-Frame-Options エラーが発生するため、window.top.location.replace() を使う。
-    // これにより TOP フレームごとナビゲートし iframe コンテキストを抜け出せる。
-    const gasUrl = ScriptApp.getService().getUrl();
-    const signInUrl = 'https://accounts.google.com/ServiceLogin?continue='
-      + encodeURIComponent(gasUrl);
+    // HtmlService はサンドボックス iframe 内で動作するため、
+    // 自動リダイレクト（meta refresh / location.replace）はブラウザにブロックされる。
+    // ScriptApp.getAuthorizationInfo() で GAS 専用の権限確認 URL を取得し、
+    // ユーザー操作（新しいタブで開く）のみで遷移させる。
+    let authUrl;
+    try {
+      authUrl = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL).getAuthorizationUrl();
+    } catch (authErr) {
+      authUrl = ScriptApp.getService().getUrl();
+    }
     return HtmlService.createHtmlOutput(
       `<!DOCTYPE html><html>
       <head>
         <meta charset="utf-8">
-        <title>権限確認</title>
+        <title>初回セットアップ</title>
         <style>
           body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
                min-height:100vh;margin:0;background:#f5f5f5;}
-          .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:420px;
+          .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:440px;
                 text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);}
-          .btn{display:inline-block;background:#4285f4;color:#fff;padding:12px 28px;
-               border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;font-size:15px;}
+          h2{color:#333;margin:0 0 12px;font-size:20px;}
+          p{color:#666;line-height:1.7;margin:0 0 8px;font-size:14px;}
+          .btn{display:inline-block;background:#4285f4;color:#fff;padding:14px 32px;
+               border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;font-size:16px;}
+          .note{font-size:12px;color:#999;margin-top:16px;}
         </style>
       </head>
       <body>
         <div class="card">
-          <p>Googleの権限確認ページへ移動しています...</p>
-          <a class="btn" href="${signInUrl}" target="_top">移動しない場合はここをクリック</a>
+          <h2>🔐 初回セットアップ</h2>
+          <p>システムを利用開始するために、Google の権限確認が必要です。</p>
+          <p>下のボタンをクリックし、表示された画面で <strong>「許可」</strong> を選んでください。</p>
+          <a class="btn" href="${authUrl}" target="_blank" rel="noopener noreferrer">権限を確認する</a>
+          <p class="note">権限確認が完了したら、このページを更新してください。</p>
         </div>
-        <script>
-          // TOP フレームごとナビゲートすることで X-Frame-Options を回避する
-          window.top.location.replace(${JSON.stringify(signInUrl)});
-        </script>
       </body></html>`
-    ).setTitle('権限確認');
+    ).setTitle('初回セットアップ');
   }
   const currentUser = Session.getActiveUser().getEmail();
   
