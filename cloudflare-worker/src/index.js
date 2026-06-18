@@ -277,59 +277,60 @@ function handleComplete(url) {
     <div class="success-banner">
       <div class="success-icon">✅</div>
       <h1>セットアップ完了！</h1>
-      <p>システムの自動構築が完了しました。以下の手順で設定を続けてください。</p>
+      <p>システムの自動構築が完了しました。</p>
     </div>
 
     <div class="url-card">
-      <div class="url-label">🌐 システムURL（このURLが全ての起点です）</div>
+      <div class="url-label">🌐 システムURL（大切に保管してください）</div>
       <a class="url-value url-link" id="deployUrl" href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(deployUrl)}</a>
-      <button class="copy-btn" onclick="copyText('deployUrl', this)">コピー</button>
-      <p class="url-note">⚠️ このURLは必ずメモ・ブックマークしてください</p>
+      <button class="copy-btn" onclick="copyUrl(this)">コピー</button>
+      <p class="url-note">⚠️ このURLが予約システムの入口です。必ずブックマークしてください。</p>
     </div>
 
     <div class="next-steps">
-      <h2>📋 残りの設定手順</h2>
-      <ol>
-        <li>
-          <strong>【必須】Googleアカウントにサインインした状態でシステムURLを開く</strong><br>
-          ⚠️ <strong>オンボーディング時と同じGoogleアカウント</strong>でサインインしていることを確認してから、
-          上記「システムURL」をクリックしてください。<br>
-          → Googleの権限確認ダイアログが表示されます → <strong>「許可」</strong>をクリック<br>
-          → 設定画面（予約システム設定）が表示されれば完了です ✅<br>
-          <em style="color:#b45309;">※ 別のGoogleアカウントでサインインしていると正常に動作しません</em>
+      <h2>📋 次の手順</h2>
+
+      <div style="background:#e8f5e9; border:2px solid #4caf50; border-radius:12px; padding:20px; margin-bottom:20px;">
+        <p style="font-size:16px; font-weight:700; margin:0 0 12px;">
+          ① まず下のボタンを押して、設定画面を開いてください
+        </p>
+        <p style="margin:0 0 16px; color:#555; font-size:14px; line-height:1.6;">
+          Googleの権限確認ダイアログが表示されます。<strong>「許可」</strong>をクリックすると設定画面が開きます。
+        </p>
+        <a href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-block; background:#4caf50; color:#fff; font-size:16px; font-weight:700;
+                  padding:14px 32px; border-radius:8px; text-decoration:none; letter-spacing:0.5px;">
+          設定画面を開く →
+        </a>
+      </div>
+
+      <ol style="line-height:1.9; padding-left:20px;">
+        <li style="margin-bottom:14px;">
+          <strong>設定画面で初期設定を入力して保存</strong><br>
+          <span style="color:#555; font-size:14px;">店舗名・営業時間・サービスメニュー・担当者・LINEトークンなどを入力</span>
+        </li>
+        <li style="margin-bottom:14px;">
+          <strong>LINE Developers → Messaging API → Webhook URL に上記URLを貼り付けて「検証」</strong>
         </li>
         <li>
-          <strong>設定画面から初期設定を入力</strong><br>
-          店舗名・営業時間・メニュー・担当者・LINEトークン等を設定画面に入力して保存
-        </li>
-        <li>
-          <strong>LINE Developers → Messaging API チャンネル</strong><br>
-          「Webhook URL」にシステムURLを設定し「検証」をクリック
-        </li>
-        <li>
-          <strong>LINE Developers → LIFFアプリ</strong><br>
-          「エンドポイントURL」にシステムURLを設定
+          <strong>LINE Developers → LIFFアプリ → エンドポイントURL に上記URLを貼り付けて保存</strong>
         </li>
       </ol>
     </div>
 
-    <details style="margin-top:16px; padding:12px; background:#f8f9fa; border-radius:8px; font-size:13px; color:#666;">
-      <summary style="cursor:pointer; font-weight:600; color:#444;">⚙️ トラブルシューティング（権限エラーが出た場合）</summary>
+    <details style="margin-top:20px; padding:14px; background:#f5f5f5; border-radius:8px; font-size:13px; color:#666;">
+      <summary style="cursor:pointer; font-weight:600; color:#555;">「初期化エラー」が出た場合</summary>
       <div style="margin-top:12px; line-height:1.8;">
-        <strong>「初期化エラー」が表示された場合：</strong><br>
-        オンボーディング時と異なるGoogleアカウントでサインインしている可能性があります。<br>
-        正しいアカウントに切り替えてから再度システムURLにアクセスしてください。<br><br>
-        それでも解決しない場合は、<a href="${escapeHtml(gasUrl)}" target="_blank" rel="noopener noreferrer">GASエディタ</a>を開き、
-        「実行」メニューから <code>onOpen</code> を実行して権限を付与してください。
+        ブラウザが Google にログインしていない状態でアクセスすると、このエラーが出ることがあります。<br>
+        <a href="https://accounts.google.com" target="_blank" rel="noopener noreferrer">Google</a> にログインしてから、もう一度「設定画面を開く」ボタンを押してください。
       </div>
     </details>
 
     <script>
-      function copyText(id, btn) {
-        const text = document.getElementById(id).textContent;
-        navigator.clipboard.writeText(text).then(() => {
+      function copyUrl(btn) {
+        navigator.clipboard.writeText(${JSON.stringify(deployUrl)}).then(() => {
           btn.textContent = 'コピーしました！';
-          btn.style.background = '#06c755';
+          btn.style.background = '#388e3c';
           setTimeout(() => { btn.textContent = 'コピー'; btn.style.background = ''; }, 2000);
         });
       }
