@@ -63,6 +63,21 @@ function doGet(e) {
     return handleICSDownload_(e);
   }
 
+  // 未認証の場合は自動で認証URLへリダイレクト
+  // （GAS の USER_DEPLOYING 認証が完了していない場合の自動処理）
+  const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthorizationStatus.REQUIRED);
+  if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+    const authUrl = authInfo.getAuthorizationUrl();
+    return HtmlService.createHtmlOutput(
+      `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta http-equiv="refresh" content="0;url=${authUrl}">
+      </head><body style="font-family:sans-serif;padding:40px;text-align:center;">
+      <p>権限確認ページへ移動しています...</p>
+      <p><a href="${authUrl}">自動で移動しない場合はここをクリック</a></p>
+      </body></html>`
+    ).setTitle('権限確認');
+  }
+
   let configs;
   try {
     configs = getConfigs();
@@ -72,9 +87,7 @@ function doGet(e) {
       `<h2>初期化エラー</h2>` +
       `<p>${err.message}</p>` +
       `<hr><p style="font-size:12px;color:#666;">` +
-      `スプレッドシートID: ${_PROVISIONED_SS_ID}<br>` +
-      `対処法: <a href="https://script.google.com" target="_blank">GASエディタ</a>を開き、` +
-      `「実行」メニューから任意の関数を実行して権限を付与してください。</p>` +
+      `スプレッドシートID: ${_PROVISIONED_SS_ID}</p>` +
       `</body></html>`
     ).setTitle('初期化エラー');
   }
