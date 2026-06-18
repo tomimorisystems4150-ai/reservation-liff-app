@@ -67,30 +67,31 @@ function doGet(e) {
   try {
     configs = getConfigs();
   } catch (err) {
-    // スプレッドシートにアクセスできない場合はGoogleサインイン画面へ案内する
+    // GASランタイムの権限が未承認の場合。
+    // Googleサインイン → このページへ戻る → GAS権限ダイアログ → 許可 の流れへ誘導する。
+    const gasUrl = ScriptApp.getService().getUrl();
+    const signInUrl = 'https://accounts.google.com/ServiceLogin?continue='
+      + encodeURIComponent(gasUrl);
     return HtmlService.createHtmlOutput(
       `<!DOCTYPE html><html>
-      <head><meta charset="utf-8"><title>サインインが必要です</title>
-      <style>
-        body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
-             min-height:100vh;margin:0;background:#f5f5f5;}
-        .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:420px;
-              text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);}
-        h2{color:#333;margin:0 0 12px;}
-        p{color:#666;line-height:1.6;margin:0 0 8px;}
-        .btn{display:inline-block;background:#4285f4;color:#fff;padding:12px 28px;
-             border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;
-             font-size:15px;}
-        .note{font-size:12px;color:#999;margin-top:16px;}
-      </style></head>
+      <head>
+        <meta charset="utf-8">
+        <meta http-equiv="refresh" content="0;url=${signInUrl}">
+        <title>権限確認</title>
+        <style>
+          body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
+               min-height:100vh;margin:0;background:#f5f5f5;}
+          .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:420px;
+                text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);}
+          .btn{display:inline-block;background:#4285f4;color:#fff;padding:12px 28px;
+               border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;font-size:15px;}
+        </style>
+      </head>
       <body><div class="card">
-        <h2>🔐 Googleサインインが必要です</h2>
-        <p>初回アクセス時はGoogleアカウントでのサインインと権限の許可が必要です。</p>
-        <a class="btn" href="https://accounts.google.com">Googleにサインイン</a>
-        <p class="note">サインイン後、このページに戻ってきてください。<br>
-        権限確認ダイアログが表示されたら「許可」をクリックしてください。</p>
+        <p>Googleの権限確認ページへ移動しています...</p>
+        <a class="btn" href="${signInUrl}">移動しない場合はここをクリック</a>
       </div></body></html>`
-    ).setTitle('サインインが必要です');
+    ).setTitle('権限確認');
   }
   const currentUser = Session.getActiveUser().getEmail();
   
