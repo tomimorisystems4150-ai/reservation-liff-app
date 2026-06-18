@@ -287,24 +287,20 @@ function handleComplete(url) {
       <p class="url-note">⚠️ このURLは必ずメモ・ブックマークしてください</p>
     </div>
 
-    <div class="url-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
-      <div class="url-label">⚙️ GASエディタURL（手順1で使用）</div>
-      <a class="url-value url-link" id="gasUrl" href="${escapeHtml(gasUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(gasUrl)}</a>
-      <button class="copy-btn" onclick="copyText('gasUrl', this)">コピー</button>
-    </div>
-
     <div class="next-steps">
       <h2>📋 残りの設定手順</h2>
       <ol>
         <li>
-          <strong>【必須】GASの権限付与（GASエディタで実行）</strong><br>
-          上記「GASエディタURL」を開く → 画面上部のドロップダウンで <code>onOpen</code> を選択 →
-          <strong>▶ 実行</strong> をクリック → 「権限を確認」→「詳細」→「移動」→「許可」<br>
-          <em style="color:#b45309;">※ この手順を完了するまでシステムURLにアクセスできません</em>
+          <strong>【必須】Googleアカウントにサインインした状態でシステムURLを開く</strong><br>
+          ⚠️ <strong>オンボーディング時と同じGoogleアカウント</strong>でサインインしていることを確認してから、
+          上記「システムURL」をクリックしてください。<br>
+          → Googleの権限確認ダイアログが表示されます → <strong>「許可」</strong>をクリック<br>
+          → 設定画面（予約システム設定）が表示されれば完了です ✅<br>
+          <em style="color:#b45309;">※ 別のGoogleアカウントでサインインしていると正常に動作しません</em>
         </li>
         <li>
           <strong>設定画面から初期設定を入力</strong><br>
-          システムURLをクリック → 設定画面が表示されたら、店舗名・営業時間・メニュー・LINEトークン等を入力して保存
+          店舗名・営業時間・メニュー・担当者・LINEトークン等を設定画面に入力して保存
         </li>
         <li>
           <strong>LINE Developers → Messaging API チャンネル</strong><br>
@@ -316,6 +312,17 @@ function handleComplete(url) {
         </li>
       </ol>
     </div>
+
+    <details style="margin-top:16px; padding:12px; background:#f8f9fa; border-radius:8px; font-size:13px; color:#666;">
+      <summary style="cursor:pointer; font-weight:600; color:#444;">⚙️ トラブルシューティング（権限エラーが出た場合）</summary>
+      <div style="margin-top:12px; line-height:1.8;">
+        <strong>「初期化エラー」が表示された場合：</strong><br>
+        オンボーディング時と異なるGoogleアカウントでサインインしている可能性があります。<br>
+        正しいアカウントに切り替えてから再度システムURLにアクセスしてください。<br><br>
+        それでも解決しない場合は、<a href="${escapeHtml(gasUrl)}" target="_blank" rel="noopener noreferrer">GASエディタ</a>を開き、
+        「実行」メニューから <code>onOpen</code> を実行して権限を付与してください。
+      </div>
+    </details>
 
     <script>
       function copyText(id, btn) {
