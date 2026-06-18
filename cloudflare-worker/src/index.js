@@ -27,11 +27,12 @@ const OAUTH_SCOPES = [
 
 // GitHub から取得するスクリプトファイル定義
 const SCRIPT_FILES_META = [
-  { name: 'Code',          type: 'SERVER_JS', file: 'Code.js' },
-  { name: 'settings',      type: 'HTML',      file: 'settings.html' },
-  { name: 'kanri',         type: 'HTML',      file: 'kanri.html' },
-  { name: 'unauthorized',  type: 'HTML',      file: 'unauthorized.html' },
-  { name: 'appsscript',   type: 'JSON',      file: 'appsscript.json' },
+  { name: 'Code',           type: 'SERVER_JS', file: 'Code.js' },
+  { name: 'calendar-addon', type: 'SERVER_JS', file: 'calendar-addon.js' },
+  { name: 'settings',       type: 'HTML',      file: 'settings.html' },
+  { name: 'kanri',          type: 'HTML',      file: 'kanri.html' },
+  { name: 'unauthorized',   type: 'HTML',      file: 'unauthorized.html' },
+  { name: 'appsscript',     type: 'JSON',      file: 'appsscript.json' },
 ];
 
 // ============================================================
