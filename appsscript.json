@@ -7,24 +7,8 @@
     "executeAs": "USER_DEPLOYING",
     "access": "ANYONE_ANONYMOUS"
   },
-  "addOns": {
-    "common": {
-      "name": "予約管理",
-      "logoUrl": "https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/event_available/default/48px.svg",
-      "homepageTrigger": {
-        "runFunction": "onCalendarHome"
-      }
-    },
-    "calendar": {
-      "eventOpenTrigger": {
-        "runFunction": "onCalendarEventOpen"
-      }
-    }
-  },
   "oauthScopes": [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/calendar.addons.execute",
-    "https://www.googleapis.com/auth/calendar.addons.current.event.read",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/script.external_request"
   ],
