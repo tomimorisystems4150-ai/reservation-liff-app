@@ -17,7 +17,7 @@ const SCRIPT_API       = 'https://script.googleapis.com/v1';
 
 // GAS デプロイに必要な OAuth スコープ
 const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/script.projects',
   'https://www.googleapis.com/auth/script.deployments',
@@ -46,6 +46,8 @@ export default {
         case '/start':     return handleStart(request, env);
         case '/callback':  return handleCallback(request, env);
         case '/complete':  return handleComplete(url);
+        case '/admin':     return handleAdmin(request, env);
+        case '/privacy':   return handlePrivacy();
         default:           return new Response('Not Found', { status: 404 });
       }
     } catch (err) {
@@ -54,6 +56,55 @@ export default {
     }
   },
 };
+
+// ============================================================
+// 開発者用管理ページ（導入台帳 — 顧客データなし）
+// ============================================================
+async function handleAdmin(request, env) {
+  // 簡易パスワード保護
+  const url    = new URL(request.url);
+  const secret = url.searchParams.get('key');
+  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // KVから全導入レコードを取得
+  const list = await env.ONBOARDING_KV.list({ prefix: 'store:' });
+  const records = await Promise.all(
+    list.keys.map(async k => {
+      const val = await env.ONBOARDING_KV.get(k.name);
+      return val ? JSON.parse(val) : null;
+    })
+  );
+  const valid = records.filter(Boolean).sort((a, b) =>
+    new Date(b.onboardedAt) - new Date(a.onboardedAt)
+  );
+
+  const rows = valid.map(r => `
+    <tr>
+      <td>${escapeHtml(new Date(r.onboardedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))}</td>
+      <td><a href="${escapeHtml(r.ssUrl)}" target="_blank">${escapeHtml(r.ssId)}</a></td>
+    </tr>
+  `).join('');
+
+  const html = buildPage('導入台帳（開発者用）', `
+    <h2 style="margin-bottom:20px;">📋 導入台帳</h2>
+    <p style="color:#666; font-size:13px; margin-bottom:16px;">
+      ※ この画面にはスプレッドシートIDと導入日時のみ記録されています。顧客の予約・個人情報は含みません。
+    </p>
+    <table style="width:100%; border-collapse:collapse; font-size:14px;">
+      <thead>
+        <tr style="background:#f0f4f8;">
+          <th style="padding:10px; text-align:left; border-bottom:2px solid #dee2e6;">導入日時</th>
+          <th style="padding:10px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="2" style="padding:20px; color:#999; text-align:center;">導入済み店舗はありません</td></tr>'}</tbody>
+    </table>
+    <p style="margin-top:20px; color:#999; font-size:12px;">合計: ${valid.length} 件</p>
+  `);
+  return htmlResponse(html);
+}
 
 // ============================================================
 // ランディングページ
@@ -195,7 +246,10 @@ async function handleCallback(request, env) {
     if (!tokens.access_token) {
       throw new Error(`トークン取得失敗: ${JSON.stringify(tokens.error || tokens)}`);
     }
-    result = await provision(tokens.access_token, env);
+    // id_token（JWT）からメール取得 → 失敗時はuserinfo APIにフォールバック
+    const userEmail = getEmailFromIdToken(tokens.id_token) || await getUserEmail(tokens.access_token);
+    console.log('onboarding userEmail:', userEmail);
+    result = await provision(tokens.access_token, env, userEmail);
   } catch (err) {
     console.error('Provision error:', err);
     return renderError(`セットアップ中にエラーが発生しました。<br><code>${escapeHtml(err.message)}</code><br><br>
@@ -215,53 +269,40 @@ async function handleCallback(request, env) {
 // ============================================================
 function handleComplete(url) {
   const deployUrl = url.searchParams.get('deployUrl') || '';
-  const ssUrl     = url.searchParams.get('ssUrl') || '';
-  const gasUrl    = url.searchParams.get('gasUrl') || '';
 
   const html = buildPage('セットアップ完了！', `
     <div class="success-banner">
       <div class="success-icon">✅</div>
       <h1>セットアップ完了！</h1>
-      <p>スプレッドシートとGASプロジェクトの自動作成が完了しました。</p>
+      <p>システムの自動構築が完了しました。以下の手順で設定を続けてください。</p>
     </div>
 
     <div class="url-card">
-      <div class="url-label">🌐 GAS デプロイURL（最重要）</div>
-      <div class="url-value" id="deployUrl">${escapeHtml(deployUrl)}</div>
+      <div class="url-label">🌐 システムURL（このURLが全ての起点です）</div>
+      <a class="url-value url-link" id="deployUrl" href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(deployUrl)}</a>
       <button class="copy-btn" onclick="copyText('deployUrl', this)">コピー</button>
-      <p class="url-note">LINE DevelopersのWebhook URLとLIFFのAPIエンドポイントに設定してください</p>
-    </div>
-
-    <div class="url-card secondary">
-      <div class="url-label">📊 スプレッドシート</div>
-      <div class="url-value"><a href="${escapeHtml(ssUrl)}" target="_blank">${escapeHtml(ssUrl)}</a></div>
-    </div>
-
-    <div class="url-card secondary">
-      <div class="url-label">⚙️ GASプロジェクト（設定画面・管理画面もこちらから）</div>
-      <div class="url-value"><a href="${escapeHtml(gasUrl)}" target="_blank">${escapeHtml(gasUrl)}</a></div>
+      <p class="url-note">⚠️ このURLは必ずメモ・ブックマークしてください</p>
     </div>
 
     <div class="next-steps">
       <h2>📋 残りの設定手順</h2>
       <ol>
         <li>
+          <strong>GASの初回認証（システムURLを開く）</strong><br>
+          上記システムURLをクリック → Googleの認証画面で「許可」を押す →
+          設定画面（予約システム設定）が表示されれば完了
+        </li>
+        <li>
+          <strong>設定画面から初期設定を入力</strong><br>
+          店舗名・営業時間・メニュー・担当者・LINEトークン等を設定画面に入力して保存
+        </li>
+        <li>
           <strong>LINE Developers → Messaging API チャンネル</strong><br>
-          「Webhook URL」に上記デプロイURLを設定し「検証」をクリック
+          「Webhook URL」に上記システムURLを設定し「検証」をクリック
         </li>
         <li>
           <strong>LINE Developers → LIFFアプリ</strong><br>
-          「エンドポイントURL」に上記デプロイURLを設定
-        </li>
-        <li>
-          <strong>スプレッドシートの初期設定</strong><br>
-          <a href="${escapeHtml(ssUrl)}" target="_blank">スプレッドシートを開き</a>、
-          ConfigシートにshopName・lineChannelAccessToken等を入力
-        </li>
-        <li>
-          <strong>GASの初回認証</strong><br>
-          <a href="${escapeHtml(gasUrl)}" target="_blank">GASエディタを開き</a>、
-          「setupTriggers」関数を手動実行してトリガーを設定
+          「エンドポイントURL」に上記システムURLを設定
         </li>
       </ol>
     </div>
@@ -301,7 +342,7 @@ async function exchangeCodeForTokens(code, env) {
 // ============================================================
 // プロビジョニング本体
 // ============================================================
-async function provision(accessToken, env) {
+async function provision(accessToken, env, userEmail) {
   const auth = `Bearer ${accessToken}`;
 
   // Step 1: テンプレートスプレッドシートをコピー
@@ -315,6 +356,29 @@ async function provision(accessToken, env) {
   if (ssCopy.error) throw new Error(`スプレッドシートのコピーに失敗: ${ssCopy.error.message}`);
   const ssId  = ssCopy.id;
   const ssUrl = `https://docs.google.com/spreadsheets/d/${ssId}/edit`;
+
+  // Step 1b: 導入台帳をCloudflare KVに記録（顧客データは含まない）
+  console.log('Step 1b: Logging onboarding record to KV...');
+  const onboardingRecord = {
+    ssId,
+    ssUrl: `https://docs.google.com/spreadsheets/d/${ssId}/edit`,
+    onboardedAt: new Date().toISOString(),
+  };
+  await env.ONBOARDING_KV.put(
+    `store:${ssId}`,
+    JSON.stringify(onboardingRecord),
+    { expirationTtl: 60 * 60 * 24 * 365 * 3 } // 3年保持
+  );
+
+  // Step 1c: ConfigシートのreservationSheetIdに新しいスプレッドシートIDを書き込む
+  console.log('Step 1c: Writing spreadsheetId to Config sheet...');
+  await writeConfigValue(ssId, auth, 'reservationSheetId', ssId);
+
+  // Step 1d: adminEmailをConfigシートに書き込む（doGet認証に必要）
+  if (userEmail) {
+    console.log('Step 1d: Writing adminEmail to Config sheet:', userEmail);
+    await writeConfigValue(ssId, auth, 'adminEmail', userEmail);
+  }
 
   // Step 2: スタンドアロン GAS プロジェクト作成
   console.log('Step 2: Creating GAS project...');
@@ -378,6 +442,79 @@ async function provision(accessToken, env) {
 }
 
 // ============================================================
+// Configシートの指定キーに値を書き込む汎用関数
+// ============================================================
+async function writeConfigValue(spreadsheetId, authHeader, key, value) {
+  // まずConfigシートのA列（キー列）を取得して該当キーの行番号を探す
+  const rangeRes = await fetch(
+    `${SHEETS_API}/${spreadsheetId}/values/Config!A:A`,
+    { headers: { Authorization: authHeader } }
+  );
+  const rangeData = await rangeRes.json();
+  if (rangeData.error) {
+    console.warn(`Config sheet read warning (${key}):`, rangeData.error.message);
+    return;
+  }
+
+  const rows = rangeData.values || [];
+  const rowIndex = rows.findIndex(r => r[0] === key);
+  if (rowIndex === -1) {
+    console.warn(`${key} key not found in Config sheet`);
+    return;
+  }
+
+  // B列（値列）の該当行に値を書き込む
+  const targetRange = `Config!B${rowIndex + 1}`;
+  const updateRes = await fetch(
+    `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(targetRange)}?valueInputOption=RAW`,
+    {
+      method: 'PUT',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [[value]] }),
+    }
+  );
+  const updateData = await updateRes.json();
+  if (updateData.error) {
+    console.warn(`Config sheet write warning (${key}):`, updateData.error.message);
+  } else {
+    console.log(`${key} written to Config sheet:`, value);
+  }
+}
+
+// ============================================================
+// id_token（JWT）のペイロードからメールアドレスを取得（最優先）
+// ============================================================
+function getEmailFromIdToken(idToken) {
+  if (!idToken) return null;
+  try {
+    const payload = idToken.split('.')[1];
+    // base64url → base64 変換してデコード
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded  = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+    const decoded = JSON.parse(atob(padded));
+    return decoded.email || null;
+  } catch (e) {
+    console.warn('getEmailFromIdToken failed:', e.message);
+    return null;
+  }
+}
+
+// ============================================================
+// Google userinfo APIからメールアドレスを取得（フォールバック）
+// ============================================================
+async function getUserEmail(accessToken) {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await res.json();
+    return data.email || null;
+  } catch (e) {
+    console.warn('getUserEmail failed:', e.message);
+    return null;
+  }
+}
+
 // GitHubからスクリプトファイルを取得し、スプレッドシートIDを埋め込む
 // ============================================================
 async function fetchAndPrepareFiles(spreadsheetId, env) {
@@ -492,9 +629,12 @@ function buildPage(title, content) {
       font-family: 'Courier New', monospace; font-size: 13px;
       color: #111; word-break: break-all; background: #fff;
       border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px;
-      margin-bottom: 8px;
+      margin-bottom: 8px; display: block;
     }
-    .url-value a { color: #0066cc; text-decoration: none; }
+    .url-link {
+      color: #0066cc; text-decoration: underline; cursor: pointer;
+    }
+    .url-link:hover { color: #004a99; }
     .url-note { font-size: 12px; color: #666; }
     .copy-btn {
       background: #06c755; color: #fff; border: none; border-radius: 6px;
@@ -531,6 +671,36 @@ function buildPage(title, content) {
   </div>
 </body>
 </html>`;
+}
+
+function handlePrivacy() {
+  const html = buildPage('プライバシーポリシー', `
+    <div style="max-width:700px;margin:0 auto;padding:2rem;line-height:1.8;color:#333;">
+      <h1 style="font-size:1.5rem;border-bottom:2px solid #06c755;padding-bottom:.5rem;margin-bottom:1.5rem;">プライバシーポリシー</h1>
+      <p>本サービス「LINE予約システム」（以下「本サービス」）は、店舗向けのLINE連動型予約システムです。本ポリシーは、本サービスが収集・利用する情報について説明します。</p>
+
+      <h2 style="font-size:1.1rem;margin-top:2rem;">1. 収集する情報</h2>
+      <p>本サービスは、導入時にGoogleアカウントによる認証を行います。認証時に取得する情報は以下の通りです：</p>
+      <ul>
+        <li>Googleアカウントのメールアドレス（本人確認のため）</li>
+        <li>Googleドライブへのアクセス権（スプレッドシートの自動作成のため）</li>
+        <li>Google Apps Scriptへのアクセス権（バックエンドプログラムの自動設定のため）</li>
+      </ul>
+
+      <h2 style="font-size:1.1rem;margin-top:2rem;">2. 情報の利用目的</h2>
+      <p>取得した情報は、お客様のシステム環境の自動構築のみに使用します。第三者への提供や広告目的での利用は行いません。</p>
+
+      <h2 style="font-size:1.1rem;margin-top:2rem;">3. データの保管</h2>
+      <p>認証情報（アクセストークン）は処理完了後に破棄されます。スプレッドシート等のデータはお客様自身のGoogleドライブに保管され、当サービス運営者はアクセスしません。</p>
+
+      <h2 style="font-size:1.1rem;margin-top:2rem;">4. お問い合わせ</h2>
+      <p>プライバシーに関するご質問は、サービス提供者までお問い合わせください。</p>
+
+      <p style="margin-top:2rem;font-size:.85rem;color:#999;">最終更新日：2026年6月17日</p>
+      <p style="margin-top:1rem;"><a href="/" style="color:#06c755;">← トップページに戻る</a></p>
+    </div>
+  `);
+  return htmlResponse(html);
 }
 
 function renderError(message) {
