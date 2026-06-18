@@ -65,7 +65,7 @@ function doGet(e) {
 
   // 未認証の場合は自動で認証URLへリダイレクト
   // （GAS の USER_DEPLOYING 認証が完了していない場合の自動処理）
-  const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthorizationStatus.REQUIRED);
+  const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthorizationMode.FULL);
   if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
     const authUrl = authInfo.getAuthorizationUrl();
     return HtmlService.createHtmlOutput(
