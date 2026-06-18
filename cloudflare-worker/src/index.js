@@ -293,9 +293,10 @@ function handleComplete(url) {
       <div style="background:#e8f5e9; border:2px solid #4caf50; border-radius:12px; padding:20px; margin-bottom:20px;">
         <p style="font-size:15px; font-weight:700; margin:0 0 16px;">設定画面を開いて初期設定を行ってください</p>
         <a href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer"
-           style="display:inline-block; background:#4caf50; color:#fff; font-size:15px; font-weight:700;
-                  padding:12px 28px; border-radius:8px; text-decoration:none;">
-          設定画面を開く →
+           style="display:inline-block; background:#4caf50; color:#fff; font-size:16px; font-weight:700;
+                  padding:14px 36px; border-radius:8px; text-decoration:none; letter-spacing:0.5px;
+                  box-shadow:0 3px 8px rgba(76,175,80,0.4);">
+          設定画面を開く
         </a>
         <p style="margin:16px 0 0; color:#555; font-size:14px; line-height:1.6;">
           Googleの権限確認ダイアログが表示されたら <strong>「許可」</strong> をクリックしてください。
@@ -316,12 +317,9 @@ function handleComplete(url) {
       </ol>
     </div>
 
-    <details style="margin-top:20px; padding:14px; background:#f5f5f5; border-radius:8px; font-size:13px; color:#666;">
-      <summary style="cursor:pointer; font-weight:600; color:#555;">問題が発生した場合</summary>
-      <div style="margin-top:12px; line-height:1.8;">
-        システム開発者にお問い合わせください。
-      </div>
-    </details>
+    <p style="margin-top:16px; font-size:13px; color:#888;">
+      問題が発生した場合はシステム開発者にお問い合わせください。
+    </p>
 
     <script>
       function copyUrl(btn) {
