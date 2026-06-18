@@ -291,17 +291,20 @@ function handleComplete(url) {
       <h2>📋 次の手順</h2>
 
       <div style="background:#e8f5e9; border:2px solid #4caf50; border-radius:12px; padding:20px; margin-bottom:20px;">
-        <p style="font-size:16px; font-weight:700; margin:0 0 12px;">
-          ① まず下のボタンを押して、設定画面を開いてください
-        </p>
+        <p style="font-size:15px; font-weight:700; margin:0 0 8px;">① 設定画面を開いてください（自動で開きます）</p>
         <p style="margin:0 0 16px; color:#555; font-size:14px; line-height:1.6;">
-          Googleの権限確認ダイアログが表示されます。<strong>「許可」</strong>をクリックすると設定画面が開きます。
+          Googleの権限確認ダイアログが表示されたら <strong>「許可」</strong> をクリックしてください。
         </p>
-        <a href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer"
-           style="display:inline-block; background:#4caf50; color:#fff; font-size:16px; font-weight:700;
-                  padding:14px 32px; border-radius:8px; text-decoration:none; letter-spacing:0.5px;">
-          設定画面を開く →
-        </a>
+        <div id="countdown-area">
+          <p id="countdown-msg" style="font-size:14px; color:#388e3c; font-weight:600; margin:0 0 12px;">
+            ⏳ <span id="sec">5</span> 秒後に自動で設定画面を開きます...
+          </p>
+          <a id="open-btn" href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer"
+             style="display:inline-block; background:#4caf50; color:#fff; font-size:15px; font-weight:700;
+                    padding:12px 28px; border-radius:8px; text-decoration:none;">
+            今すぐ設定画面を開く →
+          </a>
+        </div>
       </div>
 
       <ol style="line-height:1.9; padding-left:20px;">
@@ -319,10 +322,13 @@ function handleComplete(url) {
     </div>
 
     <details style="margin-top:20px; padding:14px; background:#f5f5f5; border-radius:8px; font-size:13px; color:#666;">
-      <summary style="cursor:pointer; font-weight:600; color:#555;">「初期化エラー」が出た場合</summary>
+      <summary style="cursor:pointer; font-weight:600; color:#555;">「初期化エラー」が出た場合（日を改めてアクセスした場合など）</summary>
       <div style="margin-top:12px; line-height:1.8;">
-        ブラウザが Google にログインしていない状態でアクセスすると、このエラーが出ることがあります。<br>
-        <a href="https://accounts.google.com" target="_blank" rel="noopener noreferrer">Google</a> にログインしてから、もう一度「設定画面を開く」ボタンを押してください。
+        ブラウザが Google にログインしていない場合にこのエラーが出ることがあります。<br>
+        <strong>対処法：</strong>
+        <a href="https://accounts.google.com" target="_blank" rel="noopener noreferrer">Google</a>
+        にログインしてから、もう一度システムURLにアクセスしてください。<br>
+        ※ この操作は一度だけ必要です。以降はログイン不要でアクセスできます。
       </div>
     </details>
 
@@ -334,6 +340,21 @@ function handleComplete(url) {
           setTimeout(() => { btn.textContent = 'コピー'; btn.style.background = ''; }, 2000);
         });
       }
+
+      // オンボーディング完了直後はGoogleログイン済みのため、カウントダウン後に自動で設定画面を開く
+      let remaining = 5;
+      const secEl = document.getElementById('sec');
+      const msgEl = document.getElementById('countdown-msg');
+      const timer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(timer);
+          msgEl.textContent = '設定画面を開いています...';
+          window.open(${JSON.stringify(deployUrl)}, '_blank');
+        } else {
+          secEl.textContent = remaining;
+        }
+      }, 1000);
     </script>
   `);
   return htmlResponse(html);
