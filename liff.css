@@ -1,41 +1,60 @@
 /* =================================================================
    LINE予約システム - LIFF UI
-   デザインテーマ: settings.html / kanri.html と統一
+   デザインテーマ: Fresh Natural
    ================================================================= */
+
+:root {
+  --sage:        #6B9E78;
+  --sage-dark:   #4E7A5A;
+  --sage-light:  #EBF4ED;
+  --sage-mid:    #C2DEC9;
+  --terra:       #C47A5A;
+  --bg:          #F6F4F1;
+  --surface:     #FFFFFF;
+  --border:      #E3DDD8;
+  --text:        #2A2A2A;
+  --text-sub:    #747474;
+  --text-light:  #A8A8A8;
+  --radius-card: 14px;
+  --radius-btn:  10px;
+  --shadow:      0 2px 14px rgba(0,0,0,0.06);
+}
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Helvetica Neue', Arial, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
-  background: #f0f2f5;
-  color: #333;
+  font-family: 'Noto Sans JP', 'Helvetica Neue', Arial, 'Hiragino Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
   font-size: 14px;
+  line-height: 1.6;
   min-height: 100vh;
 }
 
 /* ================================================================
-   ヘッダー (settings.html と同一)
+   ヘッダー
    ================================================================ */
 .liff-header {
-  background: #2c3e50;
-  color: #fff;
+  background: var(--surface);
+  border-bottom: 2px solid var(--sage-light);
   padding: 14px 18px;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 8px rgba(0,0,0,0.05);
   text-align: center;
 }
 
 .liff-header h1 {
   font-size: 1.05em;
-  font-weight: bold;
+  font-weight: 700;
+  color: var(--sage-dark);
   letter-spacing: 0.04em;
 }
 
 .liff-header p {
   font-size: 0.78em;
-  color: rgba(255,255,255,0.65);
+  color: var(--text-sub);
   margin-top: 3px;
 }
 
@@ -45,18 +64,19 @@ body {
 .container {
   max-width: 560px;
   margin: 0 auto;
-  padding: 14px 14px 40px;
+  padding: 16px 14px 48px;
 }
 
 /* ================================================================
-   セクションカード (settings.html の .section-card と同一)
+   セクションカード
    ================================================================ */
 .page-section {
-  background: #fff;
-  border-radius: 12px;
-  padding: 18px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 20px;
   margin-bottom: 14px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.09);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
 }
 
 .page-section h2 {
@@ -64,11 +84,11 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 0.95em;
-  font-weight: bold;
-  color: #2c3e50;
-  margin-bottom: 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #eef0f3;
+  font-weight: 700;
+  color: var(--sage-dark);
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--sage-light);
 }
 
 /* ================================================================
@@ -77,49 +97,57 @@ body {
 .selection-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .selection-button {
   display: block;
   width: 100%;
-  padding: 13px 14px;
+  padding: 14px 16px;
   font-size: 0.93em;
-  font-weight: bold;
+  font-weight: 500;
+  font-family: inherit;
   text-align: left;
-  background: #fff;
-  color: #333;
-  border: 1.5px solid #d5d8dc;
-  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-btn);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.18s;
   position: relative;
-  padding-right: 32px;
+  padding-right: 34px;
 }
 
 .selection-button:hover {
-  border-color: #3498db;
-  background: #eaf4fd;
-  color: #2471a3;
+  border-color: var(--sage);
+  background: var(--sage-light);
+  color: var(--sage-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(107,158,120,0.15);
 }
 
 .selection-button::after {
   content: '›';
   position: absolute;
-  right: 14px;
+  right: 15px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.3em;
-  color: #aaa;
+  font-size: 1.4em;
+  color: var(--text-light);
   font-weight: 300;
   line-height: 1;
+  transition: color 0.18s;
+}
+
+.selection-button:hover::after {
+  color: var(--sage);
 }
 
 /* ================================================================
    フォーム
    ================================================================ */
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .form-group:last-of-type {
@@ -128,59 +156,62 @@ body {
 
 .form-label {
   display: block;
-  font-size: 0.82em;
-  font-weight: bold;
-  color: #555;
-  margin-bottom: 5px;
+  font-size: 0.8em;
+  font-weight: 700;
+  color: var(--text-sub);
+  margin-bottom: 6px;
+  letter-spacing: 0.03em;
 }
 
 .required-badge {
   display: inline-block;
-  background: #e74c3c;
+  background: var(--terra);
   color: #fff;
-  font-size: 0.7em;
-  font-weight: bold;
+  font-size: 0.68em;
+  font-weight: 700;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   margin-left: 5px;
   vertical-align: middle;
 }
 
 .optional-badge {
   display: inline-block;
-  background: #95a5a6;
+  background: #B8B0A8;
   color: #fff;
-  font-size: 0.7em;
-  font-weight: bold;
+  font-size: 0.68em;
+  font-weight: 700;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   margin-left: 5px;
   vertical-align: middle;
 }
 
 .form-control {
   width: 100%;
-  padding: 9px 11px;
-  border: 1.5px solid #d5d8dc;
-  border-radius: 7px;
-  font-size: 0.93em;
-  background: #fff;
-  color: #333;
-  transition: border-color 0.15s;
+  padding: 10px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-btn);
+  font-size: 0.92em;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.2s, box-shadow 0.2s;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
 }
 
 .form-control:focus {
-  border-color: #3498db;
+  border-color: var(--sage);
+  box-shadow: 0 0 0 3px rgba(107,158,120,0.15);
 }
 
 select.form-control {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23aaa' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236B9E78' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 30px;
+  background-position: right 12px center;
+  padding-right: 32px;
   cursor: pointer;
 }
 
@@ -189,24 +220,24 @@ select.form-control {
    ================================================================ */
 .info-text {
   font-size: 0.8em;
-  color: #999;
+  color: var(--text-light);
   text-align: center;
   margin: 10px 0 0;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* ================================================================
    選択中メニュー情報バー
    ================================================================ */
 .selected-menu-info {
-  background: #eaf4fd;
-  border-left: 3px solid #3498db;
-  color: #2471a3;
-  padding: 9px 12px;
-  border-radius: 0 7px 7px 0;
-  margin-bottom: 14px;
+  background: var(--sage-light);
+  border-left: 3px solid var(--sage);
+  color: var(--sage-dark);
+  padding: 10px 13px;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 16px;
   font-size: 0.88em;
-  font-weight: bold;
+  font-weight: 700;
   line-height: 1.4;
 }
 
@@ -214,56 +245,57 @@ select.form-control {
    タイムテーブル
    ================================================================ */
 #timetable-container {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .timetable-nav {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   gap: 10px;
 }
 
 .timetable-nav h3 {
   margin: 0;
   font-size: 0.88em;
-  font-weight: bold;
-  color: #2c3e50;
+  font-weight: 700;
+  color: var(--text);
   width: 110px;
   text-align: center;
 }
 
 .timetable-nav button {
-  padding: 5px 12px;
-  background: #fff;
-  border: 1.5px solid #3498db;
-  color: #3498db;
+  padding: 6px 14px;
+  background: var(--surface);
+  border: 1.5px solid var(--sage);
+  color: var(--sage-dark);
   border-radius: 20px;
   cursor: pointer;
   font-size: 0.82em;
-  font-weight: bold;
-  transition: background 0.15s, color 0.15s;
+  font-weight: 700;
+  font-family: inherit;
+  transition: all 0.18s;
 }
 
 .timetable-nav button:hover {
-  background: #3498db;
+  background: var(--sage);
   color: #fff;
 }
 
 .timetable-nav button:disabled {
-  border-color: #d5d8dc;
-  color: #bdc3c7;
+  border-color: var(--border);
+  color: var(--text-light);
   cursor: not-allowed;
-  background: #fff;
+  background: var(--surface);
 }
 
 .timetable-wrapper {
   overflow-x: hidden;
   overflow-y: auto;
   max-height: 40vh;
-  border: 1px solid #e0e4e8;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 #timetable {
@@ -280,44 +312,44 @@ select.form-control {
 }
 
 #timetable thead th {
-  padding: 8px 2px;
+  padding: 9px 2px;
   font-size: 0.72em;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e0e4e8;
-  font-weight: bold;
-  color: #555;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  color: var(--text-sub);
   position: sticky;
   top: 0;
   z-index: 2;
 }
 
 #timetable thead .day-of-week {
-  font-weight: normal;
+  font-weight: 400;
   font-size: 0.9em;
-  color: #888;
+  color: var(--text-light);
 }
 
-#timetable .is-saturday { color: #2471a3; }
-#timetable .is-sunday   { color: #c0392b; }
+#timetable .is-saturday { color: #4A7FB0; }
+#timetable .is-sunday   { color: #B04040; }
 
 #timetable tbody th {
   font-size: 0.72em;
   padding: 6px 4px;
-  background: #f8f9fa;
-  font-weight: normal;
-  color: #888;
+  background: var(--bg);
+  font-weight: 400;
+  color: var(--text-sub);
   height: 30px;
   position: static;
-  border-right: 1px solid #e0e4e8;
+  border-right: 1px solid var(--border);
 }
 
 #timetable td {
-  border-bottom: 1px solid #f0f2f5;
-  border-left: 1px solid #f0f2f5;
+  border-bottom: 1px solid #F0EDE9;
+  border-left: 1px solid #F0EDE9;
 }
 
-#timetable tr td:first-child      { border-left: none; }
-#timetable tbody tr:last-child td  { border-bottom: none; }
+#timetable tr td:first-child     { border-left: none; }
+#timetable tbody tr:last-child td { border-bottom: none; }
 
 .slot {
   display: flex;
@@ -327,19 +359,19 @@ select.form-control {
   height: 100%;
   cursor: pointer;
   font-size: 1.1em;
-  color: #3498db;
-  font-weight: bold;
-  transition: background 0.1s;
+  color: var(--sage);
+  font-weight: 700;
+  transition: background 0.12s;
 }
 
 .slot:hover {
-  background: #eaf4fd;
+  background: var(--sage-light);
 }
 
 .slot.unavailable {
-  color: #d5d8dc;
+  color: var(--border);
   cursor: not-allowed;
-  font-weight: normal;
+  font-weight: 400;
 }
 
 .slot.unavailable:hover {
@@ -348,25 +380,25 @@ select.form-control {
 
 .slot.selected,
 #timetable .slot.selected {
-  background: #3498db;
+  background: var(--sage);
   color: #fff;
-  font-weight: bold;
-  border-radius: 3px;
+  font-weight: 700;
+  border-radius: 4px;
 }
 
 /* ================================================================
    複数日程一括予約
    ================================================================ */
 #timetable .slot.bulk-limit-reached {
-  background: #f0f2f5;
-  color: #bdc3c7;
+  background: #F0EDE9;
+  color: var(--border);
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 #timetable .slot.slot-conflict {
-  background: #fef9ec;
-  color: #9a6110;
+  background: #FEF7EE;
+  color: #C4843A;
   cursor: not-allowed;
   font-size: 0.68em;
 }
@@ -386,36 +418,35 @@ select.form-control {
   justify-content: space-between;
   align-items: center;
   font-size: 0.85em;
-  font-weight: bold;
-  color: #2471a3;
-  background: #eaf4fd;
-  border: 1.5px solid #aed6f1;
-  border-radius: 8px;
-  padding: 7px 12px;
+  font-weight: 700;
+  color: var(--sage-dark);
+  background: var(--sage-light);
+  border: 1.5px solid var(--sage-mid);
+  border-radius: 10px;
+  padding: 8px 13px;
   user-select: none;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .bulk-counter:hover {
-  background: #d4e9f7;
+  background: #D6ECD9;
 }
 
 .bulk-counter.bulk-counter--full {
-  color: #c0392b;
-  background: #fdf2f0;
-  border-color: #f5b7b1;
+  color: #B04040;
+  background: #FDECEA;
+  border-color: #E8C0B8;
 }
 
 .bulk-counter.bulk-counter--full:hover {
-  background: #fae1de;
+  background: #F5D5D0;
 }
 
-/* 矢印は「開閉ボタン」であることを示すシェブロン */
 .bulk-counter-arrow {
   font-size: 0.75em;
   margin-left: 8px;
-  color: #7fb3d3;
+  color: var(--sage);
   flex-shrink: 0;
 }
 
@@ -426,11 +457,11 @@ select.form-control {
   left: 0;
   right: 0;
   z-index: 200;
-  background: #fff;
-  border: 1px solid #a9dfbf;
-  border-radius: 8px;
-  padding: 10px 14px;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  background: var(--surface);
+  border: 1px solid var(--sage-mid);
+  border-radius: 10px;
+  padding: 11px 14px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.10);
   max-height: 220px;
   overflow-y: auto;
 }
@@ -440,12 +471,12 @@ select.form-control {
 }
 
 .selected-dates-header {
-  font-size: 0.78em;
-  font-weight: bold;
-  color: #1e8449;
+  font-size: 0.76em;
+  font-weight: 700;
+  color: var(--sage-dark);
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .selected-dates-list {
@@ -458,8 +489,8 @@ select.form-control {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px dashed #a9dfbf;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--sage-mid);
   font-size: 0.88em;
 }
 
@@ -468,14 +499,14 @@ select.form-control {
 }
 
 .selected-date-label {
-  color: #1a5c33;
-  font-weight: bold;
+  color: var(--sage-dark);
+  font-weight: 700;
 }
 
 .remove-slot-btn {
   background: none;
-  border: 1px solid #c0392b;
-  color: #c0392b;
+  border: 1px solid #C05252;
+  color: #C05252;
   border-radius: 50%;
   width: 22px;
   height: 22px;
@@ -491,7 +522,7 @@ select.form-control {
 }
 
 .remove-slot-btn:hover {
-  background: #c0392b;
+  background: #C05252;
   color: #fff;
 }
 
@@ -500,43 +531,54 @@ select.form-control {
    ================================================================ */
 .submit-button {
   width: 100%;
-  padding: 13px;
-  font-size: 0.98em;
-  font-weight: bold;
+  padding: 14px;
+  font-size: 0.97em;
+  font-weight: 700;
+  font-family: inherit;
   color: #fff;
-  background: #27ae60;
+  background: linear-gradient(135deg, var(--sage) 0%, var(--sage-dark) 100%);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-btn);
   cursor: pointer;
-  transition: opacity 0.18s;
+  transition: opacity 0.18s, transform 0.1s;
   letter-spacing: 0.04em;
+  box-shadow: 0 4px 14px rgba(78,122,90,0.32);
 }
 
 .submit-button:hover {
-  opacity: 0.85;
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.submit-button:active {
+  transform: translateY(0);
 }
 
 .submit-button:disabled {
-  background: #bdc3c7;
+  background: linear-gradient(135deg, #C8C4BE 0%, #B0ACA8 100%);
   cursor: not-allowed;
   opacity: 1;
+  transform: none;
+  box-shadow: none;
 }
 
 .back-button {
   padding: 10px 16px;
   font-size: 0.88em;
-  font-weight: bold;
-  background: #fff;
-  color: #7f8c8d;
-  border: 1.5px solid #d5d8dc;
-  border-radius: 8px;
+  font-weight: 500;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text-sub);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-btn);
   cursor: pointer;
   margin-top: 20px;
   transition: background 0.15s, color 0.15s;
 }
 
 .back-button:hover {
-  background: #ecf0f1;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .navigation-buttons {
@@ -563,26 +605,31 @@ select.form-control {
    ================================================================ */
 .complete-message {
   text-align: center;
-  padding: 20px 16px;
-  background: #f8f9fa;
-  border-radius: 10px;
+  padding: 24px 16px 20px;
+  background: var(--sage-light);
+  border-radius: var(--radius-card);
   margin-bottom: 20px;
-  border: 1px solid #e0e4e8;
+  border: 1px solid var(--sage-mid);
 }
 
 .complete-message h2 {
-  color: #27ae60;
+  color: var(--sage-dark);
   font-size: 1.3em;
   margin-bottom: 6px;
+}
+
+.complete-message > p {
+  color: var(--text-sub);
+  font-size: 0.92em;
 }
 
 .booking-details {
   margin: 16px 0;
   text-align: left;
-  background: #fff;
-  border: 1px solid #e0e4e8;
-  border-radius: 8px;
-  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
   width: 100%;
 }
 
@@ -590,7 +637,7 @@ select.form-control {
   margin: 6px 0;
   font-size: 0.93em;
   line-height: 1.6;
-  color: #333;
+  color: var(--text);
 }
 
 .booking-date-list {
@@ -600,9 +647,9 @@ select.form-control {
 }
 
 .booking-date-list li {
-  padding: 4px 0 4px 16px;
+  padding: 5px 0 5px 16px;
   position: relative;
-  border-bottom: 1px dashed #e0e4e8;
+  border-bottom: 1px dashed var(--border);
   font-size: 0.92em;
 }
 
@@ -614,7 +661,7 @@ select.form-control {
   content: '▸';
   position: absolute;
   left: 0;
-  color: #27ae60;
+  color: var(--sage);
 }
 
 .calendar-actions {
@@ -622,10 +669,10 @@ select.form-control {
 }
 
 .calendar-actions h3 {
-  font-size: 0.92em;
-  color: #7f8c8d;
+  font-size: 0.9em;
+  color: var(--text-sub);
   margin-bottom: 10px;
-  font-weight: bold;
+  font-weight: 700;
 }
 
 .calendar-button {
@@ -633,22 +680,27 @@ select.form-control {
   width: 100%;
   padding: 13px;
   margin-bottom: 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   text-decoration: none;
-  font-weight: bold;
+  font-weight: 700;
   font-size: 0.93em;
+  font-family: inherit;
   box-sizing: border-box;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
   border: none;
   cursor: pointer;
   letter-spacing: 0.03em;
 }
 
-.calendar-button:hover { opacity: 0.85; }
+.calendar-button:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
 
 .calendar-button.ics {
-  background: #27ae60;
+  background: linear-gradient(135deg, var(--sage) 0%, var(--sage-dark) 100%);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(78,122,90,0.28);
 }
 
 .calendar-button.google {
@@ -663,7 +715,7 @@ select.form-control {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  background: rgba(240,242,245,0.96);
+  background: rgba(246,244,241,0.96);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -672,19 +724,18 @@ select.form-control {
 }
 
 .loading-overlay p {
-  color: #7f8c8d;
+  color: var(--text-sub);
   font-size: 0.85em;
-  margin-top: 4px;
+  margin-top: 12px;
 }
 
 .spinner {
-  border: 4px solid #e0e4e8;
-  border-top: 4px solid #3498db;
+  border: 3px solid var(--sage-light);
+  border-top: 3px solid var(--sage);
   border-radius: 50%;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   animation: spin 0.9s linear infinite;
-  margin-bottom: 12px;
 }
 
 @keyframes spin {
@@ -694,20 +745,21 @@ select.form-control {
 
 .error-container {
   text-align: center;
-  padding: 30px 20px;
-  background: #fff;
-  border-radius: 12px;
+  padding: 32px 20px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
   margin: 20px auto;
   max-width: 500px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.09);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
 }
 
 .error-container h2 {
-  color: #e74c3c;
+  color: #C05252;
   margin-bottom: 10px;
 }
 
 .error-container p {
-  color: #7f8c8d;
+  color: var(--text-sub);
   font-size: 0.9em;
 }
