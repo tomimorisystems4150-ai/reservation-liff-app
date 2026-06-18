@@ -68,7 +68,9 @@ function doGet(e) {
     configs = getConfigs();
   } catch (err) {
     // GASランタイムの権限が未承認の場合。
-    // Googleサインイン → このページへ戻る → GAS権限ダイアログ → 許可 の流れへ誘導する。
+    // meta refresh だと GAS のサンドボックス iframe 内でのナビゲーションになり
+    // X-Frame-Options エラーが発生するため、window.top.location.replace() を使う。
+    // これにより TOP フレームごとナビゲートし iframe コンテキストを抜け出せる。
     const gasUrl = ScriptApp.getService().getUrl();
     const signInUrl = 'https://accounts.google.com/ServiceLogin?continue='
       + encodeURIComponent(gasUrl);
@@ -76,7 +78,6 @@ function doGet(e) {
       `<!DOCTYPE html><html>
       <head>
         <meta charset="utf-8">
-        <meta http-equiv="refresh" content="0;url=${signInUrl}">
         <title>権限確認</title>
         <style>
           body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
@@ -87,10 +88,16 @@ function doGet(e) {
                border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;font-size:15px;}
         </style>
       </head>
-      <body><div class="card">
-        <p>Googleの権限確認ページへ移動しています...</p>
-        <a class="btn" href="${signInUrl}">移動しない場合はここをクリック</a>
-      </div></body></html>`
+      <body>
+        <div class="card">
+          <p>Googleの権限確認ページへ移動しています...</p>
+          <a class="btn" href="${signInUrl}" target="_top">移動しない場合はここをクリック</a>
+        </div>
+        <script>
+          // TOP フレームごとナビゲートすることで X-Frame-Options を回避する
+          window.top.location.replace(${JSON.stringify(signInUrl)});
+        </script>
+      </body></html>`
     ).setTitle('権限確認');
   }
   const currentUser = Session.getActiveUser().getEmail();
