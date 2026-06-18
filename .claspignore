@@ -16,3 +16,6 @@ README.md
 
 # Cloudflare Workers（GASとは別プロジェクト）
 cloudflare-worker/**
+
+# E2Eテスト（GASとは別プロジェクト）
+e2e/**

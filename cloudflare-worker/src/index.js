@@ -16,8 +16,8 @@ const SHEETS_API       = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SCRIPT_API       = 'https://script.googleapis.com/v1';
 
 // GAS デプロイに必要な OAuth スコープ
+// Drive操作はサービスアカウントが行うため、ユーザーにはDriveスコープを要求しない
 const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/script.projects',
   'https://www.googleapis.com/auth/script.deployments',
@@ -42,12 +42,13 @@ export default {
     const url = new URL(request.url);
     try {
       switch (url.pathname) {
-        case '/':          return handleIndex(env);
-        case '/start':     return handleStart(request, env);
-        case '/callback':  return handleCallback(request, env);
-        case '/complete':  return handleComplete(url);
-        case '/admin':     return handleAdmin(request, env);
-        case '/privacy':   return handlePrivacy();
+        case '/':                   return handleIndex(env);
+        case '/start':              return handleStart(request, env);
+        case '/callback':           return handleCallback(request, env);
+        case '/complete':           return handleComplete(url);
+        case '/admin':              return handleAdmin(request, env);
+        case '/admin/push-update':  return handlePushUpdate(request, env);
+        case '/privacy':            return handlePrivacy();
         default:           return new Response('Not Found', { status: 404 });
       }
     } catch (err) {
@@ -249,7 +250,7 @@ async function handleCallback(request, env) {
     // id_token（JWT）からメール取得 → 失敗時はuserinfo APIにフォールバック
     const userEmail = getEmailFromIdToken(tokens.id_token) || await getUserEmail(tokens.access_token);
     console.log('onboarding userEmail:', userEmail);
-    result = await provision(tokens.access_token, env, userEmail);
+    result = await provision(tokens.access_token, tokens.refresh_token, env, userEmail);
   } catch (err) {
     console.error('Provision error:', err);
     return renderError(`セットアップ中にエラーが発生しました。<br><code>${escapeHtml(err.message)}</code><br><br>
@@ -342,27 +343,34 @@ async function exchangeCodeForTokens(code, env) {
 // ============================================================
 // プロビジョニング本体
 // ============================================================
-async function provision(accessToken, env, userEmail) {
-  const auth = `Bearer ${accessToken}`;
+async function provision(accessToken, refreshToken, env, userEmail) {
+  const userAuth = `Bearer ${accessToken}`;
 
-  // Step 1: テンプレートスプレッドシートをコピー
-  console.log('Step 1: Copying template spreadsheet...');
-  const ssCopy = await callApi(
-    `${DRIVE_API}/files/${env.TEMPLATE_SS_ID}/copy`,
+  // Step 1: ユーザーのMy Driveに新しいスプレッドシートを作成
+  // （SAのDriveに作成しないためストレージ問題が発生しない）
+  console.log('Step 1: Creating new spreadsheet in user\'s My Drive...');
+  const newSS = await callApi(
+    SHEETS_API,
     'POST',
-    auth,
-    { name: '予約管理システム' }
+    userAuth,
+    { properties: { title: '予約管理システム' } }
   );
-  if (ssCopy.error) throw new Error(`スプレッドシートのコピーに失敗: ${ssCopy.error.message}`);
-  const ssId  = ssCopy.id;
+  if (newSS.error) throw new Error(`スプレッドシートの作成に失敗: ${newSS.error.message}`);
+  const ssId  = newSS.spreadsheetId;
   const ssUrl = `https://docs.google.com/spreadsheets/d/${ssId}/edit`;
 
-  // Step 1b: 導入台帳をCloudflare KVに記録（顧客データは含まない）
-  console.log('Step 1b: Logging onboarding record to KV...');
+  // Step 1b: テンプレートから全シートをコピー（Sheets API copyTo）
+  // テンプレートは「リンクを知っている全員が編集可」に設定が必要
+  console.log('Step 1b: Copying sheets from template...');
+  await copySheetsFromTemplate(ssId, userAuth, env);
+
+  // Step 1c: 導入台帳をCloudflare KVに記録（顧客データは含まない）
+  console.log('Step 1c: Logging onboarding record to KV (initial)...');
   const onboardingRecord = {
     ssId,
     ssUrl: `https://docs.google.com/spreadsheets/d/${ssId}/edit`,
     onboardedAt: new Date().toISOString(),
+    refreshToken: refreshToken || null,
   };
   await env.ONBOARDING_KV.put(
     `store:${ssId}`,
@@ -370,26 +378,23 @@ async function provision(accessToken, env, userEmail) {
     { expirationTtl: 60 * 60 * 24 * 365 * 3 } // 3年保持
   );
 
-  // Step 1c: ConfigシートのreservationSheetIdに新しいスプレッドシートIDを書き込む
-  console.log('Step 1c: Writing spreadsheetId to Config sheet...');
-  await writeConfigValue(ssId, auth, 'reservationSheetId', ssId);
+  // Step 1d: ConfigシートのreservationSheetIdに新しいスプレッドシートIDを書き込む
+  console.log('Step 1d: Writing spreadsheetId to Config sheet...');
+  await writeConfigValue(ssId, userAuth, 'reservationSheetId', ssId);
 
-  // Step 1d: adminEmailをConfigシートに書き込む（doGet認証に必要）
+  // Step 1e: adminEmailをConfigシートに書き込む（doGet認証に必要）
   if (userEmail) {
-    console.log('Step 1d: Writing adminEmail to Config sheet:', userEmail);
-    await writeConfigValue(ssId, auth, 'adminEmail', userEmail);
+    console.log('Step 1e: Writing adminEmail to Config sheet:', userEmail);
+    await writeConfigValue(ssId, userAuth, 'adminEmail', userEmail);
   }
 
-  // Step 2: スタンドアロン GAS プロジェクト作成
+  // Step 2: スタンドアロン GAS プロジェクト作成（ユーザーのOAuthトークン使用）
   console.log('Step 2: Creating GAS project...');
   const proj = await callApi(
     `${SCRIPT_API}/projects`,
     'POST',
-    auth,
-    {
-      title: '予約管理システム_GAS',
-      parentId: ssId,  // スプレッドシートフォルダに配置（任意）
-    }
+    userAuth,
+    { title: '予約管理システム_GAS' }
   );
   if (proj.error) throw new Error(`GASプロジェクト作成に失敗: ${proj.error.message}`);
   const scriptId = proj.scriptId;
@@ -404,7 +409,7 @@ async function provision(accessToken, env, userEmail) {
   const content = await callApi(
     `${SCRIPT_API}/projects/${scriptId}/content`,
     'PUT',
-    auth,
+    userAuth,
     { files }
   );
   if (content.error) throw new Error(`スクリプトのアップロードに失敗: ${content.error.message}`);
@@ -414,7 +419,7 @@ async function provision(accessToken, env, userEmail) {
   const version = await callApi(
     `${SCRIPT_API}/projects/${scriptId}/versions`,
     'POST',
-    auth,
+    userAuth,
     { description: '初回デプロイ (自動オンボーディング)' }
   );
   if (version.error) throw new Error(`バージョン作成に失敗: ${version.error.message}`);
@@ -424,7 +429,7 @@ async function provision(accessToken, env, userEmail) {
   const deploy = await callApi(
     `${SCRIPT_API}/projects/${scriptId}/deployments`,
     'POST',
-    auth,
+    userAuth,
     {
       versionNumber:        version.versionNumber,
       manifestFileName:     'appsscript',
@@ -435,10 +440,88 @@ async function provision(accessToken, env, userEmail) {
 
   // デプロイURLを取得
   const webAppEntryPoint = (deploy.entryPoints || []).find(ep => ep.entryPointType === 'WEB_APP');
-  const deployUrl = webAppEntryPoint?.webApp?.url || `https://script.google.com/macros/s/${deploy.deploymentId}/exec`;
+  const deployUrl    = webAppEntryPoint?.webApp?.url || `https://script.google.com/macros/s/${deploy.deploymentId}/exec`;
+  const deploymentId = deploy.deploymentId;
+
+  // KV レコードを scriptId・deploymentId で更新（コード更新配信に必要）
+  console.log('Step 6b: Updating KV record with scriptId and deploymentId...');
+  onboardingRecord.scriptId    = scriptId;
+  onboardingRecord.deploymentId = deploymentId;
+  await env.ONBOARDING_KV.put(
+    `store:${ssId}`,
+    JSON.stringify(onboardingRecord),
+    { expirationTtl: 60 * 60 * 24 * 365 * 3 }
+  );
 
   console.log('Provisioning complete!', { ssId, scriptId, deployUrl });
   return { deployUrl, ssUrl, gasUrl };
+}
+
+// ============================================================
+// テンプレートSSから全シートをコピーしてシート名を整理する
+// テンプレートは「リンクを知っている全員が編集可」に設定しておくこと
+// ============================================================
+async function copySheetsFromTemplate(destSsId, userAuth, env) {
+  const templateId = env.TEMPLATE_SS_ID;
+
+  // テンプレートのシート一覧を取得
+  const templateRes = await fetch(
+    `${SHEETS_API}/${templateId}?fields=sheets.properties`,
+    { headers: { Authorization: userAuth } }
+  );
+  const templateData = await templateRes.json();
+  if (templateData.error) {
+    throw new Error(`テンプレート読み込み失敗: ${templateData.error.message} — テンプレートSSが「リンクを知っている全員が編集可」に設定されているか確認してください`);
+  }
+  const templateSheets = templateData.sheets || [];
+
+  // コピー先SSのデフォルトシートID（後で削除する）
+  const destRes = await fetch(
+    `${SHEETS_API}/${destSsId}?fields=sheets.properties`,
+    { headers: { Authorization: userAuth } }
+  );
+  const destData = await destRes.json();
+  if (destData.error) throw new Error(`コピー先SS読み込み失敗: ${destData.error.message}`);
+  const defaultSheetId = destData.sheets?.[0]?.properties?.sheetId;
+
+  // テンプレートの各シートをコピー先SSにコピー
+  const copiedSheets = [];
+  for (const sheet of templateSheets) {
+    const res = await fetch(
+      `${SHEETS_API}/${templateId}/sheets/${sheet.properties.sheetId}:copyTo`,
+      {
+        method: 'POST',
+        headers: { Authorization: userAuth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationSpreadsheetId: destSsId }),
+      }
+    );
+    const data = await res.json();
+    if (data.error) throw new Error(`シートコピー失敗 (${sheet.properties.title}): ${data.error.message}`);
+    copiedSheets.push({ newSheetId: data.sheetId, originalTitle: sheet.properties.title });
+  }
+
+  // デフォルトシートを削除 & コピーされたシートのシート名から "Copy of " を除去
+  const requests = [
+    ...(defaultSheetId !== undefined ? [{ deleteSheet: { sheetId: defaultSheetId } }] : []),
+    ...copiedSheets.map(({ newSheetId, originalTitle }) => ({
+      updateSheetProperties: {
+        properties: { sheetId: newSheetId, title: originalTitle },
+        fields: 'title',
+      },
+    })),
+  ];
+
+  const batchRes = await fetch(
+    `${SHEETS_API}/${destSsId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: { Authorization: userAuth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    }
+  );
+  const batchData = await batchRes.json();
+  if (batchData.error) throw new Error(`シート整理失敗: ${batchData.error.message}`);
+  console.log(`Copied ${copiedSheets.length} sheets from template.`);
 }
 
 // ============================================================
@@ -479,6 +562,209 @@ async function writeConfigValue(spreadsheetId, authHeader, key, value) {
   } else {
     console.log(`${key} written to Config sheet:`, value);
   }
+}
+
+// ============================================================
+// サービスアカウントのアクセストークンを取得
+// env.GOOGLE_SA_KEY にサービスアカウントのJSONキーを設定すること
+// ============================================================
+async function getServiceAccountToken(env) {
+  if (!env.GOOGLE_SA_KEY) {
+    throw new Error('GOOGLE_SA_KEY が設定されていません。Cloudflare Workers の Secrets に追加してください。');
+  }
+
+  let sa;
+  try {
+    sa = JSON.parse(env.GOOGLE_SA_KEY);
+  } catch (e) {
+    throw new Error('GOOGLE_SA_KEY のJSONパースに失敗しました。');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header  = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss:   sa.client_email,
+    scope: 'https://www.googleapis.com/auth/drive',
+    aud:   'https://oauth2.googleapis.com/token',
+    exp:   now + 3600,
+    iat:   now,
+  };
+
+  const b64url = (obj) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const signingInput = `${b64url(header)}.${b64url(payload)}`;
+
+  // PEM秘密鍵をArrayBufferに変換してインポート
+  const pemKey  = sa.private_key.replace(/\\n/g, '\n');
+  const b64Key  = pemKey.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+  const keyBuffer = Uint8Array.from(atob(b64Key), c => c.charCodeAt(0)).buffer;
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBuffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const sigBuffer = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(signingInput)
+  );
+
+  const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const jwt = `${signingInput}.${sig}`;
+
+  // JWTをアクセストークンに交換
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion:  jwt,
+    }),
+  });
+  const data = await res.json();
+  if (!data.access_token) {
+    throw new Error(`サービスアカウントトークン取得失敗: ${JSON.stringify(data.error || data)}`);
+  }
+  return data.access_token;
+}
+
+// ============================================================
+// refresh_token を使って新しい access_token を取得
+// ============================================================
+async function refreshAccessToken(refreshToken, env) {
+  const res = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id:     env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type:    'refresh_token',
+    }),
+  });
+  return res.json();
+}
+
+// ============================================================
+// 管理者: 全顧客の GAS プロジェクトに最新コードを配信
+// GET /admin/push-update?key=<ADMIN_SECRET_KEY>
+// ============================================================
+async function handlePushUpdate(request, env) {
+  const url    = new URL(request.url);
+  const secret = url.searchParams.get('key');
+  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // KVから全導入レコードを取得
+  const list    = await env.ONBOARDING_KV.list({ prefix: 'store:' });
+  const results = [];
+
+  for (const kvKey of list.keys) {
+    const raw    = await env.ONBOARDING_KV.get(kvKey.name);
+    const record = raw ? JSON.parse(raw) : null;
+    if (!record) continue;
+
+    const { ssId, scriptId, deploymentId, refreshToken } = record;
+
+    // 古いレコード（refreshToken/scriptId未保存）はスキップ
+    if (!refreshToken || !scriptId || !deploymentId) {
+      results.push({ ssId, status: 'skipped', reason: 'refreshToken/scriptId/deploymentId 未保存（再オンボーディングが必要）' });
+      continue;
+    }
+
+    try {
+      // アクセストークンをリフレッシュ
+      const tokens = await refreshAccessToken(refreshToken, env);
+      if (!tokens.access_token) {
+        throw new Error(`トークンリフレッシュ失敗: ${JSON.stringify(tokens.error || tokens)}`);
+      }
+      const auth = `Bearer ${tokens.access_token}`;
+
+      // refresh_token がローテーションされた場合はKVを更新
+      if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+        record.refreshToken = tokens.refresh_token;
+        await env.ONBOARDING_KV.put(kvKey.name, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
+      }
+
+      // 最新コードを GitHub から取得
+      const files = await fetchAndPrepareFiles(ssId, env);
+
+      // GAS プロジェクトにコンテンツをプッシュ
+      const content = await callApi(`${SCRIPT_API}/projects/${scriptId}/content`, 'PUT', auth, { files });
+      if (content.error) throw new Error(`content push 失敗: ${content.error.message}`);
+
+      // 新バージョン作成
+      const version = await callApi(`${SCRIPT_API}/projects/${scriptId}/versions`, 'POST', auth, {
+        description: `管理者プッシュ更新 ${new Date().toISOString()}`,
+      });
+      if (version.error) throw new Error(`version 作成失敗: ${version.error.message}`);
+
+      // 既存デプロイを新バージョンに更新（URLは変わらない）
+      const updated = await callApi(
+        `${SCRIPT_API}/projects/${scriptId}/deployments/${deploymentId}`,
+        'PUT',
+        auth,
+        {
+          deploymentConfig: {
+            versionNumber:    version.versionNumber,
+            manifestFileName: 'appsscript',
+            description:      `管理者プッシュ更新 ${new Date().toISOString()}`,
+          },
+        }
+      );
+      if (updated.error) throw new Error(`deployment 更新失敗: ${updated.error.message}`);
+
+      results.push({ ssId, status: 'success', versionNumber: version.versionNumber });
+    } catch (err) {
+      console.error(`push-update error for ${ssId}:`, err.message);
+      results.push({ ssId, status: 'error', reason: err.message });
+    }
+  }
+
+  const successCount = results.filter(r => r.status === 'success').length;
+  const skipCount    = results.filter(r => r.status === 'skipped').length;
+  const errorCount   = results.filter(r => r.status === 'error').length;
+
+  const html = buildPage('コード更新配信結果', `
+    <h2 style="margin-bottom:20px;">🚀 コード更新配信結果</h2>
+    <p style="margin-bottom:16px; color:#555;">
+      成功: <strong style="color:#06c755;">${successCount}</strong> 件 ／
+      スキップ: <strong style="color:#999;">${skipCount}</strong> 件 ／
+      エラー: <strong style="color:#d32f2f;">${errorCount}</strong> 件
+    </p>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#f0f4f8;">
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">結果</th>
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">詳細</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${results.map(r => `
+          <tr>
+            <td style="padding:8px; border-bottom:1px solid #eee; font-family:monospace; font-size:12px;">${escapeHtml(r.ssId || '')}</td>
+            <td style="padding:8px; border-bottom:1px solid #eee; color:${r.status === 'success' ? '#06c755' : r.status === 'skipped' ? '#999' : '#d32f2f'};">
+              ${r.status === 'success' ? '✅ 成功' : r.status === 'skipped' ? '⏭️ スキップ' : '❌ エラー'}
+            </td>
+            <td style="padding:8px; border-bottom:1px solid #eee; color:#666;">
+              ${escapeHtml(r.reason || (r.status === 'success' ? `v${r.versionNumber} にデプロイ済み` : ''))}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:20px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
+  `);
+  return htmlResponse(html);
 }
 
 // ============================================================
@@ -682,10 +968,11 @@ function handlePrivacy() {
       <h2 style="font-size:1.1rem;margin-top:2rem;">1. 収集する情報</h2>
       <p>本サービスは、導入時にGoogleアカウントによる認証を行います。認証時に取得する情報は以下の通りです：</p>
       <ul>
-        <li>Googleアカウントのメールアドレス（本人確認のため）</li>
-        <li>Googleドライブへのアクセス権（スプレッドシートの自動作成のため）</li>
-        <li>Google Apps Scriptへのアクセス権（バックエンドプログラムの自動設定のため）</li>
+        <li>Googleアカウントのメールアドレス（本人確認・管理者設定のため）</li>
+        <li>Googleスプレッドシートへのアクセス権（初期設定データの書き込みのため）</li>
+        <li>Google Apps Scriptへのアクセス権（バックエンドプログラムの自動設定・デプロイのため）</li>
       </ul>
+      <p style="margin-top:8px;">※ Googleドライブへの広範なアクセス権は要求しません。スプレッドシートの自動作成はサーバー側の処理で行います。</p>
 
       <h2 style="font-size:1.1rem;margin-top:2rem;">2. 情報の利用目的</h2>
       <p>取得した情報は、お客様のシステム環境の自動構築のみに使用します。第三者への提供や広告目的での利用は行いません。</p>

@@ -1,0 +1,29 @@
+# 環境変数・シークレット
+e2e/.env.test
+cloudflare-worker/.dev.vars
+
+# 運用管理情報・認証情報（Git管理外）
+運用管理情報.md
+cloudflare-worker/cleanup-sa-drive.mjs
+
+# サービスアカウントキー（Google Cloud）
+*-cbf33e67b004.json
+my-reservation-system-*.json
+service-account*.json
+*serviceaccount*.json
+*.json.key
+
+# Node.js
+node_modules/
+e2e/node_modules/
+cloudflare-worker/node_modules/
+
+# Playwright
+e2e/playwright-report/
+e2e/test-results/
+e2e/screenshots/
+e2e/admin-auth-state.json
+
+# OS
+.DS_Store
+Thumbs.db
