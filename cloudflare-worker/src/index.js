@@ -301,8 +301,8 @@ function handleComplete(url) {
         </a>
         <p style="margin:16px 0 0; color:#555; font-size:14px; line-height:1.6;">
           1. 開いた画面で <strong>「権限を確認する」</strong> ボタンをクリック<br>
-          2. Google の権限確認画面で <strong>「許可」</strong> をクリック<br>
-          3. 元の画面を更新すると設定画面が表示されます
+          2. 小さなウィンドウで Google の権限確認画面が開きます → <strong>「許可」</strong> をクリック<br>
+          3. ウィンドウが閉じると自動で設定画面が表示されます
         </p>
       </div>
 

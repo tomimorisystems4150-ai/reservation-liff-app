@@ -28,6 +28,75 @@ function getConfigSheet_() {
   return ss.getSheetByName('Config');
 }
 
+/**
+ * GAS ランタイム権限が未承認のときに返すページ。
+ * HtmlService ではなく ContentService を使う（iframe サンドボックスを回避）。
+ * getAuthorizationUrl() の URL は createOAuthDialog 用のため、
+ * 新しいタブではなくポップアップウィンドウで開く必要がある。
+ */
+function buildAuthRequiredPage_(authUrl) {
+  const safeUrl = authUrl || ScriptApp.getService().getUrl();
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>初回セットアップ</title>
+  <style>
+    body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
+         min-height:100vh;margin:0;background:#f5f5f5;}
+    .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:460px;
+          text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);}
+    h2{color:#333;margin:0 0 12px;font-size:20px;}
+    p{color:#666;line-height:1.7;margin:0 0 8px;font-size:14px;}
+    .btn{background:#4285f4;color:#fff;padding:14px 32px;border:none;border-radius:8px;
+         font-weight:700;margin-top:20px;font-size:16px;cursor:pointer;}
+    .btn:hover{background:#3367d6;}
+    .note{font-size:12px;color:#999;margin-top:16px;}
+    .warn{font-size:13px;color:#d32f2f;margin-top:12px;display:none;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔐 初回セットアップ</h2>
+    <p>システムを利用開始するために、Google の権限確認が必要です。</p>
+    <p>下のボタンをクリックし、表示された小さな画面で <strong>「許可」</strong> を選んでください。</p>
+    <button id="authBtn" class="btn" type="button">権限を確認する</button>
+    <p class="note" id="statusNote">許可後、画面が自動で更新されます。</p>
+    <p class="warn" id="popupWarn">ポップアップがブロックされました。ブラウザの設定でポップアップを許可してから再度お試しください。</p>
+  </div>
+  <script>
+    (function() {
+      var authUrl = ${JSON.stringify(safeUrl)};
+      var authWin = null;
+      document.getElementById('authBtn').addEventListener('click', function() {
+        authWin = window.open(authUrl, 'gasAuth', 'width=520,height=680,scrollbars=yes,resizable=yes');
+        if (!authWin) {
+          document.getElementById('popupWarn').style.display = 'block';
+          return;
+        }
+        document.getElementById('statusNote').textContent = '権限確認画面を表示中です…';
+        var timer = setInterval(function() {
+          if (authWin.closed) {
+            clearInterval(timer);
+            location.reload();
+          }
+        }, 500);
+      });
+    })();
+  </script>
+</body>
+</html>`;
+  return ContentService.createTextOutput(html).setMimeType(ContentService.MimeType.HTML);
+}
+
+function escapeHtml_(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // =================================================================
 // トリガー関数 (カスタムメニュー)
 // =================================================================
@@ -63,48 +132,23 @@ function doGet(e) {
     return handleICSDownload_(e);
   }
 
+  // GAS ランタイム権限の確認（Spreadsheet 等へのアクセス前）
+  const authInfo = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+  if (authInfo.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+    return buildAuthRequiredPage_(authInfo.getAuthorizationUrl());
+  }
+
   let configs;
   try {
     configs = getConfigs();
   } catch (err) {
-    // GASランタイムの権限が未承認の場合。
-    // HtmlService はサンドボックス iframe 内で動作するため、
-    // 自動リダイレクト（meta refresh / location.replace）はブラウザにブロックされる。
-    // ScriptApp.getAuthorizationInfo() で GAS 専用の権限確認 URL を取得し、
-    // ユーザー操作（新しいタブで開く）のみで遷移させる。
-    let authUrl;
-    try {
-      authUrl = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL).getAuthorizationUrl();
-    } catch (authErr) {
-      authUrl = ScriptApp.getService().getUrl();
-    }
-    return HtmlService.createHtmlOutput(
-      `<!DOCTYPE html><html>
-      <head>
-        <meta charset="utf-8">
-        <title>初回セットアップ</title>
-        <style>
-          body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;
-               min-height:100vh;margin:0;background:#f5f5f5;}
-          .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:440px;
-                text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);}
-          h2{color:#333;margin:0 0 12px;font-size:20px;}
-          p{color:#666;line-height:1.7;margin:0 0 8px;font-size:14px;}
-          .btn{display:inline-block;background:#4285f4;color:#fff;padding:14px 32px;
-               border-radius:8px;text-decoration:none;font-weight:700;margin-top:20px;font-size:16px;}
-          .note{font-size:12px;color:#999;margin-top:16px;}
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h2>🔐 初回セットアップ</h2>
-          <p>システムを利用開始するために、Google の権限確認が必要です。</p>
-          <p>下のボタンをクリックし、表示された画面で <strong>「許可」</strong> を選んでください。</p>
-          <a class="btn" href="${authUrl}" target="_blank" rel="noopener noreferrer">権限を確認する</a>
-          <p class="note">権限確認が完了したら、このページを更新してください。</p>
-        </div>
+    return ContentService.createTextOutput(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>初期化エラー</title></head>
+      <body style="font-family:sans-serif;padding:40px;text-align:center;">
+        <h2>初期化エラー</h2>
+        <p>${escapeHtml_(String(err.message || err))}</p>
       </body></html>`
-    ).setTitle('初回セットアップ');
+    ).setMimeType(ContentService.MimeType.HTML);
   }
   const currentUser = Session.getActiveUser().getEmail();
   
