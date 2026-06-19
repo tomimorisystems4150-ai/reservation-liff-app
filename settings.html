@@ -5,168 +5,95 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>予約システム設定</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --sage:       #6B9E78;
-      --sage-dark:  #4E7A5A;
-      --sage-light: #EBF4ED;
-      --terra:      #C47A5A;
-      --bg:         #F6F4F1;
-      --surface:    #FFFFFF;
-      --border:     #E3DDD8;
-      --text:       #2A2A2A;
-      --text-sub:   #747474;
-      --radius-card:14px;
-      --radius-inp: 10px;
-      --shadow:     0 2px 14px rgba(0,0,0,0.06);
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; color: #333; font-size: 14px; }
 
     /* Header */
-    .header {
-      background: var(--surface);
-      border-bottom: 2px solid var(--sage-light);
-      padding: 14px 20px;
-      display: flex; justify-content: space-between; align-items: center;
-      position: sticky; top: 0; z-index: 100;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.06);
-    }
-    .header h1 { font-size: 1.05em; font-weight: 700; color: var(--sage-dark); letter-spacing: 0.02em; }
-    .header-link {
-      color: var(--sage-dark); font-size: 0.82em; text-decoration: none;
-      padding: 6px 14px; border: 1.5px solid var(--sage);
-      border-radius: 20px; font-weight: 500; transition: all 0.18s;
-    }
-    .header-link:hover { background: var(--sage); color: #fff; }
+    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 1.1em; }
+    .header-link { color: rgba(255,255,255,0.75); font-size: 0.82em; text-decoration: none; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; }
+    .header-link:hover { background: rgba(255,255,255,0.1); }
 
     /* Content */
-    .content { padding: 18px 16px; max-width: 680px; margin: 0 auto; padding-bottom: 40px; }
+    .content { padding: 16px; max-width: 680px; margin: 0 auto; padding-bottom: 32px; }
 
     /* Section card */
-    .section-card {
-      background: var(--surface); border-radius: var(--radius-card);
-      padding: 20px; margin-bottom: 14px;
-      box-shadow: var(--shadow); border: 1px solid var(--border);
-    }
-    .section-header {
-      display: flex; align-items: center; gap: 10px;
-      margin-bottom: 18px; padding-bottom: 12px;
-      border-bottom: 1.5px solid var(--sage-light);
-    }
-    .section-icon { font-size: 1.1em; }
-    .section-title { font-size: 0.95em; font-weight: 700; color: var(--sage-dark); }
+    .section-card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); }
+    .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #eef0f3; }
+    .section-icon { font-size: 1.05em; }
+    .section-title { font-size: 0.95em; font-weight: bold; color: #2c3e50; }
 
     /* Form elements */
-    .form-group { margin-bottom: 16px; }
+    .form-group { margin-bottom: 14px; }
     .form-group:last-child { margin-bottom: 0; }
-    .form-label { display: block; font-size: 0.8em; font-weight: 700; color: var(--text-sub); margin-bottom: 6px; letter-spacing: 0.03em; }
-    .form-hint { font-size: 0.76em; color: #a0a0a0; margin-top: 5px; line-height: 1.5; }
-    .form-control {
-      width: 100%; padding: 10px 13px;
-      border: 1.5px solid var(--border); border-radius: var(--radius-inp);
-      font-size: 0.92em; font-family: inherit;
-      transition: border-color 0.2s, box-shadow 0.2s; background: var(--surface);
-      color: var(--text);
-    }
-    .form-control:focus { outline: none; border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107,158,120,0.15); }
-    .form-control.input-error { border-color: #C05252 !important; box-shadow: 0 0 0 3px rgba(192,82,82,0.12) !important; }
+    .form-label { display: block; font-size: 0.82em; font-weight: bold; color: #555; margin-bottom: 5px; }
+    .form-hint { font-size: 0.78em; color: #999; margin-top: 4px; line-height: 1.4; }
+    .form-control { width: 100%; padding: 9px 11px; border: 1.5px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; transition: border-color 0.15s; background: #fff; }
+    .form-control:focus { outline: none; border-color: #3498db; }
+    .form-control.input-error { border-color: #e74c3c !important; }
+    .form-control[readonly] { background: #f8f9fa; color: #555; font-size: 0.82em; word-break: break-all; }
+    textarea.form-control { resize: vertical; min-height: 72px; line-height: 1.5; }
 
-    .time-row { display: flex; align-items: center; gap: 10px; }
+    .time-row { display: flex; align-items: center; gap: 8px; }
     .time-row input { flex: 1; }
-    .time-sep { color: var(--text-sub); font-size: 0.9em; flex-shrink: 0; }
+    .time-sep { color: #aaa; font-size: 0.9em; flex-shrink: 0; }
+
+    .url-row { display: flex; gap: 8px; align-items: stretch; }
+    .url-row .form-control { flex: 1; }
+    .btn-copy {
+      flex-shrink: 0; padding: 0 14px; border: 1px solid #3498db; background: #fff;
+      color: #2471a3; border-radius: 7px; cursor: pointer; font-size: 0.8em; font-weight: bold;
+    }
+    .btn-copy:hover { background: #eaf4fd; }
 
     /* Toggle buttons (radio) */
     .toggle-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .toggle-opt { flex: 1; min-width: 100px; }
     .toggle-opt input[type="radio"] { display: none; }
     .toggle-opt label {
-      display: block; padding: 10px 10px;
-      border: 1.5px solid var(--border); border-radius: 10px;
-      cursor: pointer; text-align: center; font-size: 0.84em; font-weight: 500;
-      color: var(--text-sub); transition: all 0.18s; user-select: none;
-      background: var(--surface);
+      display: block; padding: 9px 10px; border: 1.5px solid #d5d8dc; border-radius: 8px;
+      cursor: pointer; text-align: center; font-size: 0.85em; font-weight: bold; color: #aaa;
+      transition: all 0.15s; user-select: none;
     }
-    .toggle-opt label:hover { border-color: var(--sage); color: var(--sage-dark); }
-    .toggle-opt input:checked + label {
-      border-color: var(--sage); background: var(--sage-light);
-      color: var(--sage-dark); font-weight: 700;
-    }
+    .toggle-opt input:checked + label { border-color: #3498db; background: #eaf4fd; color: #2471a3; }
 
     /* Info box */
-    .info-box {
-      background: var(--sage-light); border-left: 3px solid var(--sage);
-      padding: 10px 13px; border-radius: 0 8px 8px 0;
-      font-size: 0.8em; color: var(--sage-dark); margin-top: 9px; line-height: 1.55;
-    }
-    .info-box.warn { background: #FEF7EE; border-color: #D4923A; color: #8C5E1A; }
+    .info-box { background: #eaf4fd; border-left: 3px solid #3498db; padding: 9px 12px; border-radius: 0 7px 7px 0; font-size: 0.8em; color: #2471a3; margin-top: 8px; line-height: 1.5; }
+    .info-box.warn { background: #fef9ec; border-color: #f39c12; color: #9a6110; }
 
     /* Dynamic list items (menu / staff) */
     .dynamic-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .dynamic-item {
-      display: flex; align-items: flex-end; gap: 8px;
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px 13px;
-    }
-    .item-field { flex: 1; }
+    .dynamic-item { display: flex; align-items: flex-end; gap: 8px; background: #f8f9fa; border-radius: 8px; padding: 10px 12px; flex-wrap: wrap; }
+    .item-field { flex: 1; min-width: 140px; }
     .item-field .form-label { margin-bottom: 4px; }
-    .item-field input {
-      width: 100%; padding: 8px 11px;
-      border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: 0.88em; font-family: inherit; background: var(--surface);
-    }
-    .item-field input:focus { outline: none; border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107,158,120,0.12); }
-    .item-field input.input-error { border-color: #C05252; }
+    .item-field input { width: 100%; padding: 8px 10px; border: 1.5px solid #d5d8dc; border-radius: 6px; font-size: 0.88em; }
+    .item-field input:focus { outline: none; border-color: #3498db; }
+    .item-field input.input-error { border-color: #e74c3c; }
 
     /* Buttons */
-    .btn-remove {
-      background: #FDF0EE; color: #B04040; border: 1px solid #E8C0B8;
-      border-radius: 8px; padding: 7px 11px; cursor: pointer;
-      font-size: 0.78em; font-weight: 700; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px;
-      transition: background 0.15s;
-    }
-    .btn-remove:hover { background: #F5D5D0; }
-    .btn-add {
-      display: block; width: 100%; padding: 10px;
-      background: var(--surface); border: 1.5px dashed var(--sage);
-      color: var(--sage-dark); border-radius: 10px; cursor: pointer;
-      font-size: 0.85em; font-weight: 700; text-align: center;
-      font-family: inherit; transition: background 0.15s;
-    }
-    .btn-add:hover { background: var(--sage-light); }
-    .btn-save {
-      display: block; width: 100%; padding: 15px;
-      background: linear-gradient(135deg, var(--sage) 0%, var(--sage-dark) 100%);
-      color: #fff; border: none; border-radius: 12px;
-      cursor: pointer; font-size: 1em; font-weight: 700;
-      font-family: inherit; margin-top: 8px;
-      letter-spacing: 0.04em; transition: opacity 0.18s, transform 0.1s;
-      box-shadow: 0 4px 14px rgba(78,122,90,0.35);
-    }
-    .btn-save:hover { opacity: 0.88; transform: translateY(-1px); }
-    .btn-save:active { transform: translateY(0); }
-    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .btn-remove { background: #fadbd8; color: #cb4335; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 0.78em; font-weight: bold; flex-shrink: 0; align-self: flex-end; margin-bottom: 1px; }
+    .btn-remove:hover { background: #f5b7b1; }
+    .btn-add { display: block; width: 100%; padding: 9px; background: #fff; border: 1.5px dashed #3498db; color: #2471a3; border-radius: 8px; cursor: pointer; font-size: 0.85em; font-weight: bold; text-align: center; transition: background 0.15s; }
+    .btn-add:hover { background: #eaf4fd; }
+    .btn-save { display: block; width: 100%; padding: 14px; background: #27ae60; color: #fff; border: none; border-radius: 10px; cursor: pointer; font-size: 1em; font-weight: bold; margin-top: 6px; transition: opacity 0.18s; }
+    .btn-save:hover { opacity: 0.85; }
+    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
 
     /* Toast */
-    .toast {
-      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-      background: var(--text); color: #fff;
-      padding: 11px 24px; border-radius: 24px; z-index: 2000;
-      font-size: 0.87em; font-weight: 500; opacity: 0;
-      transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-    }
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 22px; border-radius: 8px; z-index: 2000; font-size: 0.88em; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
     .toast.show { opacity: 1; }
-    .toast.ok  { background: var(--sage-dark); }
-    .toast.err { background: #B84040; }
+    .toast.ok  { background: #27ae60; }
+    .toast.err { background: #e74c3c; }
   </style>
 </head>
 <body>
 
 <header class="header">
-  <h1>予約システム設定</h1>
+  <div>
+    <h1>予約システム設定</h1>
+    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.1（カレンダー設定・当日予約ルール対応）</div>
+  </div>
   <a class="header-link" href="?page=kanri">予約管理へ</a>
 </header>
 
@@ -204,6 +131,50 @@
       <label class="form-label">同時予約の上限数 *</label>
       <input type="number" id="maxConcurrentBookings" class="form-control" min="1" placeholder="1">
       <div class="form-hint">同じ時間帯に受け付ける最大予約件数。ベッド数・席数が目安です。</div>
+    </div>
+  </div>
+
+  <!-- Googleカレンダー設定 -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">📆</span>
+      <span class="section-title">Googleカレンダー設定</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">予約カレンダーID *</label>
+      <input type="text" id="reservationCalendarId" class="form-control" placeholder="xxxx@group.calendar.google.com">
+      <div class="form-hint">確定した予約が書き込まれるカレンダーです。Googleカレンダーの「設定と共有」→「カレンダーの統合」からIDをコピーしてください。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">店舗ブロックカレンダーID *</label>
+      <input type="text" id="blockInputCalendarId" class="form-control" placeholder="xxxx@group.calendar.google.com">
+      <div class="form-hint">休業日・全席ブロックなどを入力するカレンダーです。指名なし予約、または担当者機能OFF時に参照されます。</div>
+    </div>
+    <div class="info-box warn">
+      担当者機能を「利用する」場合、各担当者のブロックカレンダーIDも下の担当者欄で設定してください。
+    </div>
+  </div>
+
+  <!-- 当日予約ルール -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">⏰</span>
+      <span class="section-title">当日予約ルール</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">当日予約の受付開始時刻（任意）</label>
+      <input type="time" id="sameDayBlockedUntilTime" class="form-control" style="max-width:160px;">
+      <div class="form-hint">例: 12:00 を設定 → その時刻より前は当日予約をすべて不可にします（午前中は当日予約不可、など）。空欄なら制限なし。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">当日予約の最低受付時間（時間前）</label>
+      <input type="number" id="sameDayMinHoursBefore" class="form-control" min="0" max="24" placeholder="0" style="max-width:160px;">
+      <div class="form-hint">例: 2 を設定 → 開始2時間以内の枠は当日予約不可。0 なら「現在時刻より前の枠のみ不可」。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">当日予約の代替案内（任意）</label>
+      <textarea id="alternateBookingGuide" class="form-control" rows="3" placeholder="例: 当日予約はお電話（03-xxxx-xxxx）または公式LINEのDMにて承ります。"></textarea>
+      <div class="form-hint">LIFFの予約画面に表示されます。電話・LINE・Instagram DMなど、店舗ごとの当日予約導線を記載してください。</div>
     </div>
   </div>
 
@@ -296,8 +267,32 @@
       <input type="text" id="lineChannelSecret" class="form-control">
     </div>
     <div class="form-group">
-      <label class="form-label">LIFFチャネルID *</label>
-      <input type="text" id="liffChannelId" class="form-control">
+      <label class="form-label">LINE Login チャネルID *</label>
+      <input type="text" id="lineLoginChannelId" class="form-control" placeholder="LINE Developers › Basic settings › Channel ID（数値）">
+      <div class="form-hint">LIFF の ID Token 検証に使用します。Messaging API チャネルと同じプロバイダー内の LINE Login チャネル ID（数値）を入力してください。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">LIFF ID *</label>
+      <input type="text" id="liffChannelId" class="form-control" oninput="updateEndpointUrls()" placeholder="200xxxxxx-xxxxxxxx">
+      <div class="form-hint">LINE Developers › LIFF アプリの LIFF ID。予約画面 URL の liffId パラメータに使用します。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Webhook URL（Messaging API に設定）</label>
+      <div class="url-row">
+        <input type="text" id="webhookUrlDisplay" class="form-control" readonly>
+        <button type="button" class="btn-copy" onclick="copyUrl('webhookUrlDisplay')">コピー</button>
+      </div>
+      <div class="form-hint">LINE Developers › Messaging API › Webhook URL に貼り付けます。「Webhookの利用」をONにしてください。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">LIFF エンドポイントURL（LIFFアプリに設定）</label>
+      <div class="url-row">
+        <input type="text" id="liffEndpointUrlDisplay" class="form-control" readonly>
+        <button type="button" class="btn-copy" onclick="copyUrl('liffEndpointUrlDisplay')">コピー</button>
+      </div>
+      <div class="info-box warn">
+        <strong>重要:</strong> ここに表示される GitHub Pages の URL を LIFF のエンドポイントに設定してください。GASのシステムURL（Webhook URL）とは<strong>別のURL</strong>です。
+      </div>
     </div>
   </div>
 
@@ -309,9 +304,16 @@
 
 <script>
   const allConfigsAsJsonString = '<?= allConfigsAsJson ?>';
+  const GAS_DEPLOY_URL = '<?= gasDeployUrl ?>';
+  const LIFF_PAGES_BASE = '<?= liffPagesBase ?>';
   const configs = JSON.parse(allConfigsAsJsonString);
+  const staffBlockMap = configs.staff_block_calendar_id_map || {};
   let serviceMenus = configs.serviceMenus || [];
-  let staffs       = configs.staffs       || [];
+  let staffs = (configs.staffs || []).map(s => ({
+    name: s.name || '',
+    email: s.email || '',
+    blockCalendarId: staffBlockMap[s.email] || s.blockCalendarId || ''
+  }));
 
   // ===== Populate =====
   function populateForm() {
@@ -324,7 +326,15 @@
     document.getElementById('maxBulkBookings').value      = configs.maxBulkBookings      || 1;
     document.getElementById('lineChannelAccessToken').value = configs.lineChannelAccessToken || '';
     document.getElementById('lineChannelSecret').value    = configs.lineChannelSecret    || '';
+    document.getElementById('lineLoginChannelId').value = configs.lineLoginChannelId   || '';
     document.getElementById('liffChannelId').value        = configs.liffChannelId        || '';
+    document.getElementById('reservationCalendarId').value = configs.reservationCalendarId || '';
+    document.getElementById('blockInputCalendarId').value   = configs.block_input_calendar_id || '';
+    document.getElementById('sameDayMinHoursBefore').value  = (configs.sameDayMinHoursBefore !== undefined && configs.sameDayMinHoursBefore !== '') ? configs.sameDayMinHoursBefore : 0;
+    document.getElementById('sameDayBlockedUntilTime').value = configs.sameDayBlockedUntilTime || '';
+    document.getElementById('alternateBookingGuide').value  = configs.alternateBookingGuide || '';
+
+    updateEndpointUrls();
 
     // Staff feature radio
     const staffEnabled = configs.isStaffFeatureEnabled || false;
@@ -356,8 +366,34 @@
     document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
       const name  = item.querySelector('.staff-name').value.trim();
       const email = item.querySelector('.staff-email').value.trim();
-      staffs.push({ name, email });
+      const blockCalendarId = (item.querySelector('.staff-block-cal')?.value || '').trim();
+      staffs.push({ name, email, blockCalendarId });
     });
+  }
+
+  function updateEndpointUrls() {
+    const webhookEl = document.getElementById('webhookUrlDisplay');
+    const liffEl = document.getElementById('liffEndpointUrlDisplay');
+    if (webhookEl) webhookEl.value = GAS_DEPLOY_URL || '';
+    const liffId = document.getElementById('liffChannelId').value.trim();
+    if (liffEl) {
+      if (liffId && GAS_DEPLOY_URL && LIFF_PAGES_BASE) {
+        liffEl.value = `${LIFF_PAGES_BASE}/liff.html?gasApiUrl=${encodeURIComponent(GAS_DEPLOY_URL)}&liffId=${encodeURIComponent(liffId)}`;
+      } else {
+        liffEl.value = liffId ? '（GAS URL を取得できませんでした）' : 'LIFFチャネルIDを入力すると表示されます';
+      }
+    }
+  }
+
+  function copyUrl(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el || !el.value || el.value.startsWith('LIFF') || el.value.startsWith('（')) {
+      toast('コピーできるURLがありません。', 'err');
+      return;
+    }
+    navigator.clipboard.writeText(el.value)
+      .then(() => toast('URLをコピーしました ✓', 'ok'))
+      .catch(() => { el.select(); document.execCommand('copy'); toast('URLをコピーしました ✓', 'ok'); });
   }
 
   // ===== Staff =====
@@ -368,10 +404,10 @@
   function renderStaffList() {
     const el = document.getElementById('staffList');
     el.innerHTML = '';
-    staffs.forEach((s, i) => el.appendChild(createStaffItem(s.name, s.email, i)));
+    staffs.forEach((s, i) => el.appendChild(createStaffItem(s.name, s.email, s.blockCalendarId, i)));
   }
 
-  function createStaffItem(name, email, index) {
+  function createStaffItem(name, email, blockCalendarId, index) {
     const div = document.createElement('div');
     div.className = 'dynamic-item';
     div.dataset.index = index;
@@ -384,12 +420,16 @@
         <label class="form-label">Gmailアドレス</label>
         <input type="email" class="staff-email" value="${email}">
       </div>
+      <div class="item-field" style="flex:2">
+        <label class="form-label">ブロックカレンダーID</label>
+        <input type="text" class="staff-block-cal" value="${blockCalendarId || ''}" placeholder="xxxx@group.calendar.google.com">
+      </div>
       <button type="button" class="btn-remove" onclick="removeStaff(this)">削除</button>`;
     return div;
   }
 
   function addStaff() {
-    syncUiToData(); staffs.push({ name: '', email: '' }); renderStaffList();
+    syncUiToData(); staffs.push({ name: '', email: '', blockCalendarId: '' }); renderStaffList();
   }
   function removeStaff(btn) {
     syncUiToData();
@@ -449,7 +489,8 @@
 
     const required = ['shopName','businessHoursStart','businessHoursEnd','bookingTimeUnit',
                       'bookingLookaheadDays','maxConcurrentBookings',
-                      'lineChannelAccessToken','lineChannelSecret','liffChannelId'];
+                      'lineChannelAccessToken','lineChannelSecret','lineLoginChannelId','liffChannelId',
+                      'reservationCalendarId','blockInputCalendarId'];
     required.forEach(id => {
       const el = document.getElementById(id);
       if (!el.value.trim()) { markError(el); ok = false; }
@@ -477,11 +518,14 @@
       document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
         const nEl = item.querySelector('.staff-name');
         const eEl = item.querySelector('.staff-email');
+        const bEl = item.querySelector('.staff-block-cal');
         const n   = nEl.value.trim();
         const e   = eEl.value.trim().toLowerCase();
+        const b   = (bEl?.value || '').trim();
         const validGmail = e.endsWith('@gmail.com') && e.length > '@gmail.com'.length;
         if (!n)          { markError(nEl); ok = false; }
         if (!validGmail) { markError(eEl); ok = false; }
+        if (!b)          { if (bEl) markError(bEl); ok = false; }
         if (n && validGmail) {
           if (names.includes(n))   { markError(nEl); ok = false; }
           if (emails.includes(e))  { markError(eEl); ok = false; }
@@ -490,6 +534,10 @@
       });
       if (names.length === 0) ok = false;
     }
+
+    const minHoursEl = document.getElementById('sameDayMinHoursBefore');
+    const minHoursVal = parseInt(minHoursEl.value, 10);
+    if (isNaN(minHoursVal) || minHoursVal < 0 || minHoursVal > 24) { markError(minHoursEl); ok = false; }
 
     const menuNames = [];
     let hasMenu = false;
@@ -525,6 +573,10 @@
 
     const isStaffEnabled = document.getElementById('staffOn').checked;
     const reminderMode   = document.querySelector('input[name="reminderMode"]:checked')?.value || 'ICS';
+    const staffBlockCalendarIdMap = {};
+    staffs.forEach(s => {
+      if (s.email && s.blockCalendarId) staffBlockCalendarIdMap[s.email] = s.blockCalendarId;
+    });
 
     const configsToSave = {
       shopName:              document.getElementById('shopName').value.trim(),
@@ -537,10 +589,17 @@
       maxConcurrentBookings: parseInt(document.getElementById('maxConcurrentBookings').value, 10),
       maxBulkBookings:       parseInt(document.getElementById('maxBulkBookings').value, 10),
       isStaffFeatureEnabled: isStaffEnabled,
-      staffs:                isStaffEnabled ? staffs.filter(s => s.name && s.email) : [],
+      staffs:                isStaffEnabled ? staffs.filter(s => s.name && s.email).map(s => ({ name: s.name, email: s.email })) : [],
+      staff_block_calendar_id_map: isStaffEnabled ? staffBlockCalendarIdMap : {},
       serviceMenus:          serviceMenus.filter(m => m.name && m.duration > 0),
+      reservationCalendarId: document.getElementById('reservationCalendarId').value.trim(),
+      block_input_calendar_id: document.getElementById('blockInputCalendarId').value.trim(),
+      sameDayMinHoursBefore: parseInt(document.getElementById('sameDayMinHoursBefore').value, 10) || 0,
+      sameDayBlockedUntilTime: document.getElementById('sameDayBlockedUntilTime').value,
+      alternateBookingGuide: document.getElementById('alternateBookingGuide').value.trim(),
       lineChannelAccessToken:document.getElementById('lineChannelAccessToken').value.trim(),
       lineChannelSecret:     document.getElementById('lineChannelSecret').value.trim(),
+      lineLoginChannelId:    document.getElementById('lineLoginChannelId').value.trim(),
       liffChannelId:         document.getElementById('liffChannelId').value.trim(),
       reminderMode:          reminderMode
     };
