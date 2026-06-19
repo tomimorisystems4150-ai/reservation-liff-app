@@ -303,9 +303,19 @@
 <div id="toast" class="toast"></div>
 
 <script>
-  const allConfigsAsJsonString = '<?= allConfigsAsJson ?>';
-  const GAS_DEPLOY_URL = '<?= gasDeployUrl ?>';
-  const LIFF_PAGES_BASE = '<?= liffPagesBase ?>';
+<?
+  // Code.js からの template 変数が未設定でも動作する（配信タイミングのズレ対策）
+  var _gasDeployUrl = ScriptApp.getService().getUrl();
+  var _liffPagesBase = (typeof liffPagesBase !== 'undefined' && liffPagesBase)
+    ? String(liffPagesBase)
+    : 'https://tomimorisystems4150-ai.github.io/reservation-liff-app';
+  var _configsJson = (typeof allConfigsAsJson !== 'undefined' && allConfigsAsJson)
+    ? String(allConfigsAsJson)
+    : JSON.stringify(getConfigs());
+?>
+  const allConfigsAsJsonString = <?= JSON.stringify(_configsJson) ?>;
+  const GAS_DEPLOY_URL = <?= JSON.stringify(_gasDeployUrl) ?>;
+  const LIFF_PAGES_BASE = <?= JSON.stringify(_liffPagesBase) ?>;
   const configs = JSON.parse(allConfigsAsJsonString);
   const staffBlockMap = configs.staff_block_calendar_id_map || {};
   let serviceMenus = configs.serviceMenus || [];
