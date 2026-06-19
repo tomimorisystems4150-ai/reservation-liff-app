@@ -46,7 +46,7 @@ export default {
         case '/':                   return handleIndex(env);
         case '/start':              return handleStart(request, env);
         case '/callback':           return handleCallback(request, env);
-        case '/complete':           return handleComplete(url);
+        case '/complete':           return handleComplete(url, env);
         case '/admin':              return handleAdmin(request, env);
         case '/admin/push-update':  return handlePushUpdate(request, env);
         case '/admin/kv-cleanup':   return handleKvCleanup(request, env);
@@ -270,9 +270,15 @@ async function handleCallback(request, env) {
 // ============================================================
 // 完了ページ
 // ============================================================
-function handleComplete(url) {
+function handleComplete(url, env) {
   const deployUrl = url.searchParams.get('deployUrl') || '';
   const gasUrl    = url.searchParams.get('gasUrl')    || '';
+
+  // LIFF 予約画面（GitHub Pages）。GAS URL とは別物。
+  const repo     = env.GITHUB_REPO || 'tomimorisystems4150-ai/reservation-liff-app';
+  const [owner, name] = repo.split('/');
+  const liffBaseUrl = `https://${owner}.github.io/${name}/liff.html`;
+  const liffEndpointTemplate = `${liffBaseUrl}?gasApiUrl=${encodeURIComponent(deployUrl)}&liffId=【LIFF ID】`;
 
   const html = buildPage('セットアップ完了！', `
     <div class="success-banner">
@@ -312,10 +318,16 @@ function handleComplete(url) {
           <span style="color:#555; font-size:14px;">店舗名・営業時間・サービスメニュー・担当者・LINEトークンなどを入力</span>
         </li>
         <li style="margin-bottom:14px;">
-          <strong>LINE Developers → Messaging API → Webhook URL にシステムURLを貼り付けて「検証」</strong>
+          <strong>LINE Developers → Messaging API → Webhook URL にシステムURLを貼り付けて「検証」</strong><br>
+          <span style="color:#555; font-size:14px;">Webhook だけが GAS のシステムURL を使います</span>
+        </li>
+        <li style="margin-bottom:14px;">
+          <strong>LINE Developers → LIFF → エンドポイントURL</strong><br>
+          <span style="color:#555; font-size:14px;">⚠️ システムURL（GAS）ではなく、下記の予約画面URLを設定してください（【LIFF ID】は LIFF 作成後に置き換え）</span>
+          <code style="display:block; margin-top:8px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:11px; word-break:break-all; line-height:1.5;">${escapeHtml(liffEndpointTemplate)}</code>
         </li>
         <li>
-          <strong>LINE Developers → LIFFアプリ → エンドポイントURL にシステムURLを貼り付けて保存</strong>
+          <strong>リッチメニュー</strong>：上記と同じ URL（LIFF ID 入り）を「予約する」ボタンに設定
         </li>
       </ol>
     </div>
