@@ -21,11 +21,15 @@ function getConfigSheet_() {
   const ss = getSpreadsheet_();
   if (!ss) {
     throw new Error(
-      `スプレッドシート (ID: ${_PROVISIONED_SS_ID}) にアクセスできません。` +
-      'GASエディタを開き、任意の関数を実行して権限を付与してください。'
+      `スプレッドシート (ID: ${_PROVISIONED_SS_ID}) を開けませんでした。` +
+      'システムURLが正しいか、オンボーディングが正常に完了しているか確認してください。'
     );
   }
-  return ss.getSheetByName('Config');
+  const sheet = ss.getSheetByName('Config');
+  if (!sheet) {
+    throw new Error('設定シート「Config」が見つかりません。テンプレートのコピーが正常に完了しているか確認してください。');
+  }
+  return sheet;
 }
 
 /**
@@ -142,13 +146,16 @@ function doGet(e) {
   try {
     configs = getConfigs();
   } catch (err) {
-    return ContentService.createTextOutput(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>初期化エラー</title></head>
-      <body style="font-family:sans-serif;padding:40px;text-align:center;">
+    return HtmlService.createHtmlOutput(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>初期化エラー</title>
+      <style>body{font-family:sans-serif;padding:40px;text-align:center;background:#f5f5f5;}
+      .card{background:#fff;border-radius:12px;padding:32px;max-width:480px;margin:40px auto;
+            box-shadow:0 2px 12px rgba(0,0,0,0.1);}</style></head>
+      <body><div class="card">
         <h2>初期化エラー</h2>
-        <p>${escapeHtml_(String(err.message || err))}</p>
-      </body></html>`
-    ).setMimeType(ContentService.MimeType.HTML);
+        <p style="color:#555;line-height:1.7;">${escapeHtml_(String(err.message || err))}</p>
+      </div></body></html>`
+    ).setTitle('初期化エラー');
   }
   const currentUser = Session.getActiveUser().getEmail();
   
@@ -350,11 +357,9 @@ function doPost(e) {
 // =================================================================
 
 function getConfigs() {
-  if (!getConfigSheet_()) {
-    throw new Error('設定シート「Config」が見つかりません。');
-  }
+  const configSheet = getConfigSheet_();
   
-  const dataRange = getConfigSheet_().getRange('A2:B' + getConfigSheet_().getLastRow());
+  const dataRange = configSheet.getRange('A2:B' + configSheet.getLastRow());
   const values = dataRange.getValues();
   
   const configs = {};

@@ -945,13 +945,16 @@ async function fetchRawFiles(env) {
 }
 
 // 取得済みファイル配列に顧客固有のスプレッドシートIDを埋め込む（外部リクエストなし）
+// 定数宣言行のみ置換する（比較式内の 'PLACEHOLDER_SPREADSHEET_ID' リテラルは触らない）
 // ============================================================
 function substituteSpreadsheetId(rawFiles, spreadsheetId) {
+  const ssIdPattern = /const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';/;
+  const ssIdReplacement = `const _PROVISIONED_SS_ID = '${spreadsheetId}';`;
   return rawFiles.map(({ name, type, file, source }) => ({
     name,
     type,
     source: file === 'Code.js'
-      ? source.replace(/PLACEHOLDER_SPREADSHEET_ID/g, spreadsheetId)
+      ? source.replace(ssIdPattern, ssIdReplacement)
       : source,
   }));
 }
