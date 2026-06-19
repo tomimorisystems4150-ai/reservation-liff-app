@@ -309,14 +309,13 @@
   var _liffPagesBase = (typeof liffPagesBase !== 'undefined' && liffPagesBase)
     ? String(liffPagesBase)
     : 'https://tomimorisystems4150-ai.github.io/reservation-liff-app';
-  var _configsJson = (typeof allConfigsAsJson !== 'undefined' && allConfigsAsJson)
+  var _configsForPage = (typeof allConfigsAsJson !== 'undefined' && allConfigsAsJson)
     ? String(allConfigsAsJson)
     : JSON.stringify(getConfigs());
 ?>
-  const allConfigsAsJsonString = <?= JSON.stringify(_configsJson) ?>;
-  const GAS_DEPLOY_URL = <?= JSON.stringify(_gasDeployUrl) ?>;
-  const LIFF_PAGES_BASE = <?= JSON.stringify(_liffPagesBase) ?>;
-  const configs = JSON.parse(allConfigsAsJsonString);
+  const configs = <?!= _configsForPage ?>;
+  const GAS_DEPLOY_URL = <?!= JSON.stringify(_gasDeployUrl) ?>;
+  const LIFF_PAGES_BASE = <?!= JSON.stringify(_liffPagesBase) ?>;
   const staffBlockMap = configs.staff_block_calendar_id_map || {};
   let serviceMenus = configs.serviceMenus || [];
   let staffs = (configs.staffs || []).map(s => ({
