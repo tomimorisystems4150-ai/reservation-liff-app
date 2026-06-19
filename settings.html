@@ -268,8 +268,8 @@
     </div>
     <div class="form-group">
       <label class="form-label">LINE Login チャネルID *</label>
-      <input type="text" id="lineLoginChannelId" class="form-control" placeholder="LINE Developers › Basic settings › Channel ID（数値）">
-      <div class="form-hint">LIFF の ID Token 検証に使用します。Messaging API チャネルと同じプロバイダー内の LINE Login チャネル ID（数値）を入力してください。</div>
+      <input type="text" id="lineLoginChannelId" class="form-control" placeholder="LINE Developers › LINEログイン › チャネル基本設定 › チャネルID">
+      <div class="form-hint">LINE Developers › LINEログイン › チャネル基本設定 › チャネルID に表示される数値を入力してください。</div>
     </div>
     <div class="form-group">
       <label class="form-label">LIFF ID *</label>
@@ -290,9 +290,7 @@
         <input type="text" id="liffEndpointUrlDisplay" class="form-control" readonly>
         <button type="button" class="btn-copy" onclick="copyUrl('liffEndpointUrlDisplay')">コピー</button>
       </div>
-      <div class="info-box warn">
-        <strong>重要:</strong> ここに表示される GitHub Pages の URL を LIFF のエンドポイントに設定してください。GASのシステムURL（Webhook URL）とは<strong>別のURL</strong>です。
-      </div>
+      <div class="form-hint">LINE Developers › LIFF › 対象アプリ › エンドポイント URL に貼り付けます。</div>
     </div>
   </div>
 

@@ -404,6 +404,14 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     .step-list li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 22px; height: 22px; background: #3498db; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
     .step-list strong { display: block; color: #222; margin-bottom: 2px; }
     .meta-box { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; font-size: 0.8em; color: #666; margin-top: 12px; word-break: break-all; }
+    .cmd-block { margin-top: 14px; }
+    .cmd-block-label { font-size: 0.75em; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .cmd-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .cmd-row code { flex: 1; background: #1e2533; color: #a8d8a8; font-family: 'Consolas','Menlo',monospace; font-size: 0.78em; padding: 7px 10px; border-radius: 6px; word-break: break-all; line-height: 1.5; }
+    .cmd-row .cmd-comment { display: block; font-size: 0.72em; color: #3498db; margin-top: 2px; }
+    .btn-copy-cmd { flex-shrink: 0; background: #f0f4f8; border: 1px solid #dde3ea; color: #555; font-size: 0.72em; padding: 5px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+    .btn-copy-cmd:hover { background: #e0e8f0; }
+    .cmd-section { margin-bottom: 10px; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
     .btn { border: none; border-radius: 8px; padding: 9px 16px; font-size: 0.85em; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
     .btn:hover:not(:disabled) { opacity: 0.88; }
@@ -477,6 +485,69 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
           <div class="meta-box">
             取得元: <strong>${escapeHtml(repo)}</strong> / <strong>${escapeHtml(branch)}</strong><br>
             配信ファイル: Code.js, settings.html, kanri.html 等
+          </div>
+
+          <div class="cmd-block">
+            <div class="cmd-block-label">よく使う git コマンド（クリックでコピー）</div>
+            <div style="font-size:0.75em;color:#e74c3c;background:#fff5f5;border:1px solid #fcc;border-radius:6px;padding:6px 10px;margin-bottom:10px;">
+              ⚠️ 以下のコマンドは必ず <strong>リポジトリのルートフォルダ</strong>（reservation-liff-app）で実行してください。
+            </div>
+            <div class="cmd-row" style="margin-bottom:10px;">
+              <code>cd "c:\\Users\\user\\reservation-liff-app"<span class="cmd-comment"># まずルートに移動（毎回実行推奨）</span></code>
+              <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+            </div>
+
+            <div class="cmd-section">
+              <div style="font-size:0.75em;color:#e67e22;font-weight:700;margin-bottom:4px;">● GAS ファイル修正後（Code.js / settings.html / kanri.html）→ コード配信も必要</div>
+              <div class="cmd-row">
+                <code>git add Code.js settings.html kanri.html<span class="cmd-comment"># 変更ファイルをステージング</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git commit -m "fix: 設定画面・管理画面を修正"<span class="cmd-comment"># コミット（メッセージは適宜変更）</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git push origin ${escapeHtml(branch)}<span class="cmd-comment"># push 後にこの画面で「コード配信」</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+            </div>
+
+            <div class="cmd-section">
+              <div style="font-size:0.75em;color:#27ae60;font-weight:700;margin-bottom:4px;">● LIFF 修正後（liff.js / liff.html / liff.css）→ push のみで自動反映</div>
+              <div class="cmd-row">
+                <code>git add liff.js liff.html liff.css<span class="cmd-comment"># 変更ファイルをステージング</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git commit -m "fix: LIFF 予約画面を修正"<span class="cmd-comment"># コミット</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git push origin ${escapeHtml(branch)}<span class="cmd-comment"># push 後 1〜2分で GitHub Pages に自動反映</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+            </div>
+
+            <div class="cmd-section">
+              <div style="font-size:0.75em;color:#8e44ad;font-weight:700;margin-bottom:4px;">● Worker（コンソール）修正後 → push ＋ wrangler deploy が必要</div>
+              <div class="cmd-row">
+                <code>git add cloudflare-worker/<span class="cmd-comment"># Worker ファイルをステージング</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git commit -m "fix: Worker を修正"<span class="cmd-comment"># コミット</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>git push origin ${escapeHtml(branch)}<span class="cmd-comment"># GitHub に push</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+              <div class="cmd-row">
+                <code>cd cloudflare-worker; npx wrangler deploy<span class="cmd-comment"># Worker を Cloudflare に反映</span></code>
+                <button class="btn-copy-cmd" onclick="copyCmd(this)">コピー</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="panel panel-test" style="margin-bottom:16px;">
@@ -733,6 +804,33 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     document.getElementById('btnResumeSelected').addEventListener('click', () => setStatusForSelected('稼働中'));
 
     renderTable();
+
+    // コマンドコピーボタン
+    function copyCmd(btn) {
+      const code = btn.previousElementSibling;
+      // <code> 内のテキストから <span class="cmd-comment"> を除いたコマンド部分のみ取得
+      const spans = code.querySelectorAll('.cmd-comment');
+      spans.forEach(s => s.style.display = 'none');
+      const cmd = code.innerText.trim();
+      spans.forEach(s => s.style.display = '');
+      navigator.clipboard.writeText(cmd).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'コピー済 ✓';
+        btn.style.color = '#27ae60';
+        setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+      }).catch(() => {
+        // フォールバック
+        const ta = document.createElement('textarea');
+        ta.value = cmd;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = 'コピー済 ✓';
+        setTimeout(() => { btn.textContent = 'コピー'; }, 2000);
+      });
+    }
+    window.copyCmd = copyCmd;
   </script>
 </body>
 </html>`;
