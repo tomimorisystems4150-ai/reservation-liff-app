@@ -187,6 +187,7 @@ function doGet(e) {
     const tmpl = HtmlService.createTemplateFromFile('kanri');
     tmpl.shopName    = configs.shopName || '';
     tmpl.currentUser = currentUser;
+    tmpl.gasDeployUrl = ScriptApp.getService().getUrl();
     return tmpl.evaluate().setTitle('予約管理');
   }
 
@@ -746,7 +747,7 @@ function handleTextMessage(event, configs) {
       });
       replyText += 'ご来店をお待ちしております。';
     } else {
-      replyText = '現在、今後のご予約はございません。\n\nご予約はLINEのメニューから承ります。';
+      replyText = '現在、ご予約はございません。\n\nご予約はLINEのメニューから承ります。';
     }
 
     replyToUser(replyToken, replyText, configs.lineChannelAccessToken);

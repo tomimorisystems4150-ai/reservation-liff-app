@@ -99,7 +99,7 @@
     <h1>予約システム設定</h1>
     <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.2（定休日・非稼働時間対応）</div>
   </div>
-  <a class="header-link" href="?page=kanri">予約管理へ</a>
+  <a class="header-link" id="linkKanri" href="#" target="_top">予約管理へ</a>
 </header>
 
 <div class="content">
@@ -374,6 +374,11 @@
     renderBreakList();
 
     updateEndpointUrls();
+
+    const kanriLink = document.getElementById('linkKanri');
+    if (kanriLink && GAS_DEPLOY_URL) {
+      kanriLink.href = GAS_DEPLOY_URL + (GAS_DEPLOY_URL.indexOf('?') >= 0 ? '&' : '?') + 'page=kanri';
+    }
 
     // Staff feature radio
     const staffEnabled = configs.isStaffFeatureEnabled || false;
