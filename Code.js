@@ -192,6 +192,8 @@ function doGet(e) {
 
   const template = HtmlService.createTemplateFromFile('settings');
   template.allConfigsAsJson = JSON.stringify(configs);
+  template.gasDeployUrl = ScriptApp.getService().getUrl();
+  template.liffPagesBase = 'https://tomimorisystems4150-ai.github.io/reservation-liff-app';
   return template.evaluate().setTitle('システム設定');
 }
 
@@ -279,9 +281,18 @@ function doPost(e) {
     
     if (postData.action) {
       Logger.log('受信アクション: [' + postData.action + '] / postData keys: ' + Object.keys(postData).join(', '));
+
+      if (postData.action !== 'runTests') {
+        const configsForSuspend = getConfigs();
+        if (isServiceSuspended_(configsForSuspend)) {
+          return createServiceSuspendedResponse_();
+        }
+      }
+
       let response;
       switch (postData.action) {
         case 'getInitData': {
+          requireVerifiedLineUserId_(postData, postData.lineUserId || null);
           const configs = getConfigs();
           const lineUserId = postData.lineUserId || null;
           const isRegistered = lineUserId ? (findCustomerByUserId_(lineUserId) !== null) : false;
@@ -293,7 +304,10 @@ function doPost(e) {
             bookingTimeUnit: configs.bookingTimeUnit || 30,
             bookingLookaheadDays: configs.bookingLookaheadDays || 90,
             isRegistered: isRegistered,
-            maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10)
+            maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10),
+            sameDayMinHoursBefore: parseInt(configs.sameDayMinHoursBefore || 0, 10),
+            sameDayBlockedUntilTime: configs.sameDayBlockedUntilTime || '',
+            alternateBookingGuide: configs.alternateBookingGuide || ''
           };
           break;
         }
@@ -309,6 +323,13 @@ function doPost(e) {
           if (!postData.bookingDataList || !Array.isArray(postData.bookingDataList) || postData.bookingDataList.length === 0) {
             throw new Error('予約情報リストがありません。');
           }
+          const bulkUserId = postData.bookingDataList[0].lineUserId;
+          requireVerifiedLineUserId_(postData, bulkUserId);
+          for (let i = 1; i < postData.bookingDataList.length; i++) {
+            if (postData.bookingDataList[i].lineUserId !== bulkUserId) {
+              throw new Error('一括予約の LINE User ID が一致しません。');
+            }
+          }
           response = createBulkBookings(postData.bookingDataList);
           break;
         }
@@ -317,6 +338,7 @@ function doPost(e) {
           if (!postData.lineUserId || !postData.customerName) {
             throw new Error('LINE User ID と顧客名は必須です。');
           }
+          requireVerifiedLineUserId_(postData, postData.lineUserId);
           response = registerCustomer(postData.lineUserId, postData.customerName, postData.phone || '');
           break;
         }
@@ -333,6 +355,7 @@ function doPost(e) {
           if (!postData.bookingData) {
             throw new Error('予約情報がありません。');
           }
+          requireVerifiedLineUserId_(postData, postData.bookingData.lineUserId);
           response = createBooking(postData.bookingData);
           break;
         }
@@ -347,6 +370,9 @@ function doPost(e) {
 
   } catch (error) {
     Logger.log('APIエラー: %s', error.message);
+    if (isLineAuthErrorMessage_(error.message)) {
+      return createLineAuthFailedResponse_(error.message);
+    }
     return createJsonResponse({ success: false, message: error.message });
   }
 }
@@ -369,17 +395,17 @@ function getConfigs() {
     
     if (!key) return;
 
-    const jsonKeys = ['serviceMenus', 'businessHours', 'holidays', 'staffs', 'staff_block_calendar_id_map'];
+    const jsonKeys = ['serviceMenus', 'businessHours', 'holidays', 'staffs', 'staff_block_calendar_id_map', 'nonOperatingHours'];
     if (jsonKeys.includes(key)) {
       try {
         if (value === '' || value === null || value === undefined) {
-          configs[key] = (key === 'serviceMenus' || key === 'holidays' || key === 'staffs') ? [] : {};
+          configs[key] = (key === 'serviceMenus' || key === 'holidays' || key === 'staffs' || key === 'nonOperatingHours') ? [] : {};
         } else {
           configs[key] = JSON.parse(value);
         }
       } catch (e) {
         Logger.log(`Key "${key}" のJSONパースに失敗。デフォルト値を設定します。Error: ${e.message}`);
-        configs[key] = (key === 'serviceMenus' || key === 'holidays' || key === 'staffs') ? [] : {};
+        configs[key] = (key === 'serviceMenus' || key === 'holidays' || key === 'staffs' || key === 'nonOperatingHours') ? [] : {};
       }
     } else {
       if (key === 'isStaffFeatureEnabled') {
@@ -391,6 +417,98 @@ function getConfigs() {
   });
   
   return configs;
+}
+
+/**
+ * 開発者側でサービス停止が設定されているか（Config.serviceSuspended）
+ */
+function isServiceSuspended_(configs) {
+  const v = configs && configs.serviceSuspended;
+  return v === true || String(v).toLowerCase() === 'true' || v === 1 || v === '1';
+}
+
+function createServiceSuspendedResponse_() {
+  return createJsonResponse({
+    success: false,
+    code: 'SERVICE_SUSPENDED',
+    message: '現在、予約サービスは一時停止中です。店舗にお問い合わせください。',
+  });
+}
+
+// =================================================================
+// LINE ID Token 検証（LIFF → GAS API）
+// =================================================================
+
+const LINE_ID_TOKEN_VERIFY_URL = 'https://api.line.me/oauth2/v2.1/verify';
+
+function isLineIdTokenVerificationEnabled_(configs) {
+  return !!String((configs && configs.lineLoginChannelId) || '').trim();
+}
+
+/**
+ * LINE ID Token を Verify API で検証し、LINE User ID (sub) を返す。
+ * lineLoginChannelId 未設定時は null（移行モード）。
+ */
+function verifyLineIdToken_(idToken, configs) {
+  if (!idToken) {
+    throw new Error('LINE認証情報がありません。LINEアプリから再度お試しください。');
+  }
+  const clientId = String(configs.lineLoginChannelId || '').trim();
+  if (!clientId) {
+    return null;
+  }
+  const res = UrlFetchApp.fetch(LINE_ID_TOKEN_VERIFY_URL, {
+    method: 'post',
+    contentType: 'application/x-www-form-urlencoded',
+    payload: {
+      id_token: idToken,
+      client_id: clientId,
+    },
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) {
+    Logger.log('ID token verify failed: HTTP %s %s', res.getResponseCode(), res.getContentText());
+    throw new Error('LINE認証の検証に失敗しました。LINEアプリから再度お試しください。');
+  }
+  const body = JSON.parse(res.getContentText());
+  if (!body.sub) {
+    throw new Error('LINE認証の検証結果が不正です。');
+  }
+  return body.sub;
+}
+
+/**
+ * リクエストの idToken を検証し、expectedUserId と一致することを要求する。
+ * lineLoginChannelId 未設定時は移行モード（警告ログのみ）。
+ */
+function requireVerifiedLineUserId_(postData, expectedUserId) {
+  const configs = getConfigs();
+  if (!isLineIdTokenVerificationEnabled_(configs)) {
+    Logger.log('lineLoginChannelId 未設定: ID Token 検証をスキップ（移行モード）');
+    if (!expectedUserId) {
+      throw new Error('LINE User ID が必要です。');
+    }
+    return expectedUserId;
+  }
+  const verified = verifyLineIdToken_(postData.idToken, configs);
+  if (!expectedUserId || verified !== expectedUserId) {
+    Logger.log('LINE User ID mismatch: expected=%s verified=%s', expectedUserId, verified);
+    throw new Error('LINE認証情報が一致しません。');
+  }
+  return verified;
+}
+
+function createLineAuthFailedResponse_(message) {
+  return createJsonResponse({
+    success: false,
+    code: 'LINE_AUTH_FAILED',
+    message: message || 'LINE認証の検証に失敗しました。',
+  });
+}
+
+function isLineAuthErrorMessage_(message) {
+  const msg = String(message || '');
+  return msg.indexOf('LINE認証') >= 0 || msg.indexOf('LINE User ID') >= 0;
 }
 
 function saveConfigs(configs) {
@@ -421,18 +539,30 @@ function saveConfigs(configs) {
       throw new Error('設定シート「Config」が見つかりません。');
     }
 
-    const dataRange = getConfigSheet_().getRange('A2:B' + getConfigSheet_().getLastRow());
-    const sheetValues = dataRange.getValues();
+    const sheet = getConfigSheet_();
+    const lastRow = Math.max(sheet.getLastRow(), 1);
+    let sheetValues = lastRow >= 2 ? sheet.getRange(2, 1, lastRow, 2).getValues() : [];
+    const keyRowMap = {};
 
-    sheetValues.forEach(row => {
+    sheetValues.forEach((row, index) => {
       const key = row[0].toString().trim();
-      if (configs.hasOwnProperty(key)) {
-        const newValue = configs[key];
-        row[1] = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
+      if (key) keyRowMap[key] = index;
+    });
+
+    Object.keys(configs).forEach(key => {
+      const newValue = configs[key];
+      const cellValue = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
+      if (Object.prototype.hasOwnProperty.call(keyRowMap, key)) {
+        sheetValues[keyRowMap[key]][1] = cellValue;
+      } else {
+        sheetValues.push([key, cellValue]);
+        keyRowMap[key] = sheetValues.length - 1;
       }
     });
 
-    dataRange.setValues(sheetValues);
+    if (sheetValues.length > 0) {
+      sheet.getRange(2, 1, 1 + sheetValues.length, 2).setValues(sheetValues);
+    }
     Logger.log('設定を保存しました。');
     return true;
 
@@ -465,6 +595,13 @@ function createBooking(bookingData) {
     const endTime = new Date(startTime.getTime() + duration * 60000);
     const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
     const maxBookings = parseInt(configs.maxConcurrentBookings || 1, 10);
+
+    if (!configs.reservationCalendarId) {
+      throw new Error('予約カレンダーが設定されていません。設定画面でGoogleカレンダーIDを登録してください。');
+    }
+    if (!isSlotBookableBySameDayRules_(startTime, configs)) {
+      throw new Error('申し訳ありません。当日予約の受付条件を満たしていない日時です。');
+    }
 
     const reservationSheet = getReservationSheet(configs);
     const data = reservationSheet.getDataRange().getValues();
@@ -563,6 +700,10 @@ function generateBookingId() {
 // =================================================================
 function handleWebhook(e) {
   const configs = getConfigs();
+  if (isServiceSuspended_(configs)) {
+    Logger.log('サービス停止中のため Webhook を無視しました。');
+    return;
+  }
   
   const events = JSON.parse(e.postData.contents).events;
   events.forEach(event => {
@@ -732,11 +873,64 @@ function updateAvailabilityCache() {
 /**
  * 指定された週の7日分の空き枠をまとめて取得する
  */
+/**
+ * 当日予約の受付ルールに基づき、指定スロットが予約可能か判定する
+ */
+function isSlotBookableBySameDayRules_(slotStart, configs) {
+  const now = new Date();
+  const todayStr = Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
+  const slotDateStr = Utilities.formatDate(slotStart, 'JST', 'yyyy-MM-dd');
+
+  if (slotDateStr !== todayStr) return true;
+
+  if (slotStart.getTime() <= now.getTime()) return false;
+
+  const blockedUntil = (configs.sameDayBlockedUntilTime || '').trim();
+  if (blockedUntil) {
+    const cutoff = new Date(`${todayStr}T${blockedUntil}`);
+    if (now.getTime() < cutoff.getTime()) return false;
+  }
+
+  const minHours = parseInt(configs.sameDayMinHoursBefore || 0, 10);
+  if (minHours > 0) {
+    const earliestBookable = new Date(now.getTime() + minHours * 3600000);
+    if (slotStart.getTime() < earliestBookable.getTime()) return false;
+  }
+
+  return true;
+}
+
+/**
+ * 定休日（曜日番号 0=日〜6=土）かどうか
+ */
+function isWeeklyHoliday_(date, holidays) {
+  if (!Array.isArray(holidays) || holidays.length === 0) return false;
+  const dayOfWeek = date.getDay();
+  return holidays.some(h => parseInt(h, 10) === dayOfWeek);
+}
+
+/**
+ * 指定スロット開始時刻が非稼働時間帯に含まれるか
+ */
+function isSlotInNonOperatingHours_(dateStr, timeStr, nonOperatingHours) {
+  if (!Array.isArray(nonOperatingHours) || nonOperatingHours.length === 0) return false;
+  const slotStart = new Date(`${dateStr}T${timeStr}`);
+  for (const period of nonOperatingHours) {
+    if (!period || !period.start || !period.end) continue;
+    const periodStart = new Date(`${dateStr}T${period.start}`);
+    const periodEnd = new Date(`${dateStr}T${period.end}`);
+    if (slotStart >= periodStart && slotStart < periodEnd) return true;
+  }
+  return false;
+}
+
 function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
   const configs = getConfigs();
   const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const businessHours = configs.businessHours || { start: '10:00', end: '19:00' };
   const maxBookings = parseInt(configs.maxConcurrentBookings || 1, 10);
+  const holidays = Array.isArray(configs.holidays) ? configs.holidays : [];
+  const nonOperatingHours = Array.isArray(configs.nonOperatingHours) ? configs.nonOperatingHours : [];
 
   const startDate = new Date(startDateString);
   const endDate = new Date(startDate.getTime());
@@ -829,6 +1023,11 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
     currentDate.setDate(currentDate.getDate() + i);
     const currentDateString = Utilities.formatDate(currentDate, 'JST', 'yyyy-MM-dd');
 
+    if (isWeeklyHoliday_(currentDate, holidays)) {
+      weeklyAvailableSlots[currentDateString] = [];
+      continue;
+    }
+
     const dailyBookingCounts = weeklyBookingCounts[currentDateString] || new Map();
     const dailyAvailableSlots = [];
 
@@ -854,6 +1053,12 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
           break;
         }
 
+        // 非稼働時間（昼休み等）チェック
+        if (isSlotInNonOperatingHours_(currentDateString, currentSlotStr, nonOperatingHours)) {
+          isAvailable = false;
+          break;
+        }
+
         const currentBookings = dailyBookingCounts.get(currentSlotStr) || 0;
 
         if (currentBookings >= effectiveMaxBookings) {
@@ -861,6 +1066,10 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
           break;
         }
         checkTime.setMinutes(checkTime.getMinutes() + timeUnit);
+      }
+
+      if (isAvailable && !isSlotBookableBySameDayRules_(potentialStartTime, configs)) {
+        isAvailable = false;
       }
 
       if (isAvailable) {
@@ -1223,6 +1432,9 @@ function createBulkBookings(bookingDataList) {
     if (bookingDataList.length > maxBulkBookings) {
       throw new Error(`一括予約の上限（${maxBulkBookings}件）を超えています。`);
     }
+    if (!configs.reservationCalendarId) {
+      throw new Error('予約カレンダーが設定されていません。設定画面でGoogleカレンダーIDを登録してください。');
+    }
 
     const reservationSheet = getReservationSheet(configs);
     const data = reservationSheet.getDataRange().getValues();
@@ -1249,6 +1461,9 @@ function createBulkBookings(bookingDataList) {
     for (const bookingData of bookingDataList) {
       const { startDateTime, duration, staffEmail } = bookingData;
       const startTime = new Date(startDateTime);
+      if (!isSlotBookableBySameDayRules_(startTime, configs)) {
+        throw new Error('当日予約の受付条件を満たしていない日時が含まれています。');
+      }
       const endTime = new Date(startTime.getTime() + duration * 60000);
       const isStaffNominated = staffEmail && staffEmail !== 'any';
       const effectiveMaxBookings = isStaffNominated ? 1 : maxBookings;

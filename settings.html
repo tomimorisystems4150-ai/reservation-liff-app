@@ -39,6 +39,11 @@
     .time-row input { flex: 1; }
     .time-sep { color: #aaa; font-size: 0.9em; flex-shrink: 0; }
 
+    .weekday-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+    .weekday-opt { display: flex; align-items: center; gap: 4px; font-size: 0.88em; padding: 6px 10px; border: 1.5px solid #d5d8dc; border-radius: 7px; cursor: pointer; background: #fff; }
+    .weekday-opt:has(input:checked) { border-color: #3498db; background: #eaf4fd; color: #2471a3; font-weight: bold; }
+    .weekday-opt input { margin: 0; }
+
     .url-row { display: flex; gap: 8px; align-items: stretch; }
     .url-row .form-control { flex: 1; }
     .btn-copy {
@@ -92,7 +97,7 @@
 <header class="header">
   <div>
     <h1>予約システム設定</h1>
-    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.1（カレンダー設定・当日予約ルール対応）</div>
+    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.2（定休日・非稼働時間対応）</div>
   </div>
   <a class="header-link" href="?page=kanri">予約管理へ</a>
 </header>
@@ -131,6 +136,25 @@
       <label class="form-label">同時予約の上限数 *</label>
       <input type="number" id="maxConcurrentBookings" class="form-control" min="1" placeholder="1">
       <div class="form-hint">同じ時間帯に受け付ける最大予約件数。ベッド数・席数が目安です。</div>
+    </div>
+  </div>
+
+  <!-- 定休日・非稼働時間（任意） -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon">🗓️</span>
+      <span class="section-title">定休日・非稼働時間（任意）</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">定休日</label>
+      <div class="weekday-checks" id="holidayChecks"></div>
+      <div class="form-hint">チェックした曜日は予約を受け付けません。未選択なら定休日なし。</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">非稼働時間</label>
+      <div class="form-hint">営業時間内の昼休みなど、予約を受け付けない時間帯を設定できます。</div>
+      <div class="dynamic-list" id="breakList"></div>
+      <button type="button" class="btn-add" onclick="addBreakPeriod()">＋ 時間帯を追加</button>
     </div>
   </div>
 
@@ -316,6 +340,11 @@
   const LIFF_PAGES_BASE = <?!= JSON.stringify(_liffPagesBase) ?>;
   const staffBlockMap = configs.staff_block_calendar_id_map || {};
   let serviceMenus = configs.serviceMenus || [];
+  let holidays = Array.isArray(configs.holidays) ? configs.holidays.map(Number).filter(n => !isNaN(n)) : [];
+  let nonOperatingHours = Array.isArray(configs.nonOperatingHours) ? configs.nonOperatingHours.map(p => ({
+    start: p.start || '',
+    end: p.end || ''
+  })) : [];
   let staffs = (configs.staffs || []).map(s => ({
     name: s.name || '',
     email: s.email || '',
@@ -341,6 +370,9 @@
     document.getElementById('sameDayBlockedUntilTime').value = configs.sameDayBlockedUntilTime || '';
     document.getElementById('alternateBookingGuide').value  = configs.alternateBookingGuide || '';
 
+    renderHolidayChecks();
+    renderBreakList();
+
     updateEndpointUrls();
 
     // Staff feature radio
@@ -361,8 +393,75 @@
     updateReminderHint(mode);
   }
 
+  // ===== Holidays & breaks =====
+  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+  function renderHolidayChecks() {
+    const el = document.getElementById('holidayChecks');
+    el.innerHTML = WEEKDAYS.map((label, i) => `
+      <label class="weekday-opt">
+        <input type="checkbox" class="holiday-cb" value="${i}" ${holidays.includes(i) ? 'checked' : ''}>
+        ${label}
+      </label>
+    `).join('');
+  }
+
+  function syncHolidaysFromUi() {
+    holidays = [];
+    document.querySelectorAll('.holiday-cb:checked').forEach(cb => {
+      holidays.push(parseInt(cb.value, 10));
+    });
+    holidays.sort((a, b) => a - b);
+  }
+
+  function renderBreakList() {
+    const el = document.getElementById('breakList');
+    el.innerHTML = '';
+    nonOperatingHours.forEach((p, i) => el.appendChild(createBreakItem(p.start, p.end, i)));
+  }
+
+  function createBreakItem(start, end, index) {
+    const div = document.createElement('div');
+    div.className = 'dynamic-item';
+    div.dataset.index = index;
+    div.innerHTML = `
+      <div class="item-field" style="flex:1">
+        <label class="form-label">開始</label>
+        <input type="time" class="break-start" value="${start || ''}">
+      </div>
+      <div class="item-field" style="flex:1">
+        <label class="form-label">終了</label>
+        <input type="time" class="break-end" value="${end || ''}">
+      </div>
+      <button type="button" class="btn-remove" onclick="removeBreakPeriod(this)">削除</button>`;
+    return div;
+  }
+
+  function syncBreaksFromUi() {
+    nonOperatingHours = [];
+    document.querySelectorAll('#breakList .dynamic-item').forEach(item => {
+      const start = item.querySelector('.break-start').value;
+      const end = item.querySelector('.break-end').value;
+      if (start || end) nonOperatingHours.push({ start, end });
+    });
+  }
+
+  function addBreakPeriod() {
+    syncBreaksFromUi();
+    nonOperatingHours.push({ start: '', end: '' });
+    renderBreakList();
+  }
+
+  function removeBreakPeriod(btn) {
+    syncBreaksFromUi();
+    nonOperatingHours.splice(parseInt(btn.parentElement.dataset.index, 10), 1);
+    renderBreakList();
+  }
+
   // ===== Sync UI → data arrays =====
   function syncUiToData() {
+    syncHolidaysFromUi();
+    syncBreaksFromUi();
     serviceMenus = [];
     document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
       const name     = item.querySelector('.menu-name').value.trim();
@@ -567,6 +666,22 @@
     });
     if (!hasMenu) ok = false;
 
+    document.querySelectorAll('#breakList .dynamic-item').forEach(item => {
+      const sEl = item.querySelector('.break-start');
+      const eEl = item.querySelector('.break-end');
+      const s = sEl.value;
+      const e = eEl.value;
+      if ((s && !e) || (!s && e)) {
+        if (!s) markError(sEl);
+        if (!e) markError(eEl);
+        ok = false;
+      } else if (s && e && s >= e) {
+        markError(sEl);
+        markError(eEl);
+        ok = false;
+      }
+    });
+
     return ok;
   }
 
@@ -591,6 +706,8 @@
         start: document.getElementById('businessHoursStart').value,
         end:   document.getElementById('businessHoursEnd').value
       },
+      holidays:              holidays,
+      nonOperatingHours:     nonOperatingHours.filter(p => p.start && p.end && p.start < p.end),
       bookingTimeUnit:       parseInt(document.getElementById('bookingTimeUnit').value, 10),
       bookingLookaheadDays:  parseInt(document.getElementById('bookingLookaheadDays').value, 10),
       maxConcurrentBookings: parseInt(document.getElementById('maxConcurrentBookings').value, 10),
