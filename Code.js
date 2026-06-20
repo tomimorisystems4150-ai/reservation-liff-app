@@ -539,7 +539,10 @@ function saveConfigs(configs) {
 
     const sheet = getConfigSheet_();
     const lastRow = Math.max(sheet.getLastRow(), 1);
-    const existingRows = lastRow >= 2 ? sheet.getRange(2, 1, lastRow, 2).getValues() : [];
+    const existingRowCount = lastRow >= 2 ? lastRow - 1 : 0;
+    const existingRows = existingRowCount > 0
+      ? sheet.getRange(2, 1, existingRowCount, 2).getValues()
+      : [];
 
     const merged = {};
     const keyOrder = [];
@@ -559,7 +562,12 @@ function saveConfigs(configs) {
 
     const output = keyOrder.map(key => [key, merged[key]]);
     if (output.length > 0) {
-      sheet.getRange(2, 1, 1 + output.length, 2).setValues(output);
+      // getRange(row, col, numRows, numCols) — 第3引数は行数（最終行番号ではない）
+      sheet.getRange(2, 1, output.length, 2).setValues(output);
+      const nextEmptyRow = 2 + output.length;
+      if (lastRow >= nextEmptyRow) {
+        sheet.getRange(nextEmptyRow, 1, lastRow - nextEmptyRow + 1, 2).clearContent();
+      }
     }
 
     Logger.log('設定を保存しました。');
