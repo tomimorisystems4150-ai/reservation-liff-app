@@ -77,6 +77,7 @@
     /* Empty / Loading */
     .empty { text-align: center; padding: 40px 20px; color: #bbb; }
     .empty-icon { font-size: 2.2em; margin-bottom: 8px; }
+    .empty-message { font-size: 1.15em; color: #888; }
 
     /* Modal */
     .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.48); z-index: 1000; justify-content: flex-end; align-items: flex-end; }
@@ -271,7 +272,7 @@ function loadBookings(filter) {
 function renderBookings(bookings) {
   const el = document.getElementById('booking-list');
   if (!bookings || !bookings.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><div>該当する予約はありません</div></div>';
+    el.innerHTML = '<div class="empty"><div class="empty-message">該当する予約はありません</div></div>';
     return;
   }
   el.innerHTML = bookings.map(b => bookingCard(b, false)).join('');

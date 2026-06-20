@@ -56,10 +56,20 @@ window.onload = async () => {
 
 async function initializeLiff() {
   await liff.init({ liffId: LIFF_ID });
+  const loginRedirectUri = window.location.href.split('#')[0];
+
   if (!liff.isLoggedIn()) {
-    liff.login(); 
+    liff.login({ redirectUri: loginRedirectUri });
     await new Promise(() => {});
   }
+
+  // openid スコープ未取得などで ID Token が空の場合は再ログイン
+  if (!liff.getIDToken()) {
+    liff.logout();
+    liff.login({ redirectUri: loginRedirectUri });
+    await new Promise(() => {});
+  }
+
   userProfile = await liff.getProfile();
   document.getElementById('welcomeMessage').textContent = `${userProfile.displayName}様、こんにちは！`;
 }
@@ -352,9 +362,25 @@ function prepareSection(sectionId) {
       }
       renderStaffSelector();
       const infoEl = document.getElementById('lookahead-days-info');
+      const infoParts = [];
       if (initData.bookingLookaheadDays) {
-        infoEl.textContent = `※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`;
+        infoParts.push(`※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`);
       }
+      if (initData.sameDayBlockedUntilTime || (initData.sameDayMinHoursBefore && initData.sameDayMinHoursBefore > 0)) {
+        const rules = [];
+        if (initData.sameDayBlockedUntilTime) {
+          rules.push(`${initData.sameDayBlockedUntilTime}より前は当日予約不可`);
+        }
+        if (initData.sameDayMinHoursBefore > 0) {
+          rules.push(`当日は${initData.sameDayMinHoursBefore}時間前まで受付`);
+        }
+        infoParts.push(`※当日予約: ${rules.join('／')}。過去の時間帯は選択できません。`);
+      }
+      if (initData.alternateBookingGuide) {
+        infoParts.push(initData.alternateBookingGuide);
+      }
+      infoEl.textContent = infoParts.join('\n');
+      infoEl.style.whiteSpace = 'pre-line';
       updateSubmitButton();
       updateBulkCounter(); // updateSelectedDatesPanel も内部で呼ばれる
       renderTimetable();
@@ -587,12 +613,25 @@ function showError(message) {
 // =================================================================
 
 async function fetchApi(action, payload = {}) {
+  if (!liff.isLoggedIn()) {
+    throw new Error('LINEログインが必要です。もう一度お試しください。');
+  }
+  const idToken = liff.getIDToken();
+  if (!idToken) {
+    throw new Error('LINE認証トークンを取得できませんでした。LINEアプリから開き直してください。');
+  }
+
   const response = await fetch(GAS_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/plain;charset=utf-8',
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({
+      action,
+      idToken,
+      lineUserId: userProfile ? userProfile.userId : undefined,
+      ...payload,
+    }),
     mode: 'cors',
   });
 
