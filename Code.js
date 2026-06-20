@@ -515,7 +515,7 @@ function saveConfigs(configs) {
   try {
     const currentConfigs = getConfigs();
     const currentUser = Session.getActiveUser().getEmail();
-    
+
     let authorizedUsers = [];
     if (currentConfigs.adminEmail) {
       authorizedUsers.push(currentConfigs.adminEmail.toLowerCase());
@@ -529,46 +529,45 @@ function saveConfigs(configs) {
     }
     authorizedUsers = [...new Set(authorizedUsers)];
 
-    // adminEmailが未設定の場合は初回セットアップとみなし保存を許可する
     if (authorizedUsers.length > 0 && (!currentUser || !authorizedUsers.includes(currentUser.toLowerCase()))) {
       Logger.log(`保存拒否: ${currentUser} は許可されたユーザーではありません。(許可リスト: ${authorizedUsers.join(', ')})`);
-      return false;
-    }
-
-    if (!getConfigSheet_()) {
-      throw new Error('設定シート「Config」が見つかりません。');
+      return {
+        success: false,
+        message: `保存権限がありません。ログイン中: ${currentUser || '（未取得）'}。Config の adminEmail（${currentConfigs.adminEmail || '未設定'}）と同じ Google アカウントで開いてください。`,
+      };
     }
 
     const sheet = getConfigSheet_();
     const lastRow = Math.max(sheet.getLastRow(), 1);
-    let sheetValues = lastRow >= 2 ? sheet.getRange(2, 1, lastRow, 2).getValues() : [];
-    const keyRowMap = {};
+    const existingRows = lastRow >= 2 ? sheet.getRange(2, 1, lastRow, 2).getValues() : [];
 
-    sheetValues.forEach((row, index) => {
-      const key = row[0].toString().trim();
-      if (key) keyRowMap[key] = index;
+    const merged = {};
+    const keyOrder = [];
+
+    existingRows.forEach(row => {
+      const key = String(row[0] || '').trim();
+      if (!key) return;
+      if (!Object.prototype.hasOwnProperty.call(merged, key)) keyOrder.push(key);
+      merged[key] = row[1];
     });
 
     Object.keys(configs).forEach(key => {
       const newValue = configs[key];
-      const cellValue = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
-      if (Object.prototype.hasOwnProperty.call(keyRowMap, key)) {
-        sheetValues[keyRowMap[key]][1] = cellValue;
-      } else {
-        sheetValues.push([key, cellValue]);
-        keyRowMap[key] = sheetValues.length - 1;
-      }
+      merged[key] = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
+      if (!keyOrder.includes(key)) keyOrder.push(key);
     });
 
-    if (sheetValues.length > 0) {
-      sheet.getRange(2, 1, 1 + sheetValues.length, 2).setValues(sheetValues);
+    const output = keyOrder.map(key => [key, merged[key]]);
+    if (output.length > 0) {
+      sheet.getRange(2, 1, 1 + output.length, 2).setValues(output);
     }
+
     Logger.log('設定を保存しました。');
-    return true;
+    return { success: true, message: 'OK' };
 
   } catch (e) {
     Logger.log('設定の保存中にエラーが発生しました: %s', e.message);
-    return false;
+    return { success: false, message: e.message || String(e) };
   }
 }
 

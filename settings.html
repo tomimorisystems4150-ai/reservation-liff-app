@@ -731,8 +731,10 @@
     google.script.run
       .withSuccessHandler(result => {
         document.getElementById('saveButton').disabled = false;
-        if (result) toast('設定を保存しました ✓', 'ok');
-        else        toast('保存に失敗しました。', 'err');
+        const ok = (typeof result === 'object' && result !== null) ? result.success : !!result;
+        const msg = (typeof result === 'object' && result !== null) ? result.message : '';
+        if (ok) toast('設定を保存しました ✓', 'ok');
+        else        toast('保存に失敗しました。' + (msg ? ' ' + msg : ''), 'err');
       })
       .withFailureHandler(err => {
         document.getElementById('saveButton').disabled = false;
