@@ -538,37 +538,20 @@ function saveConfigs(configs) {
     }
 
     const sheet = getConfigSheet_();
-    const lastRow = Math.max(sheet.getLastRow(), 1);
-    const existingRowCount = lastRow >= 2 ? lastRow - 1 : 0;
-    const existingRows = existingRowCount > 0
-      ? sheet.getRange(2, 1, existingRowCount, 2).getValues()
-      : [];
-
-    const merged = {};
-    const keyOrder = [];
-
-    existingRows.forEach(row => {
-      const key = String(row[0] || '').trim();
-      if (!key) return;
-      if (!Object.prototype.hasOwnProperty.call(merged, key)) keyOrder.push(key);
-      merged[key] = row[1];
-    });
+    const keyToRow = buildConfigKeyRowMap_(sheet);
 
     Object.keys(configs).forEach(key => {
       const newValue = configs[key];
-      merged[key] = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
-      if (!keyOrder.includes(key)) keyOrder.push(key);
-    });
-
-    const output = keyOrder.map(key => [key, merged[key]]);
-    if (output.length > 0) {
-      // getRange(row, col, numRows, numCols) — 第3引数は行数（最終行番号ではない）
-      sheet.getRange(2, 1, output.length, 2).setValues(output);
-      const nextEmptyRow = 2 + output.length;
-      if (lastRow >= nextEmptyRow) {
-        sheet.getRange(nextEmptyRow, 1, lastRow - nextEmptyRow + 1, 2).clearContent();
+      const cellValue = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
+      const rowNum = keyToRow[key];
+      if (rowNum) {
+        sheet.getRange(rowNum, 2).setValue(cellValue);
+      } else {
+        const newRow = Math.max(sheet.getLastRow(), 1) + 1;
+        sheet.getRange(newRow, 1, 1, 2).setValues([[key, cellValue]]);
+        keyToRow[key] = newRow;
       }
-    }
+    });
 
     Logger.log('設定を保存しました。');
     return { success: true, message: 'OK' };
@@ -577,6 +560,19 @@ function saveConfigs(configs) {
     Logger.log('設定の保存中にエラーが発生しました: %s', e.message);
     return { success: false, message: e.message || String(e) };
   }
+}
+
+/** Config シート A列キー → 行番号（1-based）のマップを返す */
+function buildConfigKeyRowMap_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  const values = sheet.getRange('A2:B' + lastRow).getValues();
+  const map = {};
+  values.forEach((row, i) => {
+    const key = String(row[0] || '').trim();
+    if (key) map[key] = i + 2;
+  });
+  return map;
 }
 
 function createJsonResponse(obj) {
