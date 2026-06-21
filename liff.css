@@ -243,6 +243,11 @@ select.form-control {
   margin-top: 14px;
 }
 
+#lookahead-days-info {
+  text-align: left;
+  margin-top: 12px;
+}
+
 .timetable-nav {
   display: flex;
   justify-content: center;
