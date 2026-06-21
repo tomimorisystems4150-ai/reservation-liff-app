@@ -406,9 +406,14 @@ function prepareSection(sectionId) {
       if (initData.allowSameDayBooking === false) {
         infoParts.push('※当日予約は受け付けておりません。');
       }
-      infoParts.push('※過去の時間帯は選択できません。');
-      infoEl.textContent = infoParts.join('\n');
-      infoEl.style.whiteSpace = 'pre-line';
+      if (infoParts.length) {
+        infoEl.textContent = infoParts.join('\n');
+        infoEl.style.whiteSpace = 'pre-line';
+        infoEl.style.display = '';
+      } else {
+        infoEl.textContent = '';
+        infoEl.style.display = 'none';
+      }
       updateSubmitButton();
       updateBulkCounter(); // updateSelectedDatesPanel も内部で呼ばれる
       renderTimetable();

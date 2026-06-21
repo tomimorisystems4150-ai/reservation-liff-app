@@ -126,14 +126,30 @@ body {
   margin-bottom: 0;
 }
 
+/* お客様情報登録セクション */
+#section-customer-registration .info-text,
+#section-customer-registration-complete .info-text,
+#section-customer-already-registered .info-text {
+  font-size: 0.95em;
+  color: #444;
+  text-align: left;
+  margin: 4px 0 0;
+  line-height: 1.65;
+}
+
+#section-customer-registration .form-group-last {
+  margin-bottom: 4px;
+}
+
 .registration-action-button {
-  margin-top: 18px;
+  margin-top: 28px;
 }
 
 .info-text.success-notice {
   color: #1e8449;
-  font-size: 0.95em;
-  line-height: 1.6;
+  font-size: 1em;
+  line-height: 1.7;
+  margin-bottom: 4px;
 }
 
 .form-label {
