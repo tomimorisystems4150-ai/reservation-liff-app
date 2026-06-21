@@ -162,6 +162,9 @@ function setupEventListeners() {
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
+  // ICSカレンダー追加（LIFF / PC で開き方を分岐）
+  document.getElementById('icsDownloadLink').addEventListener('click', handleIcsCalendarClick);
+
   // カウンターチップのタップ → パネル開閉
   document.getElementById('bulk-counter').addEventListener('click', () => {
     toggleDatesPanel();
@@ -799,15 +802,132 @@ function showBookingCompleteScreen(results) {
     document.getElementById('completeStaffP').style.display = 'block';
   }
 
-  // ICS: Googleカレンダーボタンと同様、target="_blank" の通常リンクで外部ブラウザを開く
+  const icsContent = generateICS(sortedResults, shopName);
   const icsLink = document.getElementById('icsDownloadLink');
   const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
-  const icsUrl = new URL(GAS_API_URL);
-  icsUrl.searchParams.set('action', 'downloadICS');
-  icsUrl.searchParams.set('bookingIds', bookingIdParams);
-  icsLink.href = icsUrl.toString();
-  icsLink.target = '_blank';
-  icsLink.rel = 'noopener noreferrer';
+  const gasUrl = new URL(GAS_API_URL);
+  gasUrl.searchParams.set('action', 'downloadICS');
+  gasUrl.searchParams.set('bookingIds', bookingIdParams);
+  const icsBridgeUrl = buildIcsBridgeUrl(icsContent);
+
+  icsLink.dataset.icsContent = icsContent;
+  icsLink.dataset.icsBridgeUrl = icsBridgeUrl || '';
+  icsLink.dataset.gasUrl = gasUrl.toString();
+  icsLink.dataset.downloadName = `reservation_${firstResult.bookingId}.ics`;
+  icsLink.href = '#';
 
   document.getElementById('bookingComplete').style.display = 'block';
+}
+
+/**
+ * ICS（iCalendar）形式の文字列を生成する（予約APIレスポンスから即時生成）
+ */
+function generateICS(results, shopName) {
+  const formatICSDate = (isoStr) =>
+    new Date(isoStr).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const now = formatICSDate(new Date().toISOString());
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ReservationSystem//JP',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  results.forEach(result => {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${result.bookingId}@reservation-system`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${formatICSDate(result.startTime)}`,
+      `DTEND:${formatICSDate(result.endTime)}`,
+      `SUMMARY:${result.eventTitle}`,
+      `DESCRIPTION:店舗: ${shopName}\\nご予約ありがとうございます。`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT1H',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:ご予約の1時間前です',
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+/**
+ * GitHub Pages 上の ics.html へ ICS を渡す https URL を組み立てる。
+ * LIFF の liff.openWindow は https/http のみ受け付けるため、GAS URL や data URI は直接使えない。
+ */
+function buildIcsBridgeUrl(icsContent) {
+  const MAX_URL_LENGTH = 7500;
+  try {
+    const encoded = btoa(unescape(encodeURIComponent(icsContent)));
+    const bridgeUrl = new URL('ics.html', window.location.href);
+    bridgeUrl.searchParams.set('d', encoded);
+    const url = bridgeUrl.toString();
+    return url.length <= MAX_URL_LENGTH ? url : null;
+  } catch (error) {
+    console.warn('[ICS] buildIcsBridgeUrl failed:', error);
+    return null;
+  }
+}
+
+function downloadIcsFile(content, filename) {
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename || 'reservation.ics';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+/**
+ * カレンダー追加ボタンのクリック処理。
+ * - LIFF内: liff.openWindow(external) で ics.html（https）を外部ブラウザで開く
+ * - PC等: クライアント生成 ICS をその場でダウンロード（従来どおり）
+ */
+async function handleIcsCalendarClick(e) {
+  e.preventDefault();
+  const link = e.currentTarget;
+  const content = link.dataset.icsContent;
+  const bridgeUrl = link.dataset.icsBridgeUrl;
+  const gasUrl = link.dataset.gasUrl;
+  const filename = link.dataset.downloadName || 'reservation.ics';
+
+  if (!content && !bridgeUrl && !gasUrl) {
+    alert('カレンダー情報を取得できませんでした。');
+    return;
+  }
+
+  if (typeof liff !== 'undefined' && liff.isInClient()) {
+    const urlToOpen = bridgeUrl || gasUrl;
+    if (!urlToOpen) {
+      alert('カレンダー情報を取得できませんでした。');
+      return;
+    }
+    try {
+      if (liff.isApiAvailable('openWindow')) {
+        await liff.openWindow({ url: urlToOpen, external: true });
+        return;
+      }
+    } catch (error) {
+      console.error('[ICS] openWindow failed:', error);
+    }
+    alert('カレンダーを開けませんでした。LINEアプリを最新版に更新して再度お試しください。');
+    return;
+  }
+
+  if (content) {
+    downloadIcsFile(content, filename);
+    return;
+  }
+  if (gasUrl) {
+    window.open(gasUrl, '_blank');
+  }
 }
