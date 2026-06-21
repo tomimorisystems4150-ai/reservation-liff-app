@@ -163,9 +163,8 @@ function setupEventListeners() {
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
-  // ICSカレンダー追加（LIFF / PC で開き方を分岐）
+  // ICSカレンダー追加
   document.getElementById('icsDownloadLink').addEventListener('click', handleIcsCalendarClick);
-  document.getElementById('icsExportConfirmButton').addEventListener('click', handleIcsExportConfirm);
 
   // カウンターチップのタップ → パネル開閉
   document.getElementById('bulk-counter').addEventListener('click', () => {
@@ -812,10 +811,8 @@ function showBookingCompleteScreen(results) {
   };
 
   const icsButton = document.getElementById('icsDownloadLink');
-  const icsPanel = document.getElementById('icsExportPanel');
   icsButton.disabled = false;
   icsButton.textContent = '📅 カレンダーに追加';
-  icsPanel.style.display = 'none';
 
   document.getElementById('bookingComplete').style.display = 'block';
 }
@@ -870,48 +867,17 @@ function downloadIcsFile(content, filename) {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
-function isMobileDevice() {
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function shouldUseInlineIcsPanel() {
-  return (typeof liff !== 'undefined' && liff.isInClient()) || isMobileDevice();
-}
-
-function showIcsExportPanel() {
-  document.getElementById('icsExportPanel').style.display = 'block';
-  document.getElementById('icsDownloadLink').textContent = '✓ 続けて下のボタンを押してください';
-}
-
-function openIcsInMobileCalendar(content) {
-  const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(content)}`;
-  window.location.href = dataUri;
-}
-
-/**
- * 予約完了画面: 1段階目（LIFFは確認パネル表示 / PCは即ダウンロード）
- */
 function handleIcsCalendarClick() {
   if (!pendingIcsExport || !pendingIcsExport.content) {
     alert('カレンダー情報を取得できませんでした。');
     return;
   }
 
-  if (shouldUseInlineIcsPanel()) {
-    showIcsExportPanel();
+  if (typeof liff !== 'undefined' && liff.isInClient()) {
+    const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(pendingIcsExport.content)}`;
+    window.location.href = dataUri;
     return;
   }
 
   downloadIcsFile(pendingIcsExport.content, pendingIcsExport.filename);
-}
-
-/**
- * 予約完了画面: 2段階目（LIFF内でカレンダー追加を実行）
- */
-function handleIcsExportConfirm() {
-  if (!pendingIcsExport || !pendingIcsExport.content) {
-    alert('カレンダー情報を取得できませんでした。');
-    return;
-  }
-  openIcsInMobileCalendar(pendingIcsExport.content);
 }
