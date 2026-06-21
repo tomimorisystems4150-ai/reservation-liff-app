@@ -1899,14 +1899,59 @@ function getUnconfirmedTodayBookings() {
 }
 
 /**
+ * 予約カレンダー上のイベントを取得する（カレンダーID指定 → グローバル検索）
+ */
+function getReservationCalendarEvent_(configs, eventId) {
+  const id = String(eventId || '').trim();
+  if (!id) return null;
+
+  const calendarId = String((configs && configs.reservationCalendarId) || '').trim();
+  if (calendarId) {
+    try {
+      const calendar = CalendarApp.getCalendarById(calendarId);
+      if (calendar) {
+        const event = calendar.getEventById(id);
+        if (event) return event;
+      }
+    } catch (e) {
+      Logger.log('カレンダーイベント取得（calendarId指定）: %s', e.message);
+    }
+  }
+
+  try {
+    return CalendarApp.getEventById(id);
+  } catch (e) {
+    Logger.log('カレンダーイベント取得（global）: %s', e.message);
+    return null;
+  }
+}
+
+/**
+ * ステータス確定に伴う Google カレンダーイベントの更新
+ * - キャンセル / 無断キャンセル: イベント削除
+ * - 来店: カレンダーは変更しない（予約管理画面でステータス管理）
+ */
+function applyCalendarEventStatusChange_(configs, eventId, status) {
+  const normalizedStatus = String(status || '').trim();
+  if (normalizedStatus !== 'キャンセル' && normalizedStatus !== '無断キャンセル') return;
+
+  const event = getReservationCalendarEvent_(configs, eventId);
+  if (!event) {
+    Logger.log('カレンダーイベント未検出: eventId=%s status=%s', eventId, normalizedStatus);
+    return;
+  }
+  event.deleteEvent();
+}
+
+/**
  * 予約ステータスを確定する。
- * - 来店: カレンダーイベントを緑（Basil）に変更、顧客マスタの最終来店日を更新
- * - 無断キャンセル: カレンダーイベントを赤（Tomato）に変更
- * - キャンセル: カレンダーイベントを削除
+ * - 来店: 顧客マスタの最終来店日を更新（カレンダーは変更しない）
+ * - 無断キャンセル / キャンセル: カレンダーイベントを削除
  * @param {string} bookingId
  * @param {string} newStatus - '来店' | '無断キャンセル' | 'キャンセル'
  */
 function confirmBookingStatus(bookingId, newStatus) {
+  const status = String(newStatus || '').trim();
   const configs = getConfigs();
   const sheet   = getReservationSheet(configs);
   const data    = sheet.getDataRange().getValues();
@@ -1918,40 +1963,35 @@ function confirmBookingStatus(bookingId, newStatus) {
   const endTimeCol   = h.indexOf('終了日時');
   const userIdCol    = h.indexOf('LINE User ID');
 
-  let targetRow = -1, eventId = '', lineUserId = '', startTime = null, endTime = null;
+  let targetRow = -1, eventId = '', lineUserId = '', startTime = null;
   for (let i = 1; i < data.length; i++) {
     if (data[i][bookingIdCol] === bookingId) {
       targetRow  = i + 1;
       eventId    = data[i][eventIdCol];
       lineUserId = data[i][userIdCol];
       startTime  = new Date(data[i][startTimeCol]);
-      endTime    = new Date(data[i][endTimeCol]);
       break;
     }
   }
   if (targetRow === -1) throw new Error(`予約ID「${bookingId}」が見つかりません。`);
 
-  sheet.getRange(targetRow, statusCol + 1).setValue(newStatus);
+  sheet.getRange(targetRow, statusCol + 1).setValue(status);
 
   if (eventId) {
     try {
-      const calendar = CalendarApp.getCalendarById(configs.reservationCalendarId);
-      const event    = calendar.getEventById(eventId);
-      if (event) {
-        if      (newStatus === '来店')       event.setColor('10');   // Basil（緑）
-        else if (newStatus === '無断キャンセル') event.setColor('11'); // Tomato（赤）
-        else if (newStatus === 'キャンセル')  event.deleteEvent();
-      }
+      applyCalendarEventStatusChange_(configs, eventId, status);
     } catch (calErr) {
-      Logger.log(`カレンダー更新エラー: ${calErr.message}`);
+      Logger.log('カレンダー更新エラー (%s): %s', status, calErr.message);
     }
+  } else {
+    Logger.log('カレンダー更新スキップ: イベントIDなし bookingId=%s status=%s', bookingId, status);
   }
 
-  if (newStatus === '来店' && lineUserId) {
+  if (status === '来店' && lineUserId) {
     updateCustomerLastVisit_(lineUserId, startTime);
   }
 
-  Logger.log(`ステータス更新: ${bookingId} → ${newStatus}`);
+  Logger.log(`ステータス更新: ${bookingId} → ${status}`);
 }
 
 /**

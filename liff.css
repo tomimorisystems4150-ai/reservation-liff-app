@@ -122,8 +122,18 @@ body {
   margin-bottom: 14px;
 }
 
-.form-group:last-of-type {
+.form-group-last {
   margin-bottom: 0;
+}
+
+.registration-action-button {
+  margin-top: 18px;
+}
+
+.info-text.success-notice {
+  color: #1e8449;
+  font-size: 0.95em;
+  line-height: 1.6;
 }
 
 .form-label {

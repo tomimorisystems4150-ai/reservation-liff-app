@@ -76,7 +76,8 @@ async function initializeLiff() {
 
 async function initializeApp() {
   initData = await fetchApi('getInitData', { lineUserId: userProfile.userId });
-  isCustomerRegistered = initData.isRegistered || false;
+  isCustomerRegistered = initData.isRegistered === true;
+  updateStep1ButtonTargets();
   // 診断ログ（本番確認後に削除可）
   console.log('[initData]', JSON.stringify(initData));
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
@@ -140,20 +141,31 @@ function setupEventListeners() {
   // 顧客情報登録ボタン
   document.getElementById('register-customer-button').addEventListener('click', handleCustomerRegistration);
 
+  const customerNameInput = document.getElementById('customer-name');
+  if (customerNameInput) {
+    customerNameInput.addEventListener('input', () => {
+      const normalized = customerNameInput.value.replace(/\s+/g, '');
+      if (customerNameInput.value !== normalized) customerNameInput.value = normalized;
+    });
+  }
+
+  // 登録済み案内 → 予約に進む
+  document.getElementById('proceed-to-booking-button').addEventListener('click', () => {
+    showSection('section-step2-booking-type');
+  });
+
+  // 新規登録完了 → 予約に進む
+  document.getElementById('registration-complete-proceed-button').addEventListener('click', () => {
+    showSection('section-step2-booking-type');
+  });
+
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
-  // ICSダウンロードボタン（data属性に格納したURLを使用）
+  // ICSカレンダー追加
   document.getElementById('icsDownloadLink').addEventListener('click', (e) => {
     e.preventDefault();
-    const url = e.currentTarget.dataset.icsUrl;
-    if (!url) return;
-    // LIFFのiOS環境ではSafariで外部開く（LIFF内では.icsが処理されないため）
-    if (typeof liff !== 'undefined' && liff.isInClient()) {
-      liff.openWindow({ url, external: true });
-    } else {
-      window.open(url, '_blank');
-    }
+    openIcsCalendar(e.currentTarget);
   });
 
   // カウンターチップのタップ → パネル開閉
@@ -196,13 +208,38 @@ function handleSelectionButtonClick(button) {
     return;
   }
 
-  // 「初めてのご予約」かつ未登録の場合は顧客情報登録画面へ
-  if (currentSectionId === 'section-step1-visit-experience' && value === 'first-time' && !isCustomerRegistered) {
-    showSection('section-customer-registration');
+  if (currentSectionId === 'section-step1-visit-experience') {
+    showSection(resolveStep1Destination(value, nextStepId));
     return;
   }
 
   showSection(`section-${nextStepId}`);
+}
+
+/**
+ * Step1 の選択に応じた遷移先を決定する。
+ * 初めて + 未登録 → 顧客情報登録
+ * 初めて + 登録済み → 登録済み案内
+ * 2回目以降 → 予約種別選択
+ */
+function resolveStep1Destination(selectedValue, nextStepId) {
+  if (selectedValue === 'first-time') {
+    return isCustomerRegistered
+      ? 'section-customer-already-registered'
+      : 'section-customer-registration';
+  }
+  return `section-${nextStepId || 'step2-booking-type'}`;
+}
+
+/** Step1「初めてのご予約」ボタンの遷移先を登録状態に合わせて更新する */
+function updateStep1ButtonTargets() {
+  const firstTimeBtn = document.querySelector(
+    '#section-step1-visit-experience .selection-button[data-value="first-time"]'
+  );
+  if (!firstTimeBtn) return;
+  firstTimeBtn.dataset.nextStep = isCustomerRegistered
+    ? 'customer-already-registered'
+    : 'customer-registration';
 }
 
 function handleBackButtonClick(button) {
@@ -366,19 +403,10 @@ function prepareSection(sectionId) {
       if (initData.bookingLookaheadDays) {
         infoParts.push(`※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`);
       }
-      if (initData.sameDayBlockedUntilTime || (initData.sameDayMinHoursBefore && initData.sameDayMinHoursBefore > 0)) {
-        const rules = [];
-        if (initData.sameDayBlockedUntilTime) {
-          rules.push(`${initData.sameDayBlockedUntilTime}より前は当日予約不可`);
-        }
-        if (initData.sameDayMinHoursBefore > 0) {
-          rules.push(`当日は${initData.sameDayMinHoursBefore}時間前まで受付`);
-        }
-        infoParts.push(`※当日予約: ${rules.join('／')}。過去の時間帯は選択できません。`);
+      if (initData.allowSameDayBooking === false) {
+        infoParts.push('※当日予約は受け付けておりません。');
       }
-      if (initData.alternateBookingGuide) {
-        infoParts.push(initData.alternateBookingGuide);
-      }
+      infoParts.push('※過去の時間帯は選択できません。');
       infoEl.textContent = infoParts.join('\n');
       infoEl.style.whiteSpace = 'pre-line';
       updateSubmitButton();
@@ -653,9 +681,9 @@ async function handleCustomerRegistration() {
   const phoneInput = document.getElementById('customer-phone');
   const registerButton = document.getElementById('register-customer-button');
 
-  const customerName = nameInput.value.trim();
+  const customerName = nameInput.value.trim().replace(/\s+/g, '');
   if (!customerName) {
-    alert('お名前を入力してください。');
+    alert('お名前を入力してください。（空白は使用できません）');
     nameInput.focus();
     return;
   }
@@ -671,7 +699,8 @@ async function handleCustomerRegistration() {
     });
 
     isCustomerRegistered = true;
-    showSection('section-step2-booking-type');
+    updateStep1ButtonTargets();
+    showSection('section-customer-registration-complete');
 
   } catch (error) {
     console.error('顧客登録に失敗しました:', error);
@@ -696,9 +725,10 @@ async function handleBookingSubmit() {
       throw new Error('予約情報が不完全です。');
     }
 
+    const bookingUserName = (initData.customerName || userProfile.displayName || '').replace(/\s+/g, '') || userProfile.displayName;
     const baseData = {
       lineUserId: userProfile.userId,
-      userName: userProfile.displayName,
+      userName: bookingUserName,
       menuName: bookingState.menu.name,
       duration: bookingState.menu.duration,
       staffEmail: bookingState.staff ? bookingState.staff.email : '',
@@ -770,11 +800,13 @@ function showBookingCompleteScreen(results) {
     document.getElementById('completeStaffP').style.display = 'block';
   }
 
-  // ICSダウンロードURLをGASエンドポイントで構築（iOS LIFF対応）
-  const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
-  const icsUrl = `${GAS_API_URL}?action=downloadICS&bookingIds=${encodeURIComponent(bookingIdParams)}`;
+  // ICS（クライアント生成 + GASフォールバック）
+  const icsContent = generateICS(sortedResults, shopName);
   const icsLink = document.getElementById('icsDownloadLink');
-  icsLink.dataset.icsUrl = icsUrl;
+  const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
+  icsLink.dataset.icsContent = icsContent;
+  icsLink.dataset.icsUrl = `${GAS_API_URL}?action=downloadICS&bookingIds=${encodeURIComponent(bookingIdParams)}`;
+  icsLink.download = `reservation_${firstResult.bookingId}.ics`;
   icsLink.href = '#';
 
   // Googleカレンダーリンクは単一予約時のみ表示
@@ -794,4 +826,82 @@ function showBookingCompleteScreen(results) {
   }
 
   document.getElementById('bookingComplete').style.display = 'block';
+}
+
+/**
+ * ICS（iCalendar）形式の文字列を生成する
+ */
+function generateICS(results, shopName) {
+  const formatICSDate = (isoStr) =>
+    new Date(isoStr).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const now = formatICSDate(new Date().toISOString());
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ReservationSystem//JP',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  results.forEach(result => {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${result.bookingId}@reservation-system`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${formatICSDate(result.startTime)}`,
+      `DTEND:${formatICSDate(result.endTime)}`,
+      `SUMMARY:${result.eventTitle}`,
+      `DESCRIPTION:店舗: ${shopName}\\nご予約ありがとうございます。`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT1H',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:ご予約の1時間前です',
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+/**
+ * カレンダー追加（ICS）を開く。
+ * LIFF内では data URI を外部ブラウザで開き、カレンダー選択画面を表示する。
+ */
+function openIcsCalendar(link) {
+  const content = link.dataset.icsContent;
+  const gasUrl = link.dataset.icsUrl;
+  if (!content && !gasUrl) return;
+
+  const MAX_DATA_URI_LENGTH = 1800;
+  const canUseDataUri = content && content.length < MAX_DATA_URI_LENGTH;
+
+  if (typeof liff !== 'undefined' && liff.isInClient()) {
+    const url = canUseDataUri
+      ? `data:text/calendar;charset=utf-8,${encodeURIComponent(content)}`
+      : gasUrl;
+    if (url) {
+      liff.openWindow({ url, external: true });
+    }
+    return;
+  }
+
+  if (content) {
+    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = link.download || 'reservation.ics';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    return;
+  }
+
+  if (gasUrl) {
+    window.open(gasUrl, '_blank');
+  }
 }

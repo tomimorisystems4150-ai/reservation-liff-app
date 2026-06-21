@@ -21,9 +21,9 @@
 
   <div id="app" class="container" style="display: none;">
     <main>
-      <!-- ステップ1: 予約経験の選択 -->
+      <!-- ステップ1: 予約についての選択 -->
       <section id="section-step1-visit-experience" class="page-section">
-        <h2>ご予約経験</h2>
+        <h2>ご予約について</h2>
         <div class="selection-group">
           <button class="selection-button" data-next-step="step2-booking-type" data-value="first-time">初めてのご予約</button>
           <button class="selection-button" data-next-step="step2-booking-type" data-value="repeat">2回目以降のご予約</button>
@@ -36,13 +36,29 @@
         <p class="info-text">初めてご利用いただく方は、お客様情報をご登録ください。</p>
         <div class="form-group">
           <label for="customer-name" class="form-label">お名前 <span class="required-badge">必須</span></label>
-          <input type="text" id="customer-name" class="form-control" placeholder="例：山田 太郎" autocomplete="name">
+          <input type="text" id="customer-name" class="form-control" placeholder="例：山田太郎" autocomplete="name">
         </div>
-        <div class="form-group">
+        <div class="form-group form-group-last">
           <label for="customer-phone" class="form-label">お電話番号 <span class="optional-badge">任意</span></label>
           <input type="tel" id="customer-phone" class="form-control" placeholder="例：090-1234-5678" autocomplete="tel">
         </div>
-        <button id="register-customer-button" class="submit-button">登録して予約に進む</button>
+        <button id="register-customer-button" class="submit-button registration-action-button">登録して予約に進む</button>
+        <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
+      </section>
+
+      <!-- 新規登録完了 -->
+      <section id="section-customer-registration-complete" class="page-section" style="display: none;">
+        <h2>お客様情報のご登録</h2>
+        <p class="info-text success-notice">お客様情報の登録が完了しました。<br>このまま予約にお進みください。</p>
+        <button id="registration-complete-proceed-button" class="submit-button registration-action-button">予約に進む</button>
+        <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
+      </section>
+
+      <!-- 登録済み案内（「初めてのご予約」選択・登録済みユーザー） -->
+      <section id="section-customer-already-registered" class="page-section" style="display: none;">
+        <h2>お客様情報のご登録</h2>
+        <p class="info-text">すでにお客様情報を登録済みです。<br>そのまま予約にお進みください。</p>
+        <button id="proceed-to-booking-button" class="submit-button">予約に進む</button>
         <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
       </section>
 
