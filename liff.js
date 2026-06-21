@@ -809,12 +809,13 @@ function showBookingCompleteScreen(results) {
   gasUrl.searchParams.set('action', 'downloadICS');
   gasUrl.searchParams.set('bookingIds', bookingIdParams);
   const icsBridgeUrl = buildIcsBridgeUrl(icsContent);
+  const openUrl = icsBridgeUrl || gasUrl.toString();
 
   icsLink.dataset.icsContent = icsContent;
-  icsLink.dataset.icsBridgeUrl = icsBridgeUrl || '';
-  icsLink.dataset.gasUrl = gasUrl.toString();
   icsLink.dataset.downloadName = `reservation_${firstResult.bookingId}.ics`;
-  icsLink.href = '#';
+  icsLink.href = openUrl;
+  icsLink.target = '_blank';
+  icsLink.rel = 'noopener noreferrer';
 
   document.getElementById('bookingComplete').style.display = 'block';
 }
@@ -889,45 +890,28 @@ function downloadIcsFile(content, filename) {
 
 /**
  * カレンダー追加ボタンのクリック処理。
- * - LIFF内: liff.openWindow(external) で ics.html（https）を外部ブラウザで開く
- * - PC等: クライアント生成 ICS をその場でダウンロード（従来どおり）
+ * - LIFF内: Googleカレンダーボタンと同様 target="_blank" の通常遷移（ics.html を外部ブラウザで開く）
+ * - PC等: クライアント生成 ICS をその場でダウンロード
  */
-async function handleIcsCalendarClick(e) {
-  e.preventDefault();
+function handleIcsCalendarClick(e) {
   const link = e.currentTarget;
-  const content = link.dataset.icsContent;
-  const bridgeUrl = link.dataset.icsBridgeUrl;
-  const gasUrl = link.dataset.gasUrl;
-  const filename = link.dataset.downloadName || 'reservation.ics';
-
-  if (!content && !bridgeUrl && !gasUrl) {
-    alert('カレンダー情報を取得できませんでした。');
-    return;
-  }
 
   if (typeof liff !== 'undefined' && liff.isInClient()) {
-    const urlToOpen = bridgeUrl || gasUrl;
-    if (!urlToOpen) {
+    if (!link.href || link.href === '#' || link.href.endsWith('#')) {
+      e.preventDefault();
       alert('カレンダー情報を取得できませんでした。');
-      return;
     }
-    try {
-      if (liff.isApiAvailable('openWindow')) {
-        await liff.openWindow({ url: urlToOpen, external: true });
-        return;
-      }
-    } catch (error) {
-      console.error('[ICS] openWindow failed:', error);
-    }
-    alert('カレンダーを開けませんでした。LINEアプリを最新版に更新して再度お試しください。');
     return;
   }
 
+  e.preventDefault();
+  const content = link.dataset.icsContent;
+  const filename = link.dataset.downloadName || 'reservation.ics';
   if (content) {
     downloadIcsFile(content, filename);
     return;
   }
-  if (gasUrl) {
-    window.open(gasUrl, '_blank');
+  if (link.href && link.href !== '#') {
+    window.open(link.href, '_blank');
   }
 }
