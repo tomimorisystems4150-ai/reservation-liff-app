@@ -262,7 +262,8 @@ function handleICSDownload_(e) {
 
     lines.push('END:VCALENDAR');
     return ContentService.createTextOutput(lines.join('\r\n'))
-      .setMimeType(ContentService.MimeType.ICAL);
+      .setMimeType(ContentService.MimeType.ICAL)
+      .downloadAsFile('reservation.ics');
 
   } catch (err) {
     Logger.log(`ICSダウンロードエラー: ${err.message}`);
