@@ -478,6 +478,32 @@ function runLogicTests_() {
     assert_(rowsAfter >= rowsBefore, 'スロット追加後に行数が減少した');
   }));
 
+  // TC-L-001b: 同一スロット重複行の合算と releaseTimetableSlots_
+  results.push(runTest_('TC-L-001b: 満席タイムテーブル - 重複合算と枠解放', () => {
+    const sheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+    if (!sheet) {
+      Logger.log('    (満席タイムテーブルシートなしのためスキップ)');
+      return;
+    }
+    const testDate = new Date(_getTestSlot(40));
+    const endDate = new Date(testDate.getTime() + 30 * 60000);
+    const dateStr = Utilities.formatDate(testDate, 'JST', 'yyyy-MM-dd');
+    const timeStr = Utilities.formatDate(testDate, 'JST', 'HH:mm');
+
+    sheet.clearContents();
+    sheet.appendRow(['日付', '時間枠', '予約数']);
+    sheet.appendRow([dateStr, timeStr, 1]);
+    sheet.appendRow([dateStr, timeStr, 1]);
+
+    updateTimetableSlots_(testDate, endDate, 30);
+    const slotMap = readTimetableSlotMap_(sheet);
+    assertEqual_(slotMap.get(`${dateStr} ${timeStr}`), 3, '重複行合算後の予約数');
+
+    releaseTimetableSlots_(testDate, endDate, 30);
+    const afterRelease = readTimetableSlotMap_(sheet);
+    assert_(!afterRelease.has(`${dateStr} ${timeStr}`), '枠解放後もスロットが残っている');
+  }));
+
   // TC-L-002: 顧客検索
   results.push(runTest_('TC-L-002: findCustomerByUserId_ - 登録済みユーザー', () => {
     const customer = findCustomerByUserId_(TEST_LINE_USER_ID);

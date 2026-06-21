@@ -1552,70 +1552,86 @@ function createBulkBookings(bookingDataList) {
 // 満席タイムテーブル ユーティリティ
 // =================================================================
 
+/** 満席タイムテーブルの日付・時間セルを正規化キー "yyyy-MM-dd HH:mm" に変換する */
+function normalizeTimetableSlotKey_(dateVal, timeVal) {
+  const dateStr = dateVal instanceof Date
+    ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM-dd')
+    : String(dateVal || '').trim().substring(0, 10);
+  const timeStr = timeVal instanceof Date
+    ? Utilities.formatDate(timeVal, 'JST', 'HH:mm')
+    : String(timeVal || '').trim().substring(0, 5);
+  return `${dateStr} ${timeStr}`;
+}
+
+/** 満席タイムテーブルを読み込み、同一日時の重複行は予約数を合算する */
+function readTimetableSlotMap_(availabilitySheet) {
+  const slotMap = new Map();
+  const lastRow = availabilitySheet.getLastRow();
+  if (lastRow < 2) return slotMap;
+
+  const numRows = lastRow - 1;
+  const existingData = availabilitySheet.getRange(2, 1, numRows, 3).getValues();
+  existingData.forEach(row => {
+    const key = normalizeTimetableSlotKey_(row[0], row[1]);
+    if (!key || key.length < 12) return;
+    slotMap.set(key, (slotMap.get(key) || 0) + (parseInt(row[2], 10) || 0));
+  });
+  return slotMap;
+}
+
+/** スロットMapを満席タイムテーブルへ重複なく書き戻す */
+function writeTimetableFromMap_(availabilitySheet, slotMap) {
+  availabilitySheet.clearContents();
+  availabilitySheet.appendRow(['日付', '時間枠', '予約数']);
+
+  const rows = [];
+  slotMap.forEach((count, key) => {
+    if (count <= 0) return;
+    const spaceIdx = key.indexOf(' ');
+    rows.push([key.substring(0, spaceIdx), key.substring(spaceIdx + 1), count]);
+  });
+  rows.sort((a, b) => `${a[0]} ${a[1]}`.localeCompare(`${b[0]} ${b[1]}`));
+
+  if (rows.length > 0) {
+    availabilitySheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+}
+
 /**
- * 新規予約の各タイムスロットについて、満席タイムテーブルを正規化しながら更新する。
- * 既存行が存在する場合はカウントをインクリメント、存在しない場合のみ新規追記する。
- * @param {Date} startTime - 予約開始日時
- * @param {Date} endTime   - 予約終了日時
- * @param {number} timeUnit - 最小予約単位（分）
+ * 満席タイムテーブルの予約数を増減する（同一日時は常に1行に集約）
+ * @param {Date} startTime
+ * @param {Date} endTime
+ * @param {number} timeUnit
+ * @param {number} delta - +1: 予約追加, -1: 枠解放
+ */
+function adjustTimetableSlots_(startTime, endTime, timeUnit, delta) {
+  const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
+  if (!availabilitySheet || !startTime || !endTime || delta === 0) return;
+
+  const slotMap = readTimetableSlotMap_(availabilitySheet);
+  let slotTime = new Date(startTime);
+
+  while (slotTime < endTime) {
+    const key = normalizeTimetableSlotKey_(slotTime, slotTime);
+    const nextCount = (slotMap.get(key) || 0) + delta;
+    if (nextCount <= 0) slotMap.delete(key);
+    else slotMap.set(key, nextCount);
+    slotTime.setMinutes(slotTime.getMinutes() + timeUnit);
+  }
+
+  writeTimetableFromMap_(availabilitySheet, slotMap);
+}
+
+/**
+ * 新規予約の各タイムスロットについて、満席タイムテーブルを更新する。
  */
 function updateTimetableSlots_(startTime, endTime, timeUnit) {
-  const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
-  if (!availabilitySheet) return;
+  adjustTimetableSlots_(startTime, endTime, timeUnit, 1);
+}
 
-  const targetDateStr = Utilities.formatDate(startTime, 'JST', 'yyyy-MM-dd');
-
-  // 既存データをすべて読み込み、日時をキーにした行マップを構築
-  const lastRow = availabilitySheet.getLastRow();
-  const slotRowMap = new Map(); // key: "yyyy-MM-dd HH:mm" → { rowIndex, count }
-  if (lastRow >= 2) {
-    const existingData = availabilitySheet.getRange(2, 1, lastRow - 1, 3).getValues();
-    existingData.forEach((row, i) => {
-      const dateStr = row[0] instanceof Date
-        ? Utilities.formatDate(row[0], 'JST', 'yyyy-MM-dd')
-        : String(row[0]).substring(0, 10);
-      const timeStr = row[1] instanceof Date
-        ? Utilities.formatDate(row[1], 'JST', 'HH:mm')
-        : String(row[1]).substring(0, 5);
-      const key = `${dateStr} ${timeStr}`;
-      // 同じキーが重複している場合も合算して保持する（過去の重複行の救済）
-      const existing = slotRowMap.get(key);
-      if (existing) {
-        existing.count += parseInt(row[2], 10) || 0;
-      } else {
-        slotRowMap.set(key, { rowIndex: i + 2, count: parseInt(row[2], 10) || 0 });
-      }
-    });
-  }
-
-  // 新予約の各タイムスロットをインクリメントまたは新規追記
-  const rowsToUpdate = []; // [rowIndex, newCount]
-  const rowsToAppend = []; // [date, time, count]
-
-  let updateTime = new Date(startTime);
-  while (updateTime < endTime) {
-    const timeStr = Utilities.formatDate(updateTime, 'JST', 'HH:mm');
-    const key = `${targetDateStr} ${timeStr}`;
-
-    if (slotRowMap.has(key)) {
-      const entry = slotRowMap.get(key);
-      rowsToUpdate.push({ rowIndex: entry.rowIndex, newCount: entry.count + 1 });
-    } else {
-      rowsToAppend.push([targetDateStr, timeStr, 1]);
-    }
-    updateTime.setMinutes(updateTime.getMinutes() + timeUnit);
-  }
-
-  // 既存行を更新
-  rowsToUpdate.forEach(({ rowIndex, newCount }) => {
-    availabilitySheet.getRange(rowIndex, 3).setValue(newCount);
-  });
-
-  // 新規行を追記
-  if (rowsToAppend.length > 0) {
-    const appendStartRow = availabilitySheet.getLastRow() + 1;
-    availabilitySheet.getRange(appendStartRow, 1, rowsToAppend.length, 3).setValues(rowsToAppend);
-  }
+/** キャンセル・来店確定等で予約枠を解放する */
+function releaseTimetableSlots_(startTime, endTime, timeUnit) {
+  adjustTimetableSlots_(startTime, endTime, timeUnit, -1);
 }
 
 
@@ -1963,13 +1979,15 @@ function confirmBookingStatus(bookingId, newStatus) {
   const endTimeCol   = h.indexOf('終了日時');
   const userIdCol    = h.indexOf('LINE User ID');
 
-  let targetRow = -1, eventId = '', lineUserId = '', startTime = null;
+  let targetRow = -1, eventId = '', lineUserId = '', startTime = null, endTime = null, oldStatus = '';
   for (let i = 1; i < data.length; i++) {
     if (data[i][bookingIdCol] === bookingId) {
       targetRow  = i + 1;
       eventId    = data[i][eventIdCol];
       lineUserId = data[i][userIdCol];
       startTime  = new Date(data[i][startTimeCol]);
+      endTime    = new Date(data[i][endTimeCol]);
+      oldStatus  = data[i][statusCol];
       break;
     }
   }
@@ -1984,6 +2002,13 @@ function confirmBookingStatus(bookingId, newStatus) {
     Logger.log('カレンダー更新スキップ: status=%s bookingId=%s', status, bookingId);
   } else if (status === 'キャンセル' || status === '無断キャンセル') {
     Logger.log('カレンダー更新スキップ: イベントIDなし bookingId=%s status=%s', bookingId, status);
+  }
+
+  const wasActive = oldStatus === '予約' || oldStatus === '仮予約';
+  const releasesSlot = status === '来店' || status === 'キャンセル' || status === '無断キャンセル';
+  if (wasActive && releasesSlot) {
+    const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
+    releaseTimetableSlots_(startTime, endTime, timeUnit);
   }
 
   if (status === '来店' && lineUserId) {
