@@ -33,6 +33,7 @@ const bookingState = {
 
 let initData = {};
 let currentWeekStartDate = null;
+let pendingIcsExport = null;
 
 // =================================================================
 // 初期化処理
@@ -164,6 +165,7 @@ function setupEventListeners() {
 
   // ICSカレンダー追加（LIFF / PC で開き方を分岐）
   document.getElementById('icsDownloadLink').addEventListener('click', handleIcsCalendarClick);
+  document.getElementById('icsExportConfirmButton').addEventListener('click', handleIcsExportConfirm);
 
   // カウンターチップのタップ → パネル開閉
   document.getElementById('bulk-counter').addEventListener('click', () => {
@@ -804,23 +806,16 @@ function showBookingCompleteScreen(results) {
     document.getElementById('completeStaffP').style.display = 'none';
   }
 
-  const icsContent = generateICS(sortedResults, shopName);
+  pendingIcsExport = {
+    content: generateICS(sortedResults, shopName),
+    filename: `reservation_${firstResult.bookingId}.ics`,
+  };
+
   const icsButton = document.getElementById('icsDownloadLink');
-  const icsHint = document.getElementById('icsActionHint');
-  const storageKey = `pendingIcs_${firstResult.bookingId}`;
-  const bridgeUrl = buildIcsBridgeUrl(icsContent, storageKey);
-
-  icsButton.dataset.icsContent = icsContent;
-  icsButton.dataset.openUrl = bridgeUrl || '';
-  icsButton.dataset.downloadName = `reservation_${firstResult.bookingId}.ics`;
-  icsButton.disabled = !bridgeUrl;
-
-  if (typeof liff !== 'undefined' && liff.isInClient()) {
-    icsHint.textContent = 'ボタンを押すと、カレンダー登録画面に進みます。';
-    icsHint.style.display = 'block';
-  } else {
-    icsHint.style.display = 'none';
-  }
+  const icsPanel = document.getElementById('icsExportPanel');
+  icsButton.disabled = false;
+  icsButton.textContent = '📅 カレンダーに追加';
+  icsPanel.style.display = 'none';
 
   document.getElementById('bookingComplete').style.display = 'block';
 }
@@ -863,22 +858,6 @@ function generateICS(results, shopName) {
   return lines.join('\r\n');
 }
 
-/**
- * ics.html へ ICS を渡す URL を組み立てる。
- * LIFF WebView 内では sessionStorage を共有できるため、URL に本文を載せない。
- */
-function buildIcsBridgeUrl(icsContent, storageKey) {
-  try {
-    sessionStorage.setItem(storageKey, icsContent);
-    const bridgeUrl = new URL('ics.html', window.location.href);
-    bridgeUrl.searchParams.set('key', storageKey);
-    return bridgeUrl.toString();
-  } catch (error) {
-    console.warn('[ICS] buildIcsBridgeUrl failed:', error);
-    return null;
-  }
-}
-
 function downloadIcsFile(content, filename) {
   const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
   const blobUrl = URL.createObjectURL(blob);
@@ -891,30 +870,48 @@ function downloadIcsFile(content, filename) {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function shouldUseInlineIcsPanel() {
+  return (typeof liff !== 'undefined' && liff.isInClient()) || isMobileDevice();
+}
+
+function showIcsExportPanel() {
+  document.getElementById('icsExportPanel').style.display = 'block';
+  document.getElementById('icsDownloadLink').textContent = '✓ 続けて下のボタンを押してください';
+}
+
+function openIcsInMobileCalendar(content) {
+  const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(content)}`;
+  window.location.href = dataUri;
+}
+
 /**
- * カレンダー追加ボタンのクリック処理。
- * - LIFF内: 同一 WebView 内で ics.html へ遷移（target=_blank / openWindow は LIFF で無反応になりやすい）
- * - PC等: クライアント生成 ICS をその場でダウンロード
+ * 予約完了画面: 1段階目（LIFFは確認パネル表示 / PCは即ダウンロード）
  */
 function handleIcsCalendarClick() {
-  const button = document.getElementById('icsDownloadLink');
-  const openUrl = button.dataset.openUrl;
-  const content = button.dataset.icsContent;
-  const filename = button.dataset.downloadName || 'reservation.ics';
-
-  if (typeof liff !== 'undefined' && liff.isInClient()) {
-    if (!openUrl) {
-      alert('カレンダー情報を取得できませんでした。');
-      return;
-    }
-    window.location.assign(openUrl);
+  if (!pendingIcsExport || !pendingIcsExport.content) {
+    alert('カレンダー情報を取得できませんでした。');
     return;
   }
 
-  if (content) {
-    downloadIcsFile(content, filename);
+  if (shouldUseInlineIcsPanel()) {
+    showIcsExportPanel();
     return;
   }
 
-  alert('カレンダー情報を取得できませんでした。');
+  downloadIcsFile(pendingIcsExport.content, pendingIcsExport.filename);
+}
+
+/**
+ * 予約完了画面: 2段階目（LIFF内でカレンダー追加を実行）
+ */
+function handleIcsExportConfirm() {
+  if (!pendingIcsExport || !pendingIcsExport.content) {
+    alert('カレンダー情報を取得できませんでした。');
+    return;
+  }
+  openIcsInMobileCalendar(pendingIcsExport.content);
 }

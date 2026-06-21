@@ -684,10 +684,15 @@ select.form-control {
   color: #fff;
 }
 
-.ics-action-hint {
-  margin-top: 8px;
-  font-size: 0.82em;
-  color: #7f8c8d;
+.ics-export-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d5dbe0;
+}
+
+.ics-export-panel .info-text {
+  margin-bottom: 10px;
+  font-size: 0.85em;
   line-height: 1.5;
 }
 

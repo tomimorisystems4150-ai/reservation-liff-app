@@ -154,12 +154,15 @@
       <div class="calendar-actions">
         <h3>カレンダーに登録</h3>
         <button type="button" id="icsDownloadLink" class="calendar-button ics">📅 カレンダーに追加</button>
-        <p id="icsActionHint" class="info-text ics-action-hint" style="display: none;"></p>
+        <div id="icsExportPanel" class="ics-export-panel" style="display: none;">
+          <p class="info-text">下のボタンを押すと、端末のカレンダーに予約が追加されます。</p>
+          <button type="button" id="icsExportConfirmButton" class="calendar-button ics">📅 カレンダーに登録する</button>
+        </div>
       </div>
     </main>
   </div>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="liff.js?v=20260622"></script>
+  <script src="liff.js?v=20260623"></script>
 </body>
 </html>
