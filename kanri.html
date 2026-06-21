@@ -8,8 +8,11 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; color: #333; font-size: 14px; }
 
+    /* Sticky header + tabs */
+    .sticky-top { position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+
     /* Header */
-    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .header { background: #2c3e50; color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
     .header h1 { font-size: 1.1em; }
     .header-sub { font-size: 0.78em; opacity: 0.75; margin-top: 2px; }
     .header-user { font-size: 0.78em; opacity: 0.75; text-align: right; }
@@ -112,6 +115,7 @@
 
 <!-- App -->
 <div id="app">
+  <div class="sticky-top">
   <header class="header">
     <div>
       <h1>予約管理</h1>
@@ -130,6 +134,7 @@
     <button class="tab-btn" data-tab="customer">顧客管理</button>
     <button class="tab-btn" data-tab="errorlog">エラーログ</button>
   </nav>
+  </div>
 
   <!-- Tab: 予約一覧 -->
   <div id="tab-booking" class="tab-content active">
