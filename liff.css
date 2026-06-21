@@ -673,6 +673,8 @@ select.form-control {
   border: none;
   cursor: pointer;
   letter-spacing: 0.03em;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .calendar-button:hover { opacity: 0.85; }
@@ -680,6 +682,13 @@ select.form-control {
 .calendar-button.ics {
   background: #27ae60;
   color: #fff;
+}
+
+.ics-action-hint {
+  margin-top: 8px;
+  font-size: 0.82em;
+  color: #7f8c8d;
+  line-height: 1.5;
 }
 
 /* ================================================================

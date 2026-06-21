@@ -800,22 +800,27 @@ function showBookingCompleteScreen(results) {
   if (bookingState.staff && bookingState.staff.email !== 'any') {
     document.getElementById('completeStaffName').textContent = bookingState.staff.name;
     document.getElementById('completeStaffP').style.display = 'block';
+  } else {
+    document.getElementById('completeStaffP').style.display = 'none';
   }
 
   const icsContent = generateICS(sortedResults, shopName);
-  const icsLink = document.getElementById('icsDownloadLink');
-  const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
-  const gasUrl = new URL(GAS_API_URL);
-  gasUrl.searchParams.set('action', 'downloadICS');
-  gasUrl.searchParams.set('bookingIds', bookingIdParams);
-  const icsBridgeUrl = buildIcsBridgeUrl(icsContent);
-  const openUrl = icsBridgeUrl || gasUrl.toString();
+  const icsButton = document.getElementById('icsDownloadLink');
+  const icsHint = document.getElementById('icsActionHint');
+  const storageKey = `pendingIcs_${firstResult.bookingId}`;
+  const bridgeUrl = buildIcsBridgeUrl(icsContent, storageKey);
 
-  icsLink.dataset.icsContent = icsContent;
-  icsLink.dataset.downloadName = `reservation_${firstResult.bookingId}.ics`;
-  icsLink.href = openUrl;
-  icsLink.target = '_blank';
-  icsLink.rel = 'noopener noreferrer';
+  icsButton.dataset.icsContent = icsContent;
+  icsButton.dataset.openUrl = bridgeUrl || '';
+  icsButton.dataset.downloadName = `reservation_${firstResult.bookingId}.ics`;
+  icsButton.disabled = !bridgeUrl;
+
+  if (typeof liff !== 'undefined' && liff.isInClient()) {
+    icsHint.textContent = 'ボタンを押すと、カレンダー登録画面に進みます。';
+    icsHint.style.display = 'block';
+  } else {
+    icsHint.style.display = 'none';
+  }
 
   document.getElementById('bookingComplete').style.display = 'block';
 }
@@ -859,17 +864,15 @@ function generateICS(results, shopName) {
 }
 
 /**
- * GitHub Pages 上の ics.html へ ICS を渡す https URL を組み立てる。
- * LIFF の liff.openWindow は https/http のみ受け付けるため、GAS URL や data URI は直接使えない。
+ * ics.html へ ICS を渡す URL を組み立てる。
+ * LIFF WebView 内では sessionStorage を共有できるため、URL に本文を載せない。
  */
-function buildIcsBridgeUrl(icsContent) {
-  const MAX_URL_LENGTH = 7500;
+function buildIcsBridgeUrl(icsContent, storageKey) {
   try {
-    const encoded = btoa(unescape(encodeURIComponent(icsContent)));
+    sessionStorage.setItem(storageKey, icsContent);
     const bridgeUrl = new URL('ics.html', window.location.href);
-    bridgeUrl.searchParams.set('d', encoded);
-    const url = bridgeUrl.toString();
-    return url.length <= MAX_URL_LENGTH ? url : null;
+    bridgeUrl.searchParams.set('key', storageKey);
+    return bridgeUrl.toString();
   } catch (error) {
     console.warn('[ICS] buildIcsBridgeUrl failed:', error);
     return null;
@@ -890,28 +893,28 @@ function downloadIcsFile(content, filename) {
 
 /**
  * カレンダー追加ボタンのクリック処理。
- * - LIFF内: Googleカレンダーボタンと同様 target="_blank" の通常遷移（ics.html を外部ブラウザで開く）
+ * - LIFF内: 同一 WebView 内で ics.html へ遷移（target=_blank / openWindow は LIFF で無反応になりやすい）
  * - PC等: クライアント生成 ICS をその場でダウンロード
  */
-function handleIcsCalendarClick(e) {
-  const link = e.currentTarget;
+function handleIcsCalendarClick() {
+  const button = document.getElementById('icsDownloadLink');
+  const openUrl = button.dataset.openUrl;
+  const content = button.dataset.icsContent;
+  const filename = button.dataset.downloadName || 'reservation.ics';
 
   if (typeof liff !== 'undefined' && liff.isInClient()) {
-    if (!link.href || link.href === '#' || link.href.endsWith('#')) {
-      e.preventDefault();
+    if (!openUrl) {
       alert('カレンダー情報を取得できませんでした。');
+      return;
     }
+    window.location.assign(openUrl);
     return;
   }
 
-  e.preventDefault();
-  const content = link.dataset.icsContent;
-  const filename = link.dataset.downloadName || 'reservation.ics';
   if (content) {
     downloadIcsFile(content, filename);
     return;
   }
-  if (link.href && link.href !== '#') {
-    window.open(link.href, '_blank');
-  }
+
+  alert('カレンダー情報を取得できませんでした。');
 }

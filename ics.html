@@ -53,29 +53,31 @@
 <body>
   <div class="card">
     <h1>カレンダーに登録</h1>
-    <p id="message">外部ブラウザでこのページが開きました。<br>下のボタンを押すと、端末のカレンダーに予約が追加されます。</p>
+    <p id="message">下のボタンを押すと、端末のカレンダーに予約が追加されます。</p>
     <button id="addToCalendarBtn" type="button" style="display: none;">📅 カレンダーに追加</button>
   </div>
   <script>
     (function () {
       const params = new URLSearchParams(window.location.search);
+      const storageKey = params.get('key');
       const encoded = params.get('d');
       const messageEl = document.getElementById('message');
       const buttonEl = document.getElementById('addToCalendarBtn');
 
-      if (!encoded) {
-        messageEl.textContent = '予約情報が見つかりませんでした。予約完了画面から再度お試しください。';
-        messageEl.classList.add('error');
-        return;
+      let icsContent = storageKey ? sessionStorage.getItem(storageKey) : null;
+
+      if (!icsContent && encoded) {
+        try {
+          const binary = atob(encoded);
+          const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+          icsContent = new TextDecoder('utf-8').decode(bytes);
+        } catch (error) {
+          icsContent = null;
+        }
       }
 
-      let icsContent;
-      try {
-        const binary = atob(encoded);
-        const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-        icsContent = new TextDecoder('utf-8').decode(bytes);
-      } catch (error) {
-        messageEl.textContent = '予約情報の読み込みに失敗しました。';
+      if (!icsContent) {
+        messageEl.textContent = '予約情報が見つかりませんでした。予約完了画面から再度お試しください。';
         messageEl.classList.add('error');
         return;
       }
@@ -84,6 +86,9 @@
       buttonEl.addEventListener('click', () => {
         const dataUri = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsContent);
         window.location.href = dataUri;
+        if (storageKey) {
+          sessionStorage.removeItem(storageKey);
+        }
       });
     })();
   </script>
