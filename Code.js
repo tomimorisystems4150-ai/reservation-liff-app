@@ -1933,14 +1933,14 @@ function getReservationCalendarEvent_(configs, eventId) {
  */
 function applyCalendarEventStatusChange_(configs, eventId, status) {
   const normalizedStatus = String(status || '').trim();
-  if (normalizedStatus !== 'キャンセル' && normalizedStatus !== '無断キャンセル') return;
+  if (normalizedStatus !== 'キャンセル' && normalizedStatus !== '無断キャンセル') return false;
 
   const event = getReservationCalendarEvent_(configs, eventId);
   if (!event) {
-    Logger.log('カレンダーイベント未検出: eventId=%s status=%s', eventId, normalizedStatus);
-    return;
+    throw new Error('Googleカレンダーの予定が見つかりませんでした。');
   }
   event.deleteEvent();
+  return true;
 }
 
 /**
@@ -1977,13 +1977,12 @@ function confirmBookingStatus(bookingId, newStatus) {
 
   sheet.getRange(targetRow, statusCol + 1).setValue(status);
 
-  if (eventId) {
-    try {
-      applyCalendarEventStatusChange_(configs, eventId, status);
-    } catch (calErr) {
-      Logger.log('カレンダー更新エラー (%s): %s', status, calErr.message);
-    }
-  } else {
+  if (eventId && (status === 'キャンセル' || status === '無断キャンセル')) {
+    applyCalendarEventStatusChange_(configs, eventId, status);
+    sheet.getRange(targetRow, eventIdCol + 1).setValue('');
+  } else if (eventId) {
+    Logger.log('カレンダー更新スキップ: status=%s bookingId=%s', status, bookingId);
+  } else if (status === 'キャンセル' || status === '無断キャンセル') {
     Logger.log('カレンダー更新スキップ: イベントIDなし bookingId=%s status=%s', bookingId, status);
   }
 

@@ -31,6 +31,9 @@
     .filter-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
     .filter-btn { padding: 5px 12px; border: 1px solid #3498db; background: #fff; color: #3498db; border-radius: 16px; cursor: pointer; font-size: 0.82em; transition: all 0.15s; }
     .filter-btn.active { background: #3498db; color: #fff; }
+    .status-filter-bar { margin-top: -6px; margin-bottom: 14px; }
+    .status-filter-btn { padding: 5px 10px; border: 1px solid #95a5a6; background: #fff; color: #666; border-radius: 16px; cursor: pointer; font-size: 0.78em; transition: all 0.15s; }
+    .status-filter-btn.active { background: #2c3e50; color: #fff; border-color: #2c3e50; }
 
     /* Cards */
     .card { background: #fff; border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.09); }
@@ -137,6 +140,13 @@
       <button class="filter-btn active" data-filter="all">全件</button>
       <button class="filter-btn" data-filter="past">過去</button>
     </div>
+    <div class="filter-bar status-filter-bar">
+      <button class="status-filter-btn active" data-status="all">すべて</button>
+      <button class="status-filter-btn" data-status="予約">予約</button>
+      <button class="status-filter-btn" data-status="来店">来店</button>
+      <button class="status-filter-btn" data-status="キャンセル">キャンセル</button>
+      <button class="status-filter-btn" data-status="無断キャンセル">無断キャンセル</button>
+    </div>
     <div id="booking-list"><div class="empty"><div>読み込み中...</div></div></div>
   </div>
 
@@ -211,6 +221,7 @@ document.getElementById('linkSettings').href = GAS_DEPLOY_URL;
 
 // ===== State =====
 let currentFilter    = 'all';
+let currentStatusFilter = 'all';
 let bookingSearchQuery = '';
 let allBookings      = [];
 let allCustomers     = [];
@@ -247,6 +258,15 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
+document.querySelectorAll('.status-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.status-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentStatusFilter = btn.dataset.status;
+    renderBookings(allBookings);
+  });
+});
+
 // ===== Customer search =====
 document.getElementById('customer-search').addEventListener('input', e => {
   const q = e.target.value.trim().replace(/\s+/g, '');
@@ -278,13 +298,20 @@ function loadBookings(filter) {
     .getBookingsForManagement(filter, bookingSearchQuery);
 }
 
+function matchesStatusFilter_(status) {
+  if (currentStatusFilter === 'all') return true;
+  if (currentStatusFilter === '予約') return status === '予約' || status === '仮予約';
+  return status === currentStatusFilter;
+}
+
 function renderBookings(bookings) {
   const el = document.getElementById('booking-list');
-  if (!bookings || !bookings.length) {
+  const filtered = (bookings || []).filter(b => matchesStatusFilter_(b.status));
+  if (!filtered.length) {
     el.innerHTML = '<div class="empty"><div class="empty-message">該当する予約はありません</div></div>';
     return;
   }
-  el.innerHTML = bookings.map(b => bookingCard(b, false)).join('');
+  el.innerHTML = filtered.map(b => bookingCard(b, false)).join('');
 }
 
 // ===== Load end-of-day =====
