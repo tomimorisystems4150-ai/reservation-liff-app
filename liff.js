@@ -814,22 +814,6 @@ function showBookingCompleteScreen(results) {
   icsLink.download = `reservation_${firstResult.bookingId}.ics`;
   icsLink.href = '#';
 
-  // Googleカレンダーリンクは単一予約時のみ表示
-  const googleCalendarLink = document.getElementById('googleCalendarLink');
-  if (sortedResults.length === 1) {
-    const formatGCDate = (dateStr) => new Date(dateStr).toISOString().replace(/-|:|\.\d{3}/g, '');
-    const googleCalendarUrl = new URL('https://www.google.com/calendar/render');
-    googleCalendarUrl.searchParams.append('action', 'TEMPLATE');
-    googleCalendarUrl.searchParams.append('text', firstResult.eventTitle);
-    googleCalendarUrl.searchParams.append('dates',
-      `${formatGCDate(firstResult.startTime)}/${formatGCDate(firstResult.endTime)}`);
-    googleCalendarUrl.searchParams.append('details', `店舗: ${shopName}\nご予約ありがとうございます。`);
-    googleCalendarLink.href = googleCalendarUrl.toString();
-    googleCalendarLink.style.display = 'block';
-  } else {
-    googleCalendarLink.style.display = 'none';
-  }
-
   document.getElementById('bookingComplete').style.display = 'block';
 }
 
