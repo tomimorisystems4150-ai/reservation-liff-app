@@ -873,22 +873,16 @@ function generateICS(results, shopName) {
 
 /**
  * カレンダー追加（ICS）を開く。
- * LIFF内では data URI を外部ブラウザで開き、カレンダー選択画面を表示する。
+ * LIFF内では GAS の ICS エンドポイントを外部ブラウザで開く（data URI は iOS/LINE で無反応になる）。
  */
 function openIcsCalendar(link) {
   const content = link.dataset.icsContent;
   const gasUrl = link.dataset.icsUrl;
   if (!content && !gasUrl) return;
 
-  const MAX_DATA_URI_LENGTH = 1800;
-  const canUseDataUri = content && content.length < MAX_DATA_URI_LENGTH;
-
   if (typeof liff !== 'undefined' && liff.isInClient()) {
-    const url = canUseDataUri
-      ? `data:text/calendar;charset=utf-8,${encodeURIComponent(content)}`
-      : gasUrl;
-    if (url) {
-      liff.openWindow({ url, external: true });
+    if (gasUrl) {
+      liff.openWindow({ url: gasUrl, external: true });
     }
     return;
   }
