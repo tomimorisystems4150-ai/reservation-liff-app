@@ -983,25 +983,22 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
     }
   } else {
     // ▼ Aルート（指名なし）：満席タイムテーブルから店舗全体の予定を高速取得
+    // 予約シートとズレないよう、読み取り前に再構築する
+    rebuildTimetableFromReservations_();
     const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (availabilitySheet) {
       const data = availabilitySheet.getDataRange().getValues();
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
-        const rowDateStr = Utilities.formatDate(new Date(row[0]), 'JST', 'yyyy-MM-dd');
+        const rowDateStr = stripSheetText_(row[0]).substring(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(rowDateStr)) continue;
 
         if (rowDateStr >= startDateStr && rowDateStr < endDateStr) {
           if (!weeklyBookingCounts[rowDateStr]) {
             weeklyBookingCounts[rowDateStr] = new Map();
           }
 
-          let timeSlot = row[1];
-          if (timeSlot instanceof Date) {
-            timeSlot = Utilities.formatDate(timeSlot, 'JST', 'HH:mm');
-          } else {
-            timeSlot = String(timeSlot).substring(0, 5);
-          }
-
+          const timeSlot = stripSheetText_(row[1]).substring(0, 5);
           const count = parseInt(row[2], 10);
           const existingCount = weeklyBookingCounts[rowDateStr].get(timeSlot) || 0;
           weeklyBookingCounts[rowDateStr].set(timeSlot, existingCount + count);
@@ -1552,14 +1549,51 @@ function createBulkBookings(bookingDataList) {
 // 満席タイムテーブル ユーティリティ
 // =================================================================
 
+/** スプレッドシートのテキスト強制値（先頭 '）を除去する */
+function stripSheetText_(value) {
+  let s = String(value == null ? '' : value).trim();
+  if (s.startsWith("'")) s = s.slice(1);
+  return s;
+}
+
+/** Date を JST スロットキー "yyyy-MM-dd HH:mm" に変換する */
+function formatJstSlotKey_(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return Utilities.formatDate(d, 'JST', 'yyyy-MM-dd') + ' ' + Utilities.formatDate(d, 'JST', 'HH:mm');
+}
+
+/**
+ * 予約シートの日時セルを Date に変換する（JST 基準）
+ * appendRow 由来の Date オブジェクトはそのまま利用する。
+ */
+function parseReservationDateTime_(cellValue) {
+  if (cellValue instanceof Date) return new Date(cellValue.getTime());
+  const s = stripSheetText_(cellValue);
+  if (!s) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return new Date(s);
+  const m = s.replace(/\//g, '-').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);
+  if (m) {
+    return new Date(`${m[1]}T${String(m[2]).padStart(2, '0')}:${m[3]}:00+09:00`);
+  }
+  return new Date(s);
+}
+
 /** 満席タイムテーブルの日付・時間セルを正規化キー "yyyy-MM-dd HH:mm" に変換する */
 function normalizeTimetableSlotKey_(dateVal, timeVal) {
+  if (dateVal instanceof Date && timeVal instanceof Date) {
+    return formatJstSlotKey_(dateVal);
+  }
   const dateStr = dateVal instanceof Date
     ? Utilities.formatDate(dateVal, 'JST', 'yyyy-MM-dd')
-    : String(dateVal || '').trim().substring(0, 10);
-  const timeStr = timeVal instanceof Date
-    ? Utilities.formatDate(timeVal, 'JST', 'HH:mm')
-    : String(timeVal || '').trim().substring(0, 5);
+    : stripSheetText_(dateVal).substring(0, 10);
+  let timeStr;
+  if (timeVal instanceof Date) {
+    // 時刻のみセル（1899-12-30 基点）は JST の HH:mm をそのまま使う
+    timeStr = Utilities.formatDate(timeVal, 'JST', 'HH:mm');
+  } else {
+    timeStr = stripSheetText_(timeVal).substring(0, 5);
+  }
   return `${dateStr} ${timeStr}`;
 }
 
@@ -1579,7 +1613,10 @@ function readTimetableSlotMap_(availabilitySheet) {
   return slotMap;
 }
 
-/** スロットMapを満席タイムテーブルへ重複なく書き戻す */
+/**
+ * スロットMapを満席タイムテーブルへ重複なく書き戻す。
+ * 日付・時間はテキスト（先頭 '）で書き込み、スプレッドシートのタイムゾーンによるずれを防ぐ。
+ */
 function writeTimetableFromMap_(availabilitySheet, slotMap) {
   availabilitySheet.clearContents();
   availabilitySheet.appendRow(['日付', '時間枠', '予約数']);
@@ -1588,9 +1625,13 @@ function writeTimetableFromMap_(availabilitySheet, slotMap) {
   slotMap.forEach((count, key) => {
     if (count <= 0) return;
     const spaceIdx = key.indexOf(' ');
-    rows.push([key.substring(0, spaceIdx), key.substring(spaceIdx + 1), count]);
+    const dateStr = key.substring(0, spaceIdx);
+    const timeStr = key.substring(spaceIdx + 1);
+    rows.push(["'" + dateStr, "'" + timeStr, count]);
   });
-  rows.sort((a, b) => `${a[0]} ${a[1]}`.localeCompare(`${b[0]} ${b[1]}`));
+  rows.sort((a, b) => `${stripSheetText_(a[0])} ${stripSheetText_(a[1])}`.localeCompare(
+    `${stripSheetText_(b[0])} ${stripSheetText_(b[1])}`
+  ));
 
   if (rows.length > 0) {
     availabilitySheet.getRange(2, 1, rows.length, 3).setValues(rows);
@@ -1598,40 +1639,55 @@ function writeTimetableFromMap_(availabilitySheet, slotMap) {
 }
 
 /**
- * 満席タイムテーブルの予約数を増減する（同一日時は常に1行に集約）
- * @param {Date} startTime
- * @param {Date} endTime
- * @param {number} timeUnit
- * @param {number} delta - +1: 予約追加, -1: 枠解放
+ * 予約シート（予約/仮予約）から満席タイムテーブルを全件再構築する（正のデータ源）。
  */
-function adjustTimetableSlots_(startTime, endTime, timeUnit, delta) {
+function rebuildTimetableFromReservations_() {
+  const configs = getConfigs();
+  const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
-  if (!availabilitySheet || !startTime || !endTime || delta === 0) return;
+  if (!availabilitySheet) return;
 
-  const slotMap = readTimetableSlotMap_(availabilitySheet);
-  let slotTime = new Date(startTime);
+  const reservationSheet = getReservationSheet(configs);
+  const data = reservationSheet.getDataRange().getValues();
+  if (data.length < 2) {
+    writeTimetableFromMap_(availabilitySheet, new Map());
+    return;
+  }
 
-  while (slotTime < endTime) {
-    const key = normalizeTimetableSlotKey_(slotTime, slotTime);
-    const nextCount = (slotMap.get(key) || 0) + delta;
-    if (nextCount <= 0) slotMap.delete(key);
-    else slotMap.set(key, nextCount);
-    slotTime.setMinutes(slotTime.getMinutes() + timeUnit);
+  const h = data[0];
+  const statusCol = h.indexOf('ステータス');
+  const startCol = h.indexOf('予約日時');
+  const endCol = h.indexOf('終了日時');
+  const slotMap = new Map();
+
+  for (let i = 1; i < data.length; i++) {
+    const status = data[i][statusCol];
+    if (status !== '予約' && status !== '仮予約') continue;
+
+    const startTime = parseReservationDateTime_(data[i][startCol]);
+    const endTime = parseReservationDateTime_(data[i][endCol]);
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) continue;
+
+    let slotTime = new Date(startTime.getTime());
+    while (slotTime < endTime) {
+      const key = formatJstSlotKey_(slotTime);
+      if (key) slotMap.set(key, (slotMap.get(key) || 0) + 1);
+      slotTime.setMinutes(slotTime.getMinutes() + timeUnit);
+    }
   }
 
   writeTimetableFromMap_(availabilitySheet, slotMap);
+  Logger.log('満席タイムテーブルを予約シートから再構築しました（%s スロット）', slotMap.size);
 }
 
-/**
- * 新規予約の各タイムスロットについて、満席タイムテーブルを更新する。
- */
+/** 新規予約後に満席タイムテーブルを更新する */
 function updateTimetableSlots_(startTime, endTime, timeUnit) {
-  adjustTimetableSlots_(startTime, endTime, timeUnit, 1);
+  rebuildTimetableFromReservations_();
 }
 
 /** キャンセル・来店確定等で予約枠を解放する */
 function releaseTimetableSlots_(startTime, endTime, timeUnit) {
-  adjustTimetableSlots_(startTime, endTime, timeUnit, -1);
+  rebuildTimetableFromReservations_();
 }
 
 
