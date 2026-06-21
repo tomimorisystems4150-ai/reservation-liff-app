@@ -296,7 +296,8 @@ function doPost(e) {
           requireVerifiedLineUserId_(postData, postData.lineUserId || null);
           const configs = getConfigs();
           const lineUserId = postData.lineUserId || null;
-          const isRegistered = lineUserId ? (findCustomerByUserId_(lineUserId) !== null) : false;
+          const customerRecord = lineUserId ? findCustomerByUserId_(lineUserId) : null;
+          const isRegistered = customerRecord !== null;
           response = {
             shopName: configs.shopName,
             serviceMenus: configs.serviceMenus || [],
@@ -305,10 +306,9 @@ function doPost(e) {
             bookingTimeUnit: configs.bookingTimeUnit || 30,
             bookingLookaheadDays: configs.bookingLookaheadDays || 90,
             isRegistered: isRegistered,
+            customerName: customerRecord ? customerRecord['顧客名'] : '',
             maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10),
-            sameDayMinHoursBefore: parseInt(configs.sameDayMinHoursBefore || 0, 10),
-            sameDayBlockedUntilTime: configs.sameDayBlockedUntilTime || '',
-            alternateBookingGuide: configs.alternateBookingGuide || ''
+            allowSameDayBooking: isSameDayBookingAllowed_(configs),
           };
           break;
         }
@@ -409,7 +409,7 @@ function getConfigs() {
         configs[key] = (key === 'serviceMenus' || key === 'holidays' || key === 'staffs' || key === 'nonOperatingHours') ? [] : {};
       }
     } else {
-      if (key === 'isStaffFeatureEnabled') {
+      if (key === 'isStaffFeatureEnabled' || key === 'allowSameDayBooking') {
         configs[key] = (value === true || value === 'TRUE');
       } else {
         configs[key] = value;
@@ -604,7 +604,7 @@ function createBooking(bookingData) {
       throw new Error('予約カレンダーが設定されていません。設定画面でGoogleカレンダーIDを登録してください。');
     }
     if (!isSlotBookableBySameDayRules_(startTime, configs)) {
-      throw new Error('申し訳ありません。当日予約の受付条件を満たしていない日時です。');
+      throw new Error('申し訳ありません。当日予約は受け付けておりません。');
     }
 
     const reservationSheet = getReservationSheet(configs);
@@ -879,29 +879,23 @@ function updateAvailabilityCache() {
  */
 /**
  * 当日予約の受付ルールに基づき、指定スロットが予約可能か判定する
+ * - 現在時刻以前の枠は常に不可
+ * - 当日枠は allowSameDayBooking が false の場合のみ不可
  */
+function isSameDayBookingAllowed_(configs) {
+  if (!configs) return true;
+  return configs.allowSameDayBooking !== false && configs.allowSameDayBooking !== 'FALSE';
+}
+
 function isSlotBookableBySameDayRules_(slotStart, configs) {
   const now = new Date();
-  const todayStr = Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
-  const slotDateStr = Utilities.formatDate(slotStart, 'JST', 'yyyy-MM-dd');
-
-  if (slotDateStr !== todayStr) return true;
-
   if (slotStart.getTime() <= now.getTime()) return false;
 
-  const blockedUntil = (configs.sameDayBlockedUntilTime || '').trim();
-  if (blockedUntil) {
-    const cutoff = new Date(`${todayStr}T${blockedUntil}`);
-    if (now.getTime() < cutoff.getTime()) return false;
-  }
+  const todayStr = Utilities.formatDate(now, 'JST', 'yyyy-MM-dd');
+  const slotDateStr = Utilities.formatDate(slotStart, 'JST', 'yyyy-MM-dd');
+  if (slotDateStr !== todayStr) return true;
 
-  const minHours = parseInt(configs.sameDayMinHoursBefore || 0, 10);
-  if (minHours > 0) {
-    const earliestBookable = new Date(now.getTime() + minHours * 3600000);
-    if (slotStart.getTime() < earliestBookable.getTime()) return false;
-  }
-
-  return true;
+  return isSameDayBookingAllowed_(configs);
 }
 
 /**
@@ -1466,7 +1460,7 @@ function createBulkBookings(bookingDataList) {
       const { startDateTime, duration, staffEmail } = bookingData;
       const startTime = new Date(startDateTime);
       if (!isSlotBookableBySameDayRules_(startTime, configs)) {
-        throw new Error('当日予約の受付条件を満たしていない日時が含まれています。');
+        throw new Error('当日予約は受け付けておりません。');
       }
       const endTime = new Date(startTime.getTime() + duration * 60000);
       const isStaffNominated = staffEmail && staffEmail !== 'any';
@@ -1656,7 +1650,7 @@ function findCustomerByUserId_(lineUserId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
 
-  const data = sheet.getRange(2, 1, lastRow - 1, CUSTOMER_HEADERS.length).getValues();
+  const data = sheet.getRange(2, 1, lastRow, CUSTOMER_HEADERS.length).getValues();
   const userIdCol = CUSTOMER_HEADERS.indexOf('LINE User ID');
   const statusCol = CUSTOMER_HEADERS.indexOf('ステータス');
 
@@ -1672,17 +1666,40 @@ function findCustomerByUserId_(lineUserId) {
   return null;
 }
 
+/** 顧客名から空白を除去する（検索・表示の統一用） */
+function normalizeCustomerName_(name) {
+  return String(name || '').replace(/\s+/g, '');
+}
+
+/** 電話番号を文字列として正規化（先頭0消失の補正を含む） */
+function formatPhoneForStorage_(phone) {
+  if (phone === null || phone === undefined || phone === '') return '';
+  let s = (typeof phone === 'number') ? String(Math.trunc(phone)) : String(phone).trim();
+  if (s.startsWith("'")) s = s.slice(1);
+  s = s.replace(/[^\d-]/g, '');
+  if (/^\d+$/.test(s) && !s.startsWith('0') && (s.length === 9 || s.length === 10)) {
+    s = '0' + s;
+  }
+  return s;
+}
+
+/** 電話番号セルを文字列形式で書き込む */
+function setPhoneCellValue_(sheet, row, col, phone) {
+  const formatted = formatPhoneForStorage_(phone);
+  const cell = sheet.getRange(row, col);
+  cell.setNumberFormat('@');
+  cell.setValue(formatted);
+}
+
 /**
  * 新規顧客を顧客マスタに登録する。
- * @param {string} lineUserId
- * @param {string} customerName
- * @param {string} phone （任意）
- * @returns {Object} 登録した顧客情報
  */
 function registerCustomer(lineUserId, customerName, phone) {
-  if (!lineUserId || !customerName || !customerName.trim()) {
+  if (!lineUserId || !customerName || !normalizeCustomerName_(customerName)) {
     throw new Error('LINE User ID と顧客名は必須です。');
   }
+
+  const normalizedName = normalizeCustomerName_(customerName);
 
   // 重複登録チェック
   const existing = findCustomerByUserId_(lineUserId);
@@ -1693,22 +1710,24 @@ function registerCustomer(lineUserId, customerName, phone) {
 
   const sheet = getCustomerSheet_();
   const now = new Date();
-  const newRow = [
+  const phoneCol = CUSTOMER_HEADERS.indexOf('電話番号') + 1;
+  sheet.appendRow([
     lineUserId,
-    customerName.trim(),
-    phone ? phone.trim() : '',
+    normalizedName,
+    '',
     now,
     '',
     '',
     '有効'
-  ];
-  sheet.appendRow(newRow);
-  Logger.log(`顧客登録完了: ${customerName.trim()} (${lineUserId})`);
+  ]);
+  const rowNum = sheet.getLastRow();
+  setPhoneCellValue_(sheet, rowNum, phoneCol, phone);
+  Logger.log(`顧客登録完了: ${normalizedName} (${lineUserId})`);
 
   return {
     'LINE User ID': lineUserId,
-    '顧客名': customerName.trim(),
-    '電話番号': phone ? phone.trim() : '',
+    '顧客名': normalizedName,
+    '電話番号': formatPhoneForStorage_(phone),
     '登録日時': now.toISOString(),
     'ステータス': '有効'
   };
@@ -1718,55 +1737,127 @@ function registerCustomer(lineUserId, customerName, phone) {
 // 店舗向け管理機能（kanri.html から google.script.run で呼び出す）
 // =================================================================
 
+function formatJstDate_(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return Utilities.formatDate(d, 'JST', 'yyyy-MM-dd');
+}
+
+function rowToBookingObject_(row, h) {
+  const toISO = (v) => v instanceof Date ? v.toISOString() : String(v);
+  return {
+    bookingId:  row[h.indexOf('予約ID')],
+    status:     row[h.indexOf('ステータス')],
+    lineUserId: row[h.indexOf('LINE User ID')],
+    userName:   row[h.indexOf('顧客名')],
+    menuName:   row[h.indexOf('メニュー名')],
+    startTime:  toISO(row[h.indexOf('予約日時')]),
+    endTime:    toISO(row[h.indexOf('終了日時')]),
+    eventId:    row[h.indexOf('イベントID')],
+    staffName:  row[h.indexOf('担当者名')],
+  };
+}
+
+function matchesBookingDateFilter_(startTime, filterType, now) {
+  if (filterType === 'all' || filterType === 'upcoming') return true;
+
+  const startStr = formatJstDate_(startTime);
+  if (!startStr) return false;
+
+  const todayStr = formatJstDate_(now);
+  if (filterType === 'today') return startStr === todayStr;
+  if (filterType === 'recent') {
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() + 2);
+    const endStr = formatJstDate_(endDate);
+    return startStr >= todayStr && startStr <= endStr;
+  }
+  return false;
+}
+
+function filterBookingsByKeyword_(bookings, keyword) {
+  const q = normalizeCustomerName_(keyword);
+  if (!q) return bookings;
+  const customerNameMap = buildCustomerNameMap_();
+  return bookings.filter(b => {
+    const registeredName = customerNameMap[b.lineUserId] || '';
+    return normalizeCustomerName_(b.userName).includes(q)
+      || normalizeCustomerName_(registeredName).includes(q);
+  });
+}
+
+function buildCustomerNameMap_() {
+  const map = {};
+  readCustomersFromSheet_(getCustomerSheet_()).forEach(c => { map[c.lineUserId] = c.name; });
+  readArchivedCustomers_().forEach(c => {
+    if (!map[c.lineUserId]) map[c.lineUserId] = c.name;
+  });
+  return map;
+}
+
+function getArchivedBookings_() {
+  const configs = getConfigs();
+  if (!configs.archiveSpreadsheetId) return [];
+  try {
+    const archiveSS = SpreadsheetApp.openById(configs.archiveSpreadsheetId);
+    const sheet = archiveSS.getSheetByName('予約');
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    const data = sheet.getDataRange().getValues();
+    const h = data[0];
+    const bookings = [];
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[h.indexOf('予約ID')]) continue;
+      bookings.push(rowToBookingObject_(row, h));
+    }
+    return bookings;
+  } catch (e) {
+    Logger.log('アーカイブ予約取得エラー: %s', e.message);
+    return [];
+  }
+}
+
 /**
  * 予約一覧を返す（管理画面用）。
- * @param {string} filterType - 'today' | 'upcoming' | 'recent'（直近3日）
+ * @param {string} filterType - 'today' | 'recent' | 'all' | 'past'
+ * @param {string} searchKeyword - 顧客名の部分一致（任意）
  */
-function getBookingsForManagement(filterType) {
+function getBookingsForManagement(filterType, searchKeyword) {
+  const filter = filterType || 'all';
+  const keyword = String(searchKeyword || '').trim();
+
+  if (filter === 'past') {
+    return filterBookingsByKeyword_(getArchivedBookings_(), keyword)
+      .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+  }
+
   const configs = getConfigs();
-  const sheet   = getReservationSheet(configs);
-  const data    = sheet.getDataRange().getValues();
-  const h       = data[0];
-  const bookingIdCol  = h.indexOf('予約ID');
-  const statusCol     = h.indexOf('ステータス');
-  const userIdCol     = h.indexOf('LINE User ID');
-  const userNameCol   = h.indexOf('顧客名');
-  const menuNameCol   = h.indexOf('メニュー名');
-  const startTimeCol  = h.indexOf('予約日時');
-  const endTimeCol    = h.indexOf('終了日時');
-  const eventIdCol    = h.indexOf('イベントID');
-  const staffNameCol  = h.indexOf('担当者名');
+  const sheet = getReservationSheet(configs);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
 
-  const now        = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-  const recentEnd  = new Date(todayStart.getTime() + 3 * 86400000);
+  const lastCol = sheet.getLastColumn();
+  const data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const h = data[0];
+  const bookingIdCol = h.indexOf('予約ID');
+  const startTimeCol = h.indexOf('予約日時');
+  if (bookingIdCol < 0 || startTimeCol < 0) {
+    throw new Error('予約シートのヘッダーが不正です。');
+  }
 
+  const now = new Date();
   const bookings = [];
+
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (!row[bookingIdCol]) continue;
-    const startTime = new Date(row[startTimeCol]);
-    let include = false;
-    if      (filterType === 'today')    include = startTime >= todayStart && startTime <= todayEnd;
-    else if (filterType === 'upcoming') include = startTime >= todayStart;
-    else if (filterType === 'recent')   include = startTime >= todayStart && startTime < recentEnd;
-    if (!include) continue;
-
-    const toISO = (v) => v instanceof Date ? v.toISOString() : String(v);
-    bookings.push({
-      bookingId: row[bookingIdCol],
-      status:    row[statusCol],
-      lineUserId:row[userIdCol],
-      userName:  row[userNameCol],
-      menuName:  row[menuNameCol],
-      startTime: toISO(row[startTimeCol]),
-      endTime:   toISO(row[endTimeCol]),
-      eventId:   row[eventIdCol],
-      staffName: row[staffNameCol]
-    });
+    const bookingId = row[bookingIdCol];
+    if (bookingId === '' || bookingId === null || bookingId === undefined) continue;
+    if (!matchesBookingDateFilter_(row[startTimeCol], filter, now)) continue;
+    bookings.push(rowToBookingObject_(row, h));
   }
-  return bookings.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+  return filterBookingsByKeyword_(bookings, keyword)
+    .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 }
 
 /**
@@ -1785,23 +1876,21 @@ function getUnconfirmedTodayBookings() {
   const endTimeCol   = h.indexOf('終了日時');
   const staffNameCol = h.indexOf('担当者名');
 
-  const now        = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  const now = new Date();
+  const todayStr = formatJstDate_(now);
 
   const bookings = [];
   for (let i = 1; i < data.length; i++) {
     const row    = data[i];
     const status = row[statusCol];
     if (!row[bookingIdCol] || (status !== '予約' && status !== '仮予約')) continue;
-    const startTime = new Date(row[startTimeCol]);
-    if (startTime < todayStart || startTime > todayEnd) continue;
+    if (formatJstDate_(row[startTimeCol]) !== todayStr) continue;
     bookings.push({
       bookingId: row[bookingIdCol],
       status:    status,
       userName:  row[userNameCol],
       menuName:  row[menuNameCol],
-      startTime: startTime.toISOString(),
+      startTime: new Date(row[startTimeCol]).toISOString(),
       endTime:   new Date(row[endTimeCol]).toISOString(),
       staffName: row[staffNameCol]
     });
@@ -1894,12 +1983,41 @@ function updateCustomerLastVisit_(lineUserId, visitDate) {
 }
 
 /**
- * 顧客マスタ一覧を返す（管理画面用）。
+ * 顧客マスタ一覧を返す（管理画面用）。アーカイブ済みの無効顧客も含む。
  */
 function getCustomersForManagement() {
-  const sheet = getCustomerSheet_();
-  const data  = sheet.getDataRange().getValues();
+  const customers = readCustomersFromSheet_(getCustomerSheet_());
+  const archived = readArchivedCustomers_();
+  const merged = new Map();
+  customers.forEach(c => merged.set(c.lineUserId, c));
+  archived.forEach(c => {
+    if (!merged.has(c.lineUserId)) merged.set(c.lineUserId, c);
+  });
+  return Array.from(merged.values());
+}
+
+function readCustomersFromSheet_(sheet) {
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
+  return mapCustomerRows_(data);
+}
+
+function readArchivedCustomers_() {
+  const configs = getConfigs();
+  if (!configs.archiveSpreadsheetId) return [];
+  try {
+    const archiveSS = SpreadsheetApp.openById(configs.archiveSpreadsheetId);
+    const sheet = archiveSS.getSheetByName('顧客マスタ');
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    return mapCustomerRows_(sheet.getDataRange().getValues(), true);
+  } catch (e) {
+    Logger.log('アーカイブ顧客取得エラー: %s', e.message);
+    return [];
+  }
+}
+
+function mapCustomerRows_(data, fromArchive) {
   const h = data[0];
   const userIdCol    = h.indexOf('LINE User ID');
   const nameCol      = h.indexOf('顧客名');
@@ -1915,12 +2033,41 @@ function getCustomersForManagement() {
     .map(row => ({
       lineUserId:   row[userIdCol],
       name:         row[nameCol],
-      phone:        row[phoneCol] || '',
+      phone:        formatPhoneForStorage_(row[phoneCol]),
       registeredAt: toISO(row[regDateCol]),
       lastVisit:    row[lastVisitCol] ? toISO(row[lastVisitCol]) : '',
       memo:         row[memoCol] || '',
-      status:       row[statusCol] || '有効'
+      status:       row[statusCol] || '有効',
+      fromArchive:  !!fromArchive,
     }));
+}
+
+/**
+ * アーカイブ顧客マスタから顧客マスタへ復元する。
+ */
+function restoreCustomerFromArchive_(lineUserId) {
+  const configs = getConfigs();
+  if (!configs.archiveSpreadsheetId) throw new Error('顧客が見つかりません。');
+
+  const archiveSS = SpreadsheetApp.openById(configs.archiveSpreadsheetId);
+  const archiveSheet = archiveSS.getSheetByName('顧客マスタ');
+  if (!archiveSheet || archiveSheet.getLastRow() < 2) throw new Error('顧客が見つかりません。');
+
+  const data = archiveSheet.getDataRange().getValues();
+  const h = data[0];
+  const userIdCol = h.indexOf('LINE User ID');
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][userIdCol] !== lineUserId) continue;
+    const masterSheet = getCustomerSheet_();
+    masterSheet.appendRow(data[i]);
+    const rowNum = masterSheet.getLastRow();
+    const phoneColIndex = h.indexOf('電話番号') + 1;
+    setPhoneCellValue_(masterSheet, rowNum, phoneColIndex, data[i][h.indexOf('電話番号')]);
+    archiveSheet.deleteRow(i + 1);
+    return;
+  }
+  throw new Error('顧客が見つかりません。');
 }
 
 /**
@@ -1928,8 +2075,8 @@ function getCustomersForManagement() {
  */
 function updateCustomerInfo(lineUserId, changes) {
   const sheet = getCustomerSheet_();
-  const data  = sheet.getDataRange().getValues();
-  const h     = data[0];
+  let data = sheet.getDataRange().getValues();
+  const h = data[0];
   const userIdCol = h.indexOf('LINE User ID');
   const nameCol   = h.indexOf('顧客名');
   const phoneCol  = h.indexOf('電話番号');
@@ -1939,14 +2086,20 @@ function updateCustomerInfo(lineUserId, changes) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][userIdCol] === lineUserId) {
       const r = i + 1;
-      if (changes.name   !== undefined) sheet.getRange(r, nameCol   + 1).setValue(changes.name);
-      if (changes.phone  !== undefined) sheet.getRange(r, phoneCol  + 1).setValue(changes.phone);
-      if (changes.memo   !== undefined) sheet.getRange(r, memoCol   + 1).setValue(changes.memo);
+      if (changes.name   !== undefined) sheet.getRange(r, nameCol + 1).setValue(normalizeCustomerName_(changes.name));
+      if (changes.phone  !== undefined) setPhoneCellValue_(sheet, r, phoneCol + 1, changes.phone);
+      if (changes.memo   !== undefined) sheet.getRange(r, memoCol + 1).setValue(changes.memo);
       if (changes.status !== undefined) sheet.getRange(r, statusCol + 1).setValue(changes.status);
       return;
     }
   }
-  throw new Error('顧客が見つかりません。');
+
+  try {
+    restoreCustomerFromArchive_(lineUserId);
+    return updateCustomerInfo(lineUserId, changes);
+  } catch (restoreErr) {
+    throw new Error('顧客が見つかりません。');
+  }
 }
 
 // =================================================================
@@ -2290,7 +2443,7 @@ function runDailyArchive() {
 
     let archived = 0;
     archived += archivePastReservations_(configs, today);
-    archived += archiveInactiveCustomers_(configs);
+    // 無効顧客は論理削除としてマスタに残し、再有効化できるようにする
     cleanPastTimetable_(today);
 
     if (archived > 0) Logger.log(`日次アーカイブ完了: ${archived}件を移動。`);

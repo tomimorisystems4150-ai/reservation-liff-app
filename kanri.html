@@ -130,12 +130,14 @@
 
   <!-- Tab: 予約一覧 -->
   <div id="tab-booking" class="tab-content active">
+    <input type="text" id="booking-search" class="search-box" placeholder="顧客名で検索...">
     <div class="filter-bar">
-      <button class="filter-btn active" data-filter="today">本日</button>
+      <button class="filter-btn" data-filter="today">本日</button>
       <button class="filter-btn" data-filter="recent">直近3日</button>
-      <button class="filter-btn" data-filter="upcoming">全件（今後）</button>
+      <button class="filter-btn active" data-filter="all">全件</button>
+      <button class="filter-btn" data-filter="past">過去</button>
     </div>
-    <div id="booking-list"><div class="empty"><div class="empty-icon">📅</div><div>読み込み中...</div></div></div>
+    <div id="booking-list"><div class="empty"><div>読み込み中...</div></div></div>
   </div>
 
   <!-- Tab: 終業後処理 -->
@@ -144,7 +146,7 @@
       <button id="batch-visit-btn" class="btn btn-success" disabled>全員 来店確定</button>
     </div>
     <div class="section-label">本日の未確定予約</div>
-    <div id="endofday-list"><div class="empty"><div class="empty-icon">📋</div><div>読み込み中...</div></div></div>
+    <div id="endofday-list"><div class="empty"><div>読み込み中...</div></div></div>
   </div>
 
   <!-- Tab: 顧客管理 -->
@@ -172,7 +174,7 @@
     <input type="hidden" id="modal-uid">
     <div class="form-group">
       <label class="form-label">お名前 *</label>
-      <input type="text" id="modal-name" class="form-control" placeholder="山田 太郎">
+      <input type="text" id="modal-name" class="form-control" placeholder="山田太郎">
     </div>
     <div class="form-group">
       <label class="form-label">電話番号</label>
@@ -208,7 +210,8 @@ document.getElementById('user-display').textContent = CURRENT_USER;
 document.getElementById('linkSettings').href = GAS_DEPLOY_URL;
 
 // ===== State =====
-let currentFilter    = 'today';
+let currentFilter    = 'all';
+let bookingSearchQuery = '';
 let allBookings      = [];
 let allCustomers     = [];
 let todayUnconfirmed = [];
@@ -228,6 +231,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
+// ===== Booking search =====
+document.getElementById('booking-search').addEventListener('input', e => {
+  bookingSearchQuery = e.target.value.trim();
+  loadBookings(currentFilter);
+});
+
 // ===== Filter buttons =====
 document.querySelectorAll('.filter-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -240,8 +249,8 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 
 // ===== Customer search =====
 document.getElementById('customer-search').addEventListener('input', e => {
-  const q = e.target.value.trim();
-  renderCustomers(q ? allCustomers.filter(c => c.name.includes(q)) : allCustomers);
+  const q = e.target.value.trim().replace(/\s+/g, '');
+  renderCustomers(q ? allCustomers.filter(c => String(c.name || '').replace(/\s+/g, '').includes(q)) : allCustomers);
 });
 
 // ===== Batch visit =====
@@ -266,7 +275,7 @@ function loadBookings(filter) {
   google.script.run
     .withSuccessHandler(data => { allBookings = data; renderBookings(data); })
     .withFailureHandler(e => setError('booking-list', e.message))
-    .getBookingsForManagement(filter);
+    .getBookingsForManagement(filter, bookingSearchQuery);
 }
 
 function renderBookings(bookings) {
@@ -297,7 +306,7 @@ function loadEndOfDay() {
 function renderEOD(bookings) {
   const el = document.getElementById('endofday-list');
   if (!bookings || !bookings.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div>本日の未確定予約はありません</div></div>';
+    el.innerHTML = '<div class="empty"><div class="empty-message">本日の未確定予約はありません</div></div>';
     return;
   }
   el.innerHTML = bookings.map(b => bookingCard(b, true)).join('');
@@ -389,7 +398,7 @@ function closeModal() {
 
 function saveCustomer() {
   const uid  = document.getElementById('modal-uid').value;
-  const name = document.getElementById('modal-name').value.trim();
+  const name = document.getElementById('modal-name').value.replace(/\s+/g, '');
   if (!name) { alert('お名前を入力してください。'); return; }
   const changes = {
     name:   name,
@@ -432,7 +441,7 @@ function loadErrorLogs() {
 function renderErrorLogs(logs) {
   const el = document.getElementById('error-log-list');
   if (!logs || !logs.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div>エラーログはありません</div></div>';
+    el.innerHTML = '<div class="empty"><div class="empty-message">エラーログはありません</div></div>';
     return;
   }
   el.innerHTML = logs.map((log, idx) => {
@@ -464,7 +473,7 @@ document.getElementById('clear-log-btn').addEventListener('click', () => {
 });
 
 // ===== Initial load =====
-loadBookings('today');
+loadBookings('all');
 loadEndOfDay();
 </script>
 </body>

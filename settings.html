@@ -183,22 +183,15 @@
   <div class="section-card">
     <div class="section-header">
       <span class="section-icon">⏰</span>
-      <span class="section-title">当日予約ルール</span>
+      <span class="section-title">当日予約</span>
     </div>
     <div class="form-group">
-      <label class="form-label">当日予約の受付開始時刻（任意）</label>
-      <input type="time" id="sameDayBlockedUntilTime" class="form-control" style="max-width:160px;">
-      <div class="form-hint">例: 12:00 を設定 → その時刻より前は当日予約をすべて不可にします（午前中は当日予約不可、など）。空欄なら制限なし。</div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">当日予約の最低受付時間（時間前）</label>
-      <input type="number" id="sameDayMinHoursBefore" class="form-control" min="0" max="24" placeholder="0" style="max-width:160px;">
-      <div class="form-hint">例: 2 を設定 → 開始2時間以内の枠は当日予約不可。0 なら「現在時刻より前の枠のみ不可」。</div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">当日予約の代替案内（任意）</label>
-      <textarea id="alternateBookingGuide" class="form-control" rows="3" placeholder="例: 当日予約はお電話（03-xxxx-xxxx）または公式LINEのDMにて承ります。"></textarea>
-      <div class="form-hint">LIFFの予約画面に表示されます。電話・LINE・Instagram DMなど、店舗ごとの当日予約導線を記載してください。</div>
+      <label class="form-label">当日予約の受付</label>
+      <select id="allowSameDayBooking" class="form-control" style="max-width:220px;">
+        <option value="true">許可する</option>
+        <option value="false">許可しない</option>
+      </select>
+      <div class="form-hint">「許可しない」の場合、本日の予約枠はすべて選択できません。現在時刻より前の枠は、設定に関わらず選択できません。</div>
     </div>
   </div>
 
@@ -366,9 +359,8 @@
     document.getElementById('liffChannelId').value        = configs.liffChannelId        || '';
     document.getElementById('reservationCalendarId').value = configs.reservationCalendarId || '';
     document.getElementById('blockInputCalendarId').value   = configs.block_input_calendar_id || '';
-    document.getElementById('sameDayMinHoursBefore').value  = (configs.sameDayMinHoursBefore !== undefined && configs.sameDayMinHoursBefore !== '') ? configs.sameDayMinHoursBefore : 0;
-    document.getElementById('sameDayBlockedUntilTime').value = configs.sameDayBlockedUntilTime || '';
-    document.getElementById('alternateBookingGuide').value  = configs.alternateBookingGuide || '';
+    const allowSameDay = configs.allowSameDayBooking !== false && configs.allowSameDayBooking !== 'FALSE';
+    document.getElementById('allowSameDayBooking').value = allowSameDay ? 'true' : 'false';
 
     renderHolidayChecks();
     renderBreakList();
@@ -646,10 +638,6 @@
       if (names.length === 0) ok = false;
     }
 
-    const minHoursEl = document.getElementById('sameDayMinHoursBefore');
-    const minHoursVal = parseInt(minHoursEl.value, 10);
-    if (isNaN(minHoursVal) || minHoursVal < 0 || minHoursVal > 24) { markError(minHoursEl); ok = false; }
-
     const menuNames = [];
     let hasMenu = false;
     document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
@@ -723,9 +711,7 @@
       serviceMenus:          serviceMenus.filter(m => m.name && m.duration > 0),
       reservationCalendarId: document.getElementById('reservationCalendarId').value.trim(),
       block_input_calendar_id: document.getElementById('blockInputCalendarId').value.trim(),
-      sameDayMinHoursBefore: parseInt(document.getElementById('sameDayMinHoursBefore').value, 10) || 0,
-      sameDayBlockedUntilTime: document.getElementById('sameDayBlockedUntilTime').value,
-      alternateBookingGuide: document.getElementById('alternateBookingGuide').value.trim(),
+      allowSameDayBooking: document.getElementById('allowSameDayBooking').value === 'true',
       lineChannelAccessToken:document.getElementById('lineChannelAccessToken').value.trim(),
       lineChannelSecret:     document.getElementById('lineChannelSecret').value.trim(),
       lineLoginChannelId:    document.getElementById('lineLoginChannelId').value.trim(),
