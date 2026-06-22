@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix5';
+const ICS_DEBUG_BUILD = '20260621-ics-fix6';
 const ICS_SESSION_KEY = 'pending_ics_export';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
@@ -885,7 +885,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
-    icsDebugLog(`icsMode=${inClient ? 'in-client-openWindow' : 'external-blob-download'}`);
+    icsDebugLog(`icsMode=${inClient ? 'in-client-safari-bridge' : 'external-blob-download'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
@@ -903,6 +903,19 @@ function showBookingCompleteScreen(results) {
   }
 
   document.getElementById('bookingComplete').style.display = 'block';
+}
+
+function base64EncodeUtf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  bytes.forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary);
+}
+
+function buildIcsBridgeUrl(icsContent) {
+  const bridgeUrl = new URL('ics.html', window.location.href);
+  bridgeUrl.searchParams.set('d', base64EncodeUtf8(icsContent));
+  return bridgeUrl.toString();
 }
 
 function downloadIcsBlob(content, filename) {
@@ -960,10 +973,12 @@ async function handleIcsDownloadClick(e) {
     return;
   }
 
-  if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
-    icsDebugLog('CALL: liff.openWindow(GAS, external=true)');
+  if (inClient && icsContent && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
+    const bridgeUrl = buildIcsBridgeUrl(icsContent);
+    icsDebugLog('CALL: liff.openWindow(ics.html bridge → Safari, external=true)');
+    icsDebugLog(`bridgeUrlLen=${bridgeUrl.length}`);
     try {
-      const result = liff.openWindow({ url: gasUrl, external: true });
+      const result = liff.openWindow({ url: bridgeUrl, external: true });
       if (result && typeof result.then === 'function') {
         result
           .then(() => icsDebugLog('OK: openWindow Promise resolved'))
@@ -971,6 +986,17 @@ async function handleIcsDownloadClick(e) {
       } else {
         icsDebugLog('OK: openWindow 同期呼び出し完了');
       }
+    } catch (err) {
+      icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
+    }
+    return;
+  }
+
+  if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
+    icsDebugLog('CALL: liff.openWindow(GAS fallback, external=true)');
+    try {
+      liff.openWindow({ url: gasUrl, external: true });
+      icsDebugLog('OK: openWindow GAS fallback');
     } catch (err) {
       icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
     }
