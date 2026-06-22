@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>予約</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="liff.css?v=20260621-ics-debug">
+  <link rel="stylesheet" href="liff.css?v=20260621-ics-debug2">
 </head>
 <body>
   <div id="loading" class="loading-overlay">
@@ -154,15 +155,16 @@
       <div class="calendar-actions">
         <h3>カレンダーに登録</h3>
         <a id="icsDownloadLink" href="#" class="calendar-button ics">📅 カレンダーに追加</a>
-        <div id="icsDebugPanel" class="ics-debug-panel">
-          <p class="ics-debug-title">ICSデバッグ（確認後削除）</p>
-          <pre id="icsDebugLog"></pre>
-        </div>
       </div>
     </main>
   </div>
 
+  <div id="icsDebugPanel" class="ics-debug-panel">
+    <p class="ics-debug-title">ICSデバッグ（確認後削除）</p>
+    <pre id="icsDebugLog"></pre>
+  </div>
+
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="liff.js?v=20260621-ics-debug"></script>
+  <script src="liff.js?v=20260621-ics-debug2"></script>
 </body>
 </html>

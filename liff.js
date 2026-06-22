@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-debug';
+const ICS_DEBUG_BUILD = '20260621-ics-debug2';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -44,9 +44,19 @@ function icsDebugLog(message) {
   const line = `[${new Date().toLocaleTimeString('ja-JP')}] ${message}`;
   console.log('[ICS debug]', line);
   const el = document.getElementById('icsDebugLog');
-  if (!el) return;
+  if (!el) {
+    console.warn('[ICS debug] #icsDebugLog がありません（liff.html が古いキャッシュの可能性）');
+    return;
+  }
   el.textContent += `${line}\n`;
   el.scrollTop = el.scrollHeight;
+}
+
+function icsDebugResetLog() {
+  const el = document.getElementById('icsDebugLog');
+  if (el) el.textContent = '';
+  const panel = document.getElementById('icsDebugPanel');
+  if (panel) panel.style.display = ICS_DEBUG ? 'block' : 'none';
 }
 
 function icsDebugUrlSummary(url) {
@@ -65,6 +75,7 @@ function icsDebugUrlSummary(url) {
 
 window.onload = async () => {
   try {
+    icsDebugResetLog();
     if (!GAS_API_URL || !LIFF_ID) {
       throw new Error('設定情報が不足しています。LIFFアプリのURL設定を確認してください。');
     }
@@ -73,9 +84,13 @@ window.onload = async () => {
     setupEventListeners();
     if (ICS_DEBUG) {
       icsDebugLog(`build=${ICS_DEBUG_BUILD}`);
+      if (!document.getElementById('icsDebugLog')) {
+        console.warn('[ICS debug] #icsDebugLog なし → liff.html が古いキャッシュの可能性');
+      }
       icsDebugLog(`GAS_API_URL=${GAS_API_URL ? icsDebugUrlSummary(GAS_API_URL) : '(missing)'}`);
       icsDebugLog(`LIFF_ID=${LIFF_ID ? 'set' : '(missing)'}`);
       icsDebugLog(`isInClient=${typeof liff !== 'undefined' && liff.isInClient()}`);
+      icsDebugLog(`getOS=${typeof liff !== 'undefined' ? liff.getOS() : 'n/a'}`);
     }
     showSection('section-step1-visit-experience');
     showApp();
@@ -855,6 +870,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
+    icsDebugLog(`isInClient(now)=${typeof liff !== 'undefined' && liff.isInClient()}`);
   }
 
   document.getElementById('bookingComplete').style.display = 'block';
