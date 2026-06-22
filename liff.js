@@ -20,9 +20,8 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix3';
+const ICS_DEBUG_BUILD = '20260621-ics-fix4';
 const ICS_SESSION_KEY = 'pending_ics_export';
-const ICS_DATA_URI_MAX_LEN = 1800000;
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -871,16 +870,13 @@ function showBookingCompleteScreen(results) {
 
   const icsLink = document.getElementById('icsDownloadLink');
   const inClient = typeof liff !== 'undefined' && liff.isInClient();
+  const icsFilename = `reservation_${firstResult.bookingId}.ics`;
   if (icsLink) {
     icsLink.dataset.icsUrl = icsUrl;
     icsLink.dataset.icsStorageKey = ICS_SESSION_KEY;
-    if (!inClient && icsContent.length < ICS_DATA_URI_MAX_LEN) {
-      icsLink.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
-      icsLink.removeAttribute('target');
-    } else {
-      icsLink.href = '#';
-      icsLink.removeAttribute('target');
-    }
+    icsLink.dataset.icsFilename = icsFilename;
+    icsLink.href = '#';
+    icsLink.removeAttribute('target');
   }
 
   if (ICS_DEBUG) {
@@ -889,7 +885,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
-    icsDebugLog(`icsLinkHref=${icsLink && icsLink.href.startsWith('data:') ? 'data-uri' : icsLink?.href || '(none)'}`);
+    icsDebugLog(`icsMode=${inClient ? 'in-client-openWindow' : 'external-blob-or-share'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
@@ -898,10 +894,32 @@ function showBookingCompleteScreen(results) {
   document.getElementById('bookingComplete').style.display = 'block';
 }
 
-function handleIcsDownloadClick(e) {
+function downloadIcsBlob(content, filename) {
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename || 'reservation.ics';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+}
+
+async function shareIcsFile(content, filename) {
+  if (!navigator.share) return false;
+  const file = new File([content], filename || 'reservation.ics', { type: 'text/calendar' });
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) return false;
+  await navigator.share({ files: [file] });
+  return true;
+}
+
+async function handleIcsDownloadClick(e) {
   const link = e.currentTarget;
   const gasUrl = link.dataset.icsUrl;
   const storageKey = link.dataset.icsStorageKey || ICS_SESSION_KEY;
+  const filename = link.dataset.icsFilename || 'reservation.ics';
   const icsContent = sessionStorage.getItem(storageKey);
   const inClient = typeof liff !== 'undefined' && liff.isInClient();
   const os = typeof liff !== 'undefined' && liff.getOS ? liff.getOS() : 'unknown';
@@ -909,26 +927,43 @@ function handleIcsDownloadClick(e) {
   icsDebugLog('TAP: icsDownloadLink clicked');
   icsDebugLog(`build=${ICS_DEBUG_BUILD}`);
   icsDebugLog(`isInClient=${inClient} os=${os}`);
-  icsDebugLog(`href=${link.href.startsWith('data:') ? 'data-uri' : link.href}`);
 
-  // isInClient=false: openWindow/window.open は iOS で無効。preventDefault せず <a href="data:..."> のネイティブ遷移に任せる
-  if (!inClient && icsContent && icsContent.length < ICS_DATA_URI_MAX_LEN) {
-    if (!link.href.startsWith('data:')) {
-      link.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+  // isInClient=false: data URI / openWindow / GAS 遷移は iOS で無効。ユーザージェスチャ内で Share または Blob DL
+  if (!inClient && icsContent) {
+    e.preventDefault();
+    icsDebugLog(`MODE: external-browser blob/share (len=${icsContent.length})`);
+    try {
+      if (navigator.share) {
+        icsDebugLog('CALL: navigator.share(files)');
+        await shareIcsFile(icsContent, filename);
+        icsDebugLog('OK: navigator.share completed');
+        return;
+      }
+      icsDebugLog('INFO: navigator.share unavailable');
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        icsDebugLog('INFO: share cancelled by user');
+        return;
+      }
+      icsDebugLog(`WARN: share failed: ${err.message || err}`);
     }
-    icsDebugLog(`NAV: native data-uri (len=${icsContent.length}), preventDefault なし`);
+    try {
+      icsDebugLog('CALL: programmatic blob download');
+      downloadIcsBlob(icsContent, filename);
+      icsDebugLog('OK: blob anchor clicked');
+    } catch (err) {
+      icsDebugLog(`ERR: blob download: ${err.message || err}`);
+    }
     return;
   }
 
   e.preventDefault();
 
-  icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(gasUrl)}`);
   if (!gasUrl && !icsContent) {
     icsDebugLog('ABORT: ICS データなし');
     return;
   }
 
-  // LINE アプリ内 LIFF
   if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
     icsDebugLog('CALL: liff.openWindow(GAS, external=true)');
     try {
@@ -943,21 +978,6 @@ function handleIcsDownloadClick(e) {
     } catch (err) {
       icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
     }
-    return;
-  }
-
-  // フォールバック: ics.html ブリッジ
-  if (icsContent) {
-    const bridgeUrl = new URL('ics.html', window.location.href);
-    bridgeUrl.searchParams.set('key', storageKey);
-    icsDebugLog(`CALL: location.href → ${bridgeUrl.pathname}?key=...`);
-    window.location.href = bridgeUrl.toString();
-    return;
-  }
-
-  if (gasUrl) {
-    icsDebugLog('CALL: location.href → GAS (fallback)');
-    window.location.href = gasUrl;
   }
 }
 
