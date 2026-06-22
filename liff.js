@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix6';
+const ICS_DEBUG_BUILD = '20260621-ics-fix7';
 const ICS_SESSION_KEY = 'pending_ics_export';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
@@ -885,7 +885,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
-    icsDebugLog(`icsMode=${inClient ? 'in-client-safari-bridge' : 'external-blob-download'}`);
+    icsDebugLog(`icsMode=${inClient ? 'in-client-gas-openWindow' : 'external-blob-download'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
@@ -973,12 +973,10 @@ async function handleIcsDownloadClick(e) {
     return;
   }
 
-  if (inClient && icsContent && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
-    const bridgeUrl = buildIcsBridgeUrl(icsContent);
-    icsDebugLog('CALL: liff.openWindow(ics.html bridge → Safari, external=true)');
-    icsDebugLog(`bridgeUrlLen=${bridgeUrl.length}`);
+  if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
+    icsDebugLog('CALL: liff.openWindow(GAS ICS URL, external=true)');
     try {
-      const result = liff.openWindow({ url: bridgeUrl, external: true });
+      const result = liff.openWindow({ url: gasUrl, external: true });
       if (result && typeof result.then === 'function') {
         result
           .then(() => icsDebugLog('OK: openWindow Promise resolved'))
@@ -992,11 +990,13 @@ async function handleIcsDownloadClick(e) {
     return;
   }
 
-  if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
-    icsDebugLog('CALL: liff.openWindow(GAS fallback, external=true)');
+  if (inClient && icsContent && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
+    const bridgeUrl = buildIcsBridgeUrl(icsContent);
+    icsDebugLog('CALL: liff.openWindow(ics.html bridge fallback, external=true)');
+    icsDebugLog(`bridgeUrlLen=${bridgeUrl.length}`);
     try {
-      liff.openWindow({ url: gasUrl, external: true });
-      icsDebugLog('OK: openWindow GAS fallback');
+      liff.openWindow({ url: bridgeUrl, external: true });
+      icsDebugLog('OK: openWindow bridge fallback');
     } catch (err) {
       icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
     }
