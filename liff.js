@@ -20,8 +20,9 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix2';
+const ICS_DEBUG_BUILD = '20260621-ics-fix3';
 const ICS_SESSION_KEY = 'pending_ics_export';
+const ICS_DATA_URI_MAX_LEN = 1800000;
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -869,10 +870,17 @@ function showBookingCompleteScreen(results) {
   sessionStorage.setItem(ICS_SESSION_KEY, icsContent);
 
   const icsLink = document.getElementById('icsDownloadLink');
+  const inClient = typeof liff !== 'undefined' && liff.isInClient();
   if (icsLink) {
     icsLink.dataset.icsUrl = icsUrl;
     icsLink.dataset.icsStorageKey = ICS_SESSION_KEY;
-    icsLink.href = '#';
+    if (!inClient && icsContent.length < ICS_DATA_URI_MAX_LEN) {
+      icsLink.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+      icsLink.removeAttribute('target');
+    } else {
+      icsLink.href = '#';
+      icsLink.removeAttribute('target');
+    }
   }
 
   if (ICS_DEBUG) {
@@ -881,8 +889,9 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
+    icsDebugLog(`icsLinkHref=${icsLink && icsLink.href.startsWith('data:') ? 'data-uri' : icsLink?.href || '(none)'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
-    icsDebugLog(`isInClient(now)=${typeof liff !== 'undefined' && liff.isInClient()}`);
+    icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
   }
 
@@ -890,27 +899,36 @@ function showBookingCompleteScreen(results) {
 }
 
 function handleIcsDownloadClick(e) {
-  e.preventDefault();
-  icsDebugLog('TAP: icsDownloadLink clicked');
-
   const link = e.currentTarget;
   const gasUrl = link.dataset.icsUrl;
   const storageKey = link.dataset.icsStorageKey || ICS_SESSION_KEY;
-  const hasStoredIcs = !!sessionStorage.getItem(storageKey);
+  const icsContent = sessionStorage.getItem(storageKey);
+  const inClient = typeof liff !== 'undefined' && liff.isInClient();
+  const os = typeof liff !== 'undefined' && liff.getOS ? liff.getOS() : 'unknown';
+
+  icsDebugLog('TAP: icsDownloadLink clicked');
+  icsDebugLog(`build=${ICS_DEBUG_BUILD}`);
+  icsDebugLog(`isInClient=${inClient} os=${os}`);
+  icsDebugLog(`href=${link.href.startsWith('data:') ? 'data-uri' : link.href}`);
+
+  // isInClient=false: openWindow/window.open は iOS で無効。preventDefault せず <a href="data:..."> のネイティブ遷移に任せる
+  if (!inClient && icsContent && icsContent.length < ICS_DATA_URI_MAX_LEN) {
+    if (!link.href.startsWith('data:')) {
+      link.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+    }
+    icsDebugLog(`NAV: native data-uri (len=${icsContent.length}), preventDefault なし`);
+    return;
+  }
+
+  e.preventDefault();
 
   icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(gasUrl)}`);
-  icsDebugLog(`hasStoredIcs=${hasStoredIcs}`);
-
-  if (!gasUrl && !hasStoredIcs) {
+  if (!gasUrl && !icsContent) {
     icsDebugLog('ABORT: ICS データなし');
     return;
   }
 
-  const inClient = typeof liff !== 'undefined' && liff.isInClient();
-  const os = typeof liff !== 'undefined' && liff.getOS ? liff.getOS() : 'unknown';
-  icsDebugLog(`isInClient=${inClient} os=${os}`);
-
-  // LINE アプリ内 LIFF: GAS URL を外部 Safari で開く（従来の動作）
+  // LINE アプリ内 LIFF
   if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
     icsDebugLog('CALL: liff.openWindow(GAS, external=true)');
     try {
@@ -928,8 +946,8 @@ function handleIcsDownloadClick(e) {
     return;
   }
 
-  // isInClient=false（iOS LINE 外部ブラウザ等）: ポップアップ不可 → 同一オリジン ics.html 経由
-  if (hasStoredIcs) {
+  // フォールバック: ics.html ブリッジ
+  if (icsContent) {
     const bridgeUrl = new URL('ics.html', window.location.href);
     bridgeUrl.searchParams.set('key', storageKey);
     icsDebugLog(`CALL: location.href → ${bridgeUrl.pathname}?key=...`);
