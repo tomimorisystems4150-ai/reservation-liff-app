@@ -20,6 +20,11 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
+const ICS_DEBUG_BUILD = '20260621-ics-debug';
+
+/** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
+const ICS_DEBUG = true;
+
 let userProfile = null;
 let isCustomerRegistered = false;
 
@@ -34,6 +39,26 @@ const bookingState = {
 let initData = {};
 let currentWeekStartDate = null;
 
+function icsDebugLog(message) {
+  if (!ICS_DEBUG) return;
+  const line = `[${new Date().toLocaleTimeString('ja-JP')}] ${message}`;
+  console.log('[ICS debug]', line);
+  const el = document.getElementById('icsDebugLog');
+  if (!el) return;
+  el.textContent += `${line}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function icsDebugUrlSummary(url) {
+  if (!url) return '(empty)';
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}?action=${u.searchParams.get('action')}&bookingIds=${u.searchParams.get('bookingIds') || ''}`;
+  } catch (_e) {
+    return String(url).slice(0, 120);
+  }
+}
+
 // =================================================================
 // 初期化処理
 // =================================================================
@@ -46,6 +71,12 @@ window.onload = async () => {
     await initializeLiff();
     await initializeApp();
     setupEventListeners();
+    if (ICS_DEBUG) {
+      icsDebugLog(`build=${ICS_DEBUG_BUILD}`);
+      icsDebugLog(`GAS_API_URL=${GAS_API_URL ? icsDebugUrlSummary(GAS_API_URL) : '(missing)'}`);
+      icsDebugLog(`LIFF_ID=${LIFF_ID ? 'set' : '(missing)'}`);
+      icsDebugLog(`isInClient=${typeof liff !== 'undefined' && liff.isInClient()}`);
+    }
     showSection('section-step1-visit-experience');
     showApp();
   } catch (error) {
@@ -163,17 +194,13 @@ function setupEventListeners() {
   document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
 
   // ICSダウンロード（data属性に格納したURLを使用）
-  document.getElementById('icsDownloadLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    const url = e.currentTarget.dataset.icsUrl;
-    if (!url) return;
-    // LIFFのiOS環境ではSafariで外部開く（LIFF内では.icsが処理されないため）
-    if (typeof liff !== 'undefined' && liff.isInClient()) {
-      liff.openWindow({ url, external: true });
-    } else {
-      window.open(url, '_blank');
-    }
-  });
+  const icsDownloadEl = document.getElementById('icsDownloadLink');
+  if (!icsDownloadEl) {
+    icsDebugLog('ERROR: #icsDownloadLink が DOM に存在しません');
+  } else {
+    icsDownloadEl.addEventListener('click', handleIcsDownloadClick);
+    icsDebugLog('OK: #icsDownloadLink click listener registered');
+  }
 
   // カウンターチップのタップ → パネル開閉
   document.getElementById('bulk-counter').addEventListener('click', () => {
@@ -817,8 +844,58 @@ function showBookingCompleteScreen(results) {
   const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
   const icsUrl = `${GAS_API_URL}?action=downloadICS&bookingIds=${encodeURIComponent(bookingIdParams)}`;
   const icsLink = document.getElementById('icsDownloadLink');
-  icsLink.dataset.icsUrl = icsUrl;
-  icsLink.href = '#';
+  if (icsLink) {
+    icsLink.dataset.icsUrl = icsUrl;
+    icsLink.href = '#';
+  }
+
+  if (ICS_DEBUG) {
+    icsDebugLog('--- booking complete ---');
+    icsDebugLog(`bookingIds(raw)=${JSON.stringify(sortedResults.map(r => r.bookingId))}`);
+    icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
+    icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
+    icsDebugLog(`icsLinkInDom=${!!icsLink}`);
+  }
 
   document.getElementById('bookingComplete').style.display = 'block';
+}
+
+function handleIcsDownloadClick(e) {
+  e.preventDefault();
+  icsDebugLog('TAP: icsDownloadLink clicked');
+
+  const link = e.currentTarget;
+  const url = link.dataset.icsUrl;
+  const href = link.getAttribute('href');
+  icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(url)}`);
+  icsDebugLog(`href=${href || '(empty)'}`);
+
+  if (!url) {
+    icsDebugLog('ABORT: dataset.icsUrl が空 → if(!url) return で終了（無反応）');
+    return;
+  }
+
+  const inClient = typeof liff !== 'undefined' && liff.isInClient();
+  icsDebugLog(`isInClient=${inClient}`);
+
+  if (inClient) {
+    icsDebugLog('CALL: liff.openWindow({ external: true })');
+    try {
+      const result = liff.openWindow({ url, external: true });
+      if (result && typeof result.then === 'function') {
+        result
+          .then(() => icsDebugLog('OK: openWindow Promise resolved'))
+          .catch((err) => icsDebugLog(`ERR: openWindow Promise rejected: ${err.message || err}`));
+      } else {
+        icsDebugLog('OK: openWindow 同期呼び出し完了（Safari起動要確認）');
+      }
+    } catch (err) {
+      icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
+    }
+    return;
+  }
+
+  icsDebugLog('CALL: window.open(_blank)');
+  const win = window.open(url, '_blank');
+  icsDebugLog(win ? 'OK: window.open returned window' : 'WARN: window.open returned null（ポップアップ遮断の可能性）');
 }
