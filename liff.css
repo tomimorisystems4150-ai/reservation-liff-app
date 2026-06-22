@@ -684,6 +684,13 @@ select.form-control {
   color: #fff;
 }
 
+.ics-help-text {
+  margin-top: 10px;
+  font-size: 0.82em;
+  line-height: 1.55;
+  text-align: left;
+}
+
 .ics-debug-panel {
   margin-top: 14px;
   padding: 10px;

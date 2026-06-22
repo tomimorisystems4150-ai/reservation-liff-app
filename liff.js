@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix4';
+const ICS_DEBUG_BUILD = '20260621-ics-fix5';
 const ICS_SESSION_KEY = 'pending_ics_export';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
@@ -885,10 +885,21 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
-    icsDebugLog(`icsMode=${inClient ? 'in-client-openWindow' : 'external-blob-or-share'}`);
+    icsDebugLog(`icsMode=${inClient ? 'in-client-openWindow' : 'external-blob-download'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
+  }
+
+  const helpEl = document.getElementById('icsHelpText');
+  if (helpEl) {
+    if (!inClient) {
+      helpEl.textContent =
+        'ボタンを押すと予約ファイル（.ics）を保存できます。保存後、ファイルをタップして「カレンダーに追加」を選んでください。（共有メニューにカレンダーは表示されないことがあります）';
+      helpEl.style.display = 'block';
+    } else {
+      helpEl.style.display = 'none';
+    }
   }
 
   document.getElementById('bookingComplete').style.display = 'block';
@@ -928,25 +939,10 @@ async function handleIcsDownloadClick(e) {
   icsDebugLog(`build=${ICS_DEBUG_BUILD}`);
   icsDebugLog(`isInClient=${inClient} os=${os}`);
 
-  // isInClient=false: data URI / openWindow / GAS 遷移は iOS で無効。ユーザージェスチャ内で Share または Blob DL
+  // isInClient=false: .ics をダウンロード → ユーザーがファイルを開いてカレンダー追加
   if (!inClient && icsContent) {
     e.preventDefault();
-    icsDebugLog(`MODE: external-browser blob/share (len=${icsContent.length})`);
-    try {
-      if (navigator.share) {
-        icsDebugLog('CALL: navigator.share(files)');
-        await shareIcsFile(icsContent, filename);
-        icsDebugLog('OK: navigator.share completed');
-        return;
-      }
-      icsDebugLog('INFO: navigator.share unavailable');
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        icsDebugLog('INFO: share cancelled by user');
-        return;
-      }
-      icsDebugLog(`WARN: share failed: ${err.message || err}`);
-    }
+    icsDebugLog(`MODE: external-browser blob-download (len=${icsContent.length})`);
     try {
       icsDebugLog('CALL: programmatic blob download');
       downloadIcsBlob(icsContent, filename);
