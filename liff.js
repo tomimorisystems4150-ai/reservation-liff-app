@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-debug3';
+const ICS_DEBUG_BUILD = '20260621-ics-fix1';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -901,7 +901,8 @@ function handleIcsDownloadClick(e) {
   const inClient = typeof liff !== 'undefined' && liff.isInClient();
   icsDebugLog(`isInClient=${inClient}`);
 
-  if (inClient) {
+  // iOS LINE では isInClient=false でも LIFF SDK 経由で開く（window.open は null で遮断される）
+  if (typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
     icsDebugLog('CALL: liff.openWindow({ external: true })');
     try {
       const result = liff.openWindow({ url, external: true });
@@ -918,7 +919,7 @@ function handleIcsDownloadClick(e) {
     return;
   }
 
-  icsDebugLog('CALL: window.open(_blank)');
+  icsDebugLog('CALL: window.open(_blank) [fallback]');
   const win = window.open(url, '_blank');
   icsDebugLog(win ? 'OK: window.open returned window' : 'WARN: window.open returned null（ポップアップ遮断の可能性）');
 }
