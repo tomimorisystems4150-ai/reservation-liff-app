@@ -20,7 +20,7 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-debug2';
+const ICS_DEBUG_BUILD = '20260621-ics-debug3';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -56,7 +56,13 @@ function icsDebugResetLog() {
   const el = document.getElementById('icsDebugLog');
   if (el) el.textContent = '';
   const panel = document.getElementById('icsDebugPanel');
-  if (panel) panel.style.display = ICS_DEBUG ? 'block' : 'none';
+  if (panel) panel.style.display = 'none';
+}
+
+function icsDebugShowPanel() {
+  if (!ICS_DEBUG) return;
+  const panel = document.getElementById('icsDebugPanel');
+  if (panel) panel.style.display = 'block';
 }
 
 function icsDebugUrlSummary(url) {
@@ -871,6 +877,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${typeof liff !== 'undefined' && liff.isInClient()}`);
+    icsDebugShowPanel();
   }
 
   document.getElementById('bookingComplete').style.display = 'block';

@@ -685,17 +685,11 @@ select.form-control {
 }
 
 .ics-debug-panel {
-  position: fixed;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  z-index: 9999;
-  max-height: 38vh;
+  margin-top: 14px;
   padding: 10px;
   border-radius: 8px;
-  background: rgba(30, 30, 30, 0.96);
+  background: #1e1e1e;
   text-align: left;
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.25);
 }
 
 .ics-debug-title {
@@ -707,7 +701,7 @@ select.form-control {
 
 #icsDebugLog {
   margin: 0;
-  max-height: calc(38vh - 48px);
+  max-height: 160px;
   overflow-y: auto;
   font-size: 0.68em;
   line-height: 1.45;
