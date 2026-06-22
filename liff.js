@@ -20,7 +20,8 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix1';
+const ICS_DEBUG_BUILD = '20260621-ics-fix2';
+const ICS_SESSION_KEY = 'pending_ics_export';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
 const ICS_DEBUG = true;
@@ -864,9 +865,13 @@ function showBookingCompleteScreen(results) {
 
   const bookingIdParams = sortedResults.map(r => r.bookingId).join(',');
   const icsUrl = `${GAS_API_URL}?action=downloadICS&bookingIds=${encodeURIComponent(bookingIdParams)}`;
+  const icsContent = generateICS(sortedResults, shopName);
+  sessionStorage.setItem(ICS_SESSION_KEY, icsContent);
+
   const icsLink = document.getElementById('icsDownloadLink');
   if (icsLink) {
     icsLink.dataset.icsUrl = icsUrl;
+    icsLink.dataset.icsStorageKey = ICS_SESSION_KEY;
     icsLink.href = '#';
   }
 
@@ -875,6 +880,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(raw)=${JSON.stringify(sortedResults.map(r => r.bookingId))}`);
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
+    icsDebugLog(`icsContentLen=${icsContent.length}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${typeof liff !== 'undefined' && liff.isInClient()}`);
     icsDebugShowPanel();
@@ -888,30 +894,33 @@ function handleIcsDownloadClick(e) {
   icsDebugLog('TAP: icsDownloadLink clicked');
 
   const link = e.currentTarget;
-  const url = link.dataset.icsUrl;
-  const href = link.getAttribute('href');
-  icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(url)}`);
-  icsDebugLog(`href=${href || '(empty)'}`);
+  const gasUrl = link.dataset.icsUrl;
+  const storageKey = link.dataset.icsStorageKey || ICS_SESSION_KEY;
+  const hasStoredIcs = !!sessionStorage.getItem(storageKey);
 
-  if (!url) {
-    icsDebugLog('ABORT: dataset.icsUrl が空 → if(!url) return で終了（無反応）');
+  icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(gasUrl)}`);
+  icsDebugLog(`hasStoredIcs=${hasStoredIcs}`);
+
+  if (!gasUrl && !hasStoredIcs) {
+    icsDebugLog('ABORT: ICS データなし');
     return;
   }
 
   const inClient = typeof liff !== 'undefined' && liff.isInClient();
-  icsDebugLog(`isInClient=${inClient}`);
+  const os = typeof liff !== 'undefined' && liff.getOS ? liff.getOS() : 'unknown';
+  icsDebugLog(`isInClient=${inClient} os=${os}`);
 
-  // iOS LINE では isInClient=false でも LIFF SDK 経由で開く（window.open は null で遮断される）
-  if (typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
-    icsDebugLog('CALL: liff.openWindow({ external: true })');
+  // LINE アプリ内 LIFF: GAS URL を外部 Safari で開く（従来の動作）
+  if (inClient && gasUrl && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
+    icsDebugLog('CALL: liff.openWindow(GAS, external=true)');
     try {
-      const result = liff.openWindow({ url, external: true });
+      const result = liff.openWindow({ url: gasUrl, external: true });
       if (result && typeof result.then === 'function') {
         result
           .then(() => icsDebugLog('OK: openWindow Promise resolved'))
           .catch((err) => icsDebugLog(`ERR: openWindow Promise rejected: ${err.message || err}`));
       } else {
-        icsDebugLog('OK: openWindow 同期呼び出し完了（Safari起動要確認）');
+        icsDebugLog('OK: openWindow 同期呼び出し完了');
       }
     } catch (err) {
       icsDebugLog(`ERR: openWindow throw: ${err.message || err}`);
@@ -919,7 +928,55 @@ function handleIcsDownloadClick(e) {
     return;
   }
 
-  icsDebugLog('CALL: window.open(_blank) [fallback]');
-  const win = window.open(url, '_blank');
-  icsDebugLog(win ? 'OK: window.open returned window' : 'WARN: window.open returned null（ポップアップ遮断の可能性）');
+  // isInClient=false（iOS LINE 外部ブラウザ等）: ポップアップ不可 → 同一オリジン ics.html 経由
+  if (hasStoredIcs) {
+    const bridgeUrl = new URL('ics.html', window.location.href);
+    bridgeUrl.searchParams.set('key', storageKey);
+    icsDebugLog(`CALL: location.href → ${bridgeUrl.pathname}?key=...`);
+    window.location.href = bridgeUrl.toString();
+    return;
+  }
+
+  if (gasUrl) {
+    icsDebugLog('CALL: location.href → GAS (fallback)');
+    window.location.href = gasUrl;
+  }
+}
+
+/**
+ * ICS（iCalendar）形式の文字列を生成する（予約APIレスポンスから即時生成）
+ */
+function generateICS(results, shopName) {
+  const formatICSDate = (isoStr) =>
+    new Date(isoStr).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const now = formatICSDate(new Date().toISOString());
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ReservationSystem//JP',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  results.forEach(result => {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${result.bookingId}@reservation-system`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${formatICSDate(result.startTime)}`,
+      `DTEND:${formatICSDate(result.endTime)}`,
+      `SUMMARY:${result.eventTitle}`,
+      `DESCRIPTION:店舗: ${shopName}\\nご予約ありがとうございます。`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT1H',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:ご予約の1時間前です',
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
 }
