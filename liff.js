@@ -103,8 +103,6 @@ async function initializeApp() {
   initData = await fetchApi('getInitData', { lineUserId: userProfile.userId });
   isCustomerRegistered = initData.isRegistered === true;
   updateStep1ButtonTargets();
-  // 診断ログ（本番確認後に削除可）
-  console.log('[initData]', JSON.stringify(initData));
   document.getElementById('shopName').textContent = initData.shopName || '予約システム';
   
   const today = new Date();
