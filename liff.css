@@ -236,6 +236,27 @@ select.form-control {
   line-height: 1.4;
 }
 
+.booking-target-info {
+  background: #fef9e7;
+  border-left: 3px solid #f39c12;
+  padding: 10px 12px;
+  border-radius: 0 7px 7px 0;
+  margin-bottom: 14px;
+}
+
+.booking-target-label {
+  font-size: 0.82em;
+  font-weight: bold;
+  color: #b7950b;
+  margin-bottom: 6px;
+}
+
+.booking-target-info .booking-details p {
+  margin: 4px 0;
+  font-size: 0.9em;
+  color: #333;
+}
+
 /* ================================================================
    タイムテーブル
    ================================================================ */

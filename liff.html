@@ -7,7 +7,7 @@
   <title>予約</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="liff.css?v=20260619-manage-bookings2">
+  <link rel="stylesheet" href="liff.css?v=20260619-manage-bookings3">
 </head>
 <body>
   <div id="loading" class="loading-overlay">
@@ -113,6 +113,10 @@
       <!-- ステップ4: 日時選択（担当者選択を統合） -->
       <section id="section-step4-datetime" class="page-section" style="display: none;">
         <h2>ご予約日時の選択</h2>
+        <div id="reschedule-target-display" class="booking-target-info" style="display: none;">
+          <div class="booking-target-label">変更対象の予約</div>
+          <div id="reschedule-target-body" class="booking-details"></div>
+        </div>
         <div id="selected-menu-display" class="selected-menu-info">
           選択中のメニュー: <span id="current-selected-menu"></span>
         </div>
@@ -192,6 +196,6 @@
   </div>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="liff.js?v=20260619-single-slot-fix"></script>
+  <script src="liff.js?v=20260619-manage-bookings3"></script>
 </body>
 </html>

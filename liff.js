@@ -507,6 +507,7 @@ function prepareNewBookingDatetimeSection() {
   document.getElementById('bulk-chip-container').style.display = '';
   document.getElementById('selected-menu-display').style.display = '';
   document.getElementById('selected-staff-display').style.display = 'none';
+  document.getElementById('reschedule-target-display').style.display = 'none';
   const backBtn = document.querySelector('#section-step4-datetime .back-button');
   if (backBtn) backBtn.dataset.prevStep = 'step3-menu';
 
@@ -553,18 +554,13 @@ function prepareRescheduleDatetimeSection() {
   document.getElementById('staff-selector-container').style.display = 'none';
   document.getElementById('bulk-chip-container').style.display = 'none';
   document.getElementById('timetable-container').style.display = 'block';
-  document.getElementById('selected-menu-display').style.display = '';
-  document.getElementById('current-selected-menu').textContent =
-    `${booking.menuName}（変更対象・${bookingState.menu.duration}分）`;
+  document.getElementById('selected-menu-display').style.display = 'none';
+  document.getElementById('selected-staff-display').style.display = 'none';
 
-  const staffDisplayEl = document.getElementById('selected-staff-display');
-  const staffNameEl = document.getElementById('current-selected-staff');
-  if (initData.isStaffFeatureEnabled) {
-    staffNameEl.textContent = getStaffDisplayText(booking);
-    staffDisplayEl.style.display = 'block';
-  } else {
-    staffDisplayEl.style.display = 'none';
-  }
+  const targetDisplayEl = document.getElementById('reschedule-target-display');
+  const targetBodyEl = document.getElementById('reschedule-target-body');
+  targetBodyEl.innerHTML = formatBookingInfoHtml(booking);
+  targetDisplayEl.style.display = 'block';
 
   const backBtn = document.querySelector('#section-step4-datetime .back-button');
   if (backBtn) backBtn.dataset.prevStep = 'manage-booking-detail';
@@ -1115,6 +1111,37 @@ function getStaffDisplayText(booking) {
   return initData.isStaffFeatureEnabled ? '指名なし' : '';
 }
 
+/**
+ * 予約情報（日時・メニュー・担当者）を HTML で返す
+ */
+function formatBookingInfoHtml(booking, options = {}) {
+  const {
+    datetimeLabel = '日時',
+    datetimeIso = booking.startTime,
+    introText = '',
+  } = options;
+
+  let html = introText ? `<p>${introText}</p>` : '';
+  html += `<p><strong>${datetimeLabel}:</strong> ${formatBookingDateTime(datetimeIso)}</p>`;
+  html += `<p><strong>メニュー:</strong> ${booking.menuName}</p>`;
+  if (initData.isStaffFeatureEnabled) {
+    html += `<p><strong>担当者:</strong> ${getStaffDisplayText(booking) || '指名なし'}</p>`;
+  }
+  return html;
+}
+
+function formatBookingInfoText(booking, options = {}) {
+  const lines = [
+    formatBookingDateTime(options.datetimeIso || booking.startTime),
+    booking.menuName,
+  ];
+  const staffText = getStaffDisplayText(booking);
+  if (initData.isStaffFeatureEnabled) {
+    lines.push(`担当: ${staffText || '指名なし'}`);
+  }
+  return lines.join('\n');
+}
+
 async function loadManageBookingsList() {
   const loadingEl = document.getElementById('manage-bookings-loading');
   const emptyEl = document.getElementById('manage-bookings-empty');
@@ -1168,13 +1195,7 @@ function renderManageBookingDetail() {
   const booking = manageState.selectedBooking;
   const bodyEl = document.getElementById('manage-booking-detail-body');
   if (!booking || !bodyEl) return;
-
-  let html = `<p><strong>日時:</strong> ${formatBookingDateTime(booking.startTime)}</p>`;
-  html += `<p><strong>メニュー:</strong> ${booking.menuName}</p>`;
-  if (booking.staffName && booking.staffName !== '指名なし') {
-    html += `<p><strong>担当者:</strong> ${booking.staffName}</p>`;
-  }
-  bodyEl.innerHTML = html;
+  bodyEl.innerHTML = formatBookingInfoHtml(booking);
 }
 
 async function handleManageCancel() {
@@ -1182,7 +1203,7 @@ async function handleManageCancel() {
   if (!booking) return;
 
   const confirmed = window.confirm(
-    `以下の予約をキャンセルします。よろしいですか？\n\n${formatBookingDateTime(booking.startTime)}\n${booking.menuName}`
+    `以下の予約をキャンセルします。よろしいですか？\n\n${formatBookingInfoText(booking)}`
   );
   if (!confirmed) return;
 
@@ -1214,7 +1235,7 @@ async function handleRescheduleSubmit() {
   if (!booking || !newSlot) return;
 
   const confirmed = window.confirm(
-    `予約日時を以下に変更します。よろしいですか？\n\n${formatBookingDateTime(newSlot)}\n${booking.menuName}`
+    `予約日時を以下に変更します。よろしいですか？\n\n${formatBookingInfoText(booking, { datetimeIso: newSlot })}`
   );
   if (!confirmed) return;
 
@@ -1252,17 +1273,19 @@ function showManageActionComplete(actionType, result, previousBooking) {
 
   if (actionType === 'cancel') {
     titleEl.textContent = '予約をキャンセルしました';
-    bodyEl.innerHTML = `
-      <p>${formatBookingDateTime(previousBooking.startTime)} のご予約をキャンセルしました。</p>
-      <p><strong>メニュー:</strong> ${previousBooking.menuName}</p>
-    `;
+    bodyEl.innerHTML = formatBookingInfoHtml(previousBooking, {
+      introText: '以下のご予約をキャンセルしました。',
+    });
   } else {
     titleEl.textContent = '予約日時を変更しました';
-    bodyEl.innerHTML = `
-      <p>ご予約日時を変更しました。</p>
-      <p><strong>変更後:</strong> ${formatBookingDateTime(result.startTime)}</p>
-      <p><strong>メニュー:</strong> ${result.menuName || previousBooking.menuName}</p>
-    `;
+    bodyEl.innerHTML = formatBookingInfoHtml(
+      { ...previousBooking, menuName: result.menuName || previousBooking.menuName },
+      {
+        introText: 'ご予約日時を変更しました。',
+        datetimeLabel: '変更後',
+        datetimeIso: result.startTime,
+      }
+    );
   }
 
   if (reminderMode === 'ICS') {
