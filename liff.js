@@ -58,6 +58,25 @@ function canRenderTimetable() {
   return true;
 }
 
+/** "HH:mm" を分に変換 */
+function parseTimeToMinutes_(timeStr) {
+  const parts = String(timeStr || '00:00').split(':');
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+
+/** 分を "HH:mm" に変換 */
+function minutesToTimeStr_(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function getBusinessHours_() {
+  return initData.businessHours || { start: '10:00', end: '19:00' };
+}
+
 function clearSelectedSlots() {
   bookingState.selectedSlots = [];
   document.querySelectorAll('#timetable .slot.selected').forEach((slot) => {
@@ -672,10 +691,13 @@ async function renderTimetable() {
 
   let bodyHtml = '';
   const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10);
-  for (let hour = 9; hour < 20; hour++) {
-    for (let min = 0; min < 60; min += timeUnit) {
-      const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-      bodyHtml += `<tr><th>${timeStr}</th>`;
+  const businessHours = getBusinessHours_();
+  const startMinutes = parseTimeToMinutes_(businessHours.start);
+  const endMinutes = parseTimeToMinutes_(businessHours.end);
+
+  for (let slotMinutes = startMinutes; slotMinutes < endMinutes; slotMinutes += timeUnit) {
+    const timeStr = minutesToTimeStr_(slotMinutes);
+    bodyHtml += `<tr><th>${timeStr}</th>`;
       for (let i = 0; i < 7; i++) {
         const d = new Date(currentWeekStartDate.getTime());
         d.setDate(d.getDate() + i);
@@ -702,7 +724,6 @@ async function renderTimetable() {
         bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateTimeString}">${cellContent}</div></td>`;
       }
       bodyHtml += '</tr>';
-    }
   }
   timetableBody.innerHTML = bodyHtml;
 

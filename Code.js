@@ -301,6 +301,7 @@ function doPost(e) {
           response = {
             shopName: configs.shopName,
             serviceMenus: configs.serviceMenus || [],
+            businessHours: configs.businessHours || { start: '10:00', end: '19:00' },
             isStaffFeatureEnabled: configs.isStaffFeatureEnabled || false,
             staffs: configs.isStaffFeatureEnabled ? (configs.staffs || []) : [],
             bookingTimeUnit: configs.bookingTimeUnit || 30,
