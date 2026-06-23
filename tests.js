@@ -399,6 +399,109 @@ function runAPITests_() {
     assertContains_(response.message, '上限', 'エラーメッセージに「上限」が含まれない');
   }));
 
+  // TC-B-050: getMyBookings
+  results.push(runTest_('TC-B-050: getMyBookings - 未来予約一覧', () => {
+    const slot = _getTestSlot(28);
+    const createResp = _callDoPost({
+      action: 'createBooking',
+      bookingData: {
+        lineUserId: TEST_LINE_USER_ID,
+        userName: TEST_CUSTOMER_NAME,
+        menuName: _getFirstMenuName(),
+        duration: 30,
+        startDateTime: slot,
+        staffEmail: 'any',
+        staffName: '',
+      },
+    });
+    assert_(createResp.success, `予約作成失敗: ${createResp.message}`);
+
+    const response = _callDoPost({
+      action: 'getMyBookings',
+      lineUserId: TEST_LINE_USER_ID,
+    });
+    assert_(response.success, `success=false: ${response.message}`);
+    assert_(Array.isArray(response.data.bookings), 'bookingsが配列でない');
+    const found = response.data.bookings.some(b => b.bookingId === createResp.data.bookingId);
+    assert_(found, '作成した予約が一覧に含まれない');
+  }));
+
+  // TC-B-051: cancelBookingByUser
+  results.push(runTest_('TC-B-051: cancelBookingByUser - 本人キャンセル', () => {
+    const slot = _getTestSlot(35);
+    const createResp = _callDoPost({
+      action: 'createBooking',
+      bookingData: {
+        lineUserId: TEST_LINE_USER_ID,
+        userName: TEST_CUSTOMER_NAME,
+        menuName: _getFirstMenuName(),
+        duration: 30,
+        startDateTime: slot,
+        staffEmail: 'any',
+        staffName: '',
+      },
+    });
+    assert_(createResp.success, `予約作成失敗: ${createResp.message}`);
+
+    const response = _callDoPost({
+      action: 'cancelBookingByUser',
+      lineUserId: TEST_LINE_USER_ID,
+      bookingId: createResp.data.bookingId,
+    });
+    assert_(response.success, `success=false: ${response.message}`);
+    assertEqual_(response.data.bookingId, createResp.data.bookingId, 'bookingId');
+
+    const configs = getConfigs();
+    const sheet = getReservationSheet(configs);
+    const data = sheet.getDataRange().getValues();
+    const h = data[0];
+    const bkIdCol = h.indexOf('予約ID');
+    const statusCol = h.indexOf('ステータス');
+    const row = data.slice(1).find(r => r[bkIdCol] === createResp.data.bookingId);
+    assert_(row, '予約行が見つからない');
+    assertEqual_(row[statusCol], 'キャンセル', 'ステータス');
+  }));
+
+  // TC-B-052: rescheduleBookingByUser
+  results.push(runTest_('TC-B-052: rescheduleBookingByUser - 日時変更', () => {
+    const oldSlot = _getTestSlot(42);
+    const newSlot = _getTestSlot(43);
+    const createResp = _callDoPost({
+      action: 'createBooking',
+      bookingData: {
+        lineUserId: TEST_LINE_USER_ID,
+        userName: TEST_CUSTOMER_NAME,
+        menuName: _getFirstMenuName(),
+        duration: 30,
+        startDateTime: oldSlot,
+        staffEmail: 'any',
+        staffName: '',
+      },
+    });
+    assert_(createResp.success, `予約作成失敗: ${createResp.message}`);
+
+    const response = _callDoPost({
+      action: 'rescheduleBookingByUser',
+      lineUserId: TEST_LINE_USER_ID,
+      bookingId: createResp.data.bookingId,
+      newStartDateTime: newSlot,
+    });
+    assert_(response.success, `success=false: ${response.message}`);
+    assertEqual_(response.data.bookingId, createResp.data.bookingId, 'bookingId');
+    assert_(response.data.startTime, 'startTimeが空');
+
+    const configs = getConfigs();
+    const sheet = getReservationSheet(configs);
+    const data = sheet.getDataRange().getValues();
+    const h = data[0];
+    const bkIdCol = h.indexOf('予約ID');
+    const startCol = h.indexOf('予約日時');
+    const row = data.slice(1).find(r => r[bkIdCol] === createResp.data.bookingId);
+    assert_(row, '予約行が見つからない');
+    const savedStart = new Date(row[startCol]).toISOString();
+    assertEqual_(savedStart, new Date(newSlot).toISOString(), '予約日時');
+  }));
+
   // TC-B: 無効なアクション
   results.push(runTest_('TC-B-999: 無効なアクション', () => {
     const response = _callDoPost({ action: 'invalidAction_xyz' });
@@ -533,8 +636,31 @@ function runLogicTests_() {
       staff_block_calendar_id_map: { 'staff@example.com': 'staff_cal_id' }
     };
     const ids = getBlockCalendarIds_(mockConfigs, 'staff@example.com', true);
-    assertEqual_(ids.length, 1, 'カレンダーID数');
-    assertEqual_(ids[0], 'staff_cal_id', 'カレンダーID（担当者個別）');
+    assertEqual_(ids.length, 2, 'カレンダーID数');
+    assertEqual_(ids[0], 'shared_cal', 'カレンダーID（店舗共有）');
+    assertEqual_(ids[1], 'staff_cal_id', 'カレンダーID（担当者個別）');
+  }));
+
+  // TC-L-006b: resolveStaffBlockCalendarId_ - メール大文字小文字差異
+  results.push(runTest_('TC-L-006b: resolveStaffBlockCalendarId_ - 大文字小文字', () => {
+    const map = { 'Staff@Example.com': 'staff_cal_id' };
+    assertEqual_(resolveStaffBlockCalendarId_(map, 'staff@example.com'), 'staff_cal_id', 'カレンダーID');
+  }));
+
+  // TC-L-006c: getAllBlockCalendarIds_ - 全カレンダー収集
+  results.push(runTest_('TC-L-006c: getAllBlockCalendarIds_ - 全カレンダー', () => {
+    const mockConfigs = {
+      isStaffFeatureEnabled: true,
+      block_input_calendar_id: 'shared_cal',
+      staff_block_calendar_id_map: {
+        'staff1@example.com': 'staff1_cal',
+        'staff2@example.com': 'staff2_cal'
+      }
+    };
+    const ids = getAllBlockCalendarIds_(mockConfigs);
+    assertEqual_(ids.length, 3, 'カレンダーID数');
+    assertEqual_(ids.includes('shared_cal'), true, '店舗共有');
+    assertEqual_(ids.includes('staff2_cal'), true, '担当者2');
   }));
 
   // TC-L-007: getBlockCalendarIds_ - 担当者指名なし（担当者機能ON）

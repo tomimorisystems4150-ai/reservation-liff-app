@@ -1378,6 +1378,42 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
 // =================================================================
 
 /**
+ * staff_block_calendar_id_map から担当者メールに対応するカレンダーIDを取得（大文字小文字・前後空白を無視）
+ */
+function resolveStaffBlockCalendarId_(staffCalendarMap, staffEmail) {
+  if (!staffEmail || staffEmail === 'any' || !staffCalendarMap) return null;
+
+  const normalizedEmail = String(staffEmail).trim().toLowerCase();
+  if (staffCalendarMap[staffEmail]) return staffCalendarMap[staffEmail];
+
+  for (const [key, calId] of Object.entries(staffCalendarMap)) {
+    if (String(key).trim().toLowerCase() === normalizedEmail && calId) {
+      return calId;
+    }
+  }
+  return null;
+}
+
+/**
+ * 設定に登録されている全ブロックカレンダーIDを返す（定期同期・デバッグ用）
+ * @param {Object} configs
+ * @returns {string[]}
+ */
+function getAllBlockCalendarIds_(configs) {
+  const ids = new Set();
+  const storeId = configs.block_input_calendar_id;
+  if (storeId) ids.add(String(storeId));
+
+  if (configs.isStaffFeatureEnabled) {
+    const staffCalendarMap = configs.staff_block_calendar_id_map || {};
+    Object.values(staffCalendarMap).forEach((calId) => {
+      if (calId) ids.add(String(calId));
+    });
+  }
+  return Array.from(ids);
+}
+
+/**
  * 設定に応じて使用するブロックカレンダーIDの配列を返す
  * @param {Object} configs - 設定オブジェクト
  * @param {string} staffEmail - 担当者メールアドレス
@@ -1392,14 +1428,18 @@ function getBlockCalendarIds_(configs, staffEmail, isStaffNominated) {
   }
 
   if (isStaffNominated) {
-    // 担当者機能ON + 指名あり: その担当者のブロックカレンダーを使用
-    const staffCalendarMap = configs.staff_block_calendar_id_map || {};
-    const calId = staffCalendarMap[staffEmail];
-    return calId ? [String(calId)] : [];
+    // 担当者機能ON + 指名あり: 店舗共有 + 担当者個別の両方を適用
+    const ids = [];
+    const storeId = configs.block_input_calendar_id;
+    if (storeId) ids.push(String(storeId));
+
+    const staffCalId = resolveStaffBlockCalendarId_(configs.staff_block_calendar_id_map, staffEmail);
+    if (staffCalId) ids.push(String(staffCalId));
+
+    return ids;
   }
 
-  // 担当者機能ON + 指名なし: 共有ブロックカレンダーがあれば使用
-  // （担当者個別のブロックは各担当者の指名ルートで処理されるため、ここでは店舗共有分のみ）
+  // 担当者機能ON + 指名なし: 店舗共有ブロックカレンダーのみ
   const calId = configs.block_input_calendar_id;
   return calId ? [String(calId)] : [];
 }
@@ -1409,6 +1449,9 @@ function getBlockCalendarIds_(configs, staffEmail, isStaffNominated) {
  * @param {string[]} calendarIds - 同期するカレンダーIDの配列
  */
 function syncBlockCalendars(calendarIds) {
+  if (!calendarIds || calendarIds.length === 0) {
+    calendarIds = getAllBlockCalendarIds_(getConfigs());
+  }
   if (!calendarIds || calendarIds.length === 0) return;
 
   const props = PropertiesService.getScriptProperties();
@@ -1695,6 +1738,19 @@ function resetBlockSyncTokens() {
     }
   });
   Logger.log(`ブロックカレンダーのSync Tokenを${count}件リセットしました。次回呼び出し時にフル同期が実行されます。`);
+}
+
+/**
+ * 全ブロックカレンダーの同期状態を確認するデバッグ用関数（GASエディタから手動実行）
+ */
+function debugBlockSync() {
+  const configs = getConfigs();
+  const allIds = getAllBlockCalendarIds_(configs);
+  Logger.log('block calendar ids: ' + JSON.stringify(allIds));
+  resetBlockSyncTokens();
+  syncBlockCalendars(allIds);
+  const sheet = getSpreadsheet_().getSheetByName('ブロック予定同期');
+  Logger.log('sync sheet lastRow: ' + (sheet ? sheet.getLastRow() : 'NO SHEET'));
 }
 
 
