@@ -494,6 +494,7 @@ function prepareSection(sectionId) {
 function prepareNewBookingDatetimeSection() {
   document.getElementById('bulk-chip-container').style.display = '';
   document.getElementById('selected-menu-display').style.display = '';
+  document.getElementById('selected-staff-display').style.display = 'none';
   const backBtn = document.querySelector('#section-step4-datetime .back-button');
   if (backBtn) backBtn.dataset.prevStep = 'step3-menu';
 
@@ -543,6 +544,15 @@ function prepareRescheduleDatetimeSection() {
   document.getElementById('selected-menu-display').style.display = '';
   document.getElementById('current-selected-menu').textContent =
     `${booking.menuName}（変更対象・${bookingState.menu.duration}分）`;
+
+  const staffDisplayEl = document.getElementById('selected-staff-display');
+  const staffNameEl = document.getElementById('current-selected-staff');
+  if (initData.isStaffFeatureEnabled) {
+    staffNameEl.textContent = getStaffDisplayText(booking);
+    staffDisplayEl.style.display = 'block';
+  } else {
+    staffDisplayEl.style.display = 'none';
+  }
 
   const backBtn = document.querySelector('#section-step4-datetime .back-button');
   if (backBtn) backBtn.dataset.prevStep = 'manage-booking-detail';
@@ -1085,6 +1095,14 @@ function formatBookingDateTime(isoStr) {
   return `${datePart} ${timePart}`;
 }
 
+function getStaffDisplayText(booking) {
+  const staffName = booking && booking.staffName ? String(booking.staffName).trim() : '';
+  if (staffName && staffName !== '指名なし') {
+    return staffName;
+  }
+  return initData.isStaffFeatureEnabled ? '指名なし' : '';
+}
+
 async function loadManageBookingsList() {
   const loadingEl = document.getElementById('manage-bookings-loading');
   const emptyEl = document.getElementById('manage-bookings-empty');
@@ -1112,9 +1130,14 @@ async function loadManageBookingsList() {
       button.type = 'button';
       button.className = 'selection-button manage-booking-item';
       button.dataset.bookingId = booking.bookingId;
+      const staffText = getStaffDisplayText(booking);
+      const staffHtml = staffText
+        ? `<span class="manage-booking-staff">担当: ${staffText}</span>`
+        : '';
       button.innerHTML = `
         <span class="manage-booking-datetime">${formatBookingDateTime(booking.startTime)}</span>
         <span class="manage-booking-menu">${booking.menuName}</span>
+        ${staffHtml}
       `;
       button.addEventListener('click', () => {
         manageState.selectedBooking = booking;
