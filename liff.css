@@ -691,33 +691,6 @@ select.form-control {
   text-align: left;
 }
 
-.ics-debug-panel {
-  margin-top: 14px;
-  padding: 10px;
-  border-radius: 8px;
-  background: #1e1e1e;
-  text-align: left;
-}
-
-.ics-debug-title {
-  margin: 0 0 6px;
-  font-size: 0.75em;
-  font-weight: bold;
-  color: #f1c40f;
-}
-
-#icsDebugLog {
-  margin: 0;
-  max-height: 160px;
-  overflow-y: auto;
-  font-size: 0.68em;
-  line-height: 1.45;
-  color: #ecf0f1;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: Consolas, "Courier New", monospace;
-}
-
 /* ================================================================
    ローディング・エラー
    ================================================================ */
