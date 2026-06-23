@@ -297,24 +297,36 @@ function handleBackButtonClick(button) {
   showSection(`section-${prevStepId}`);
 }
 
+function getMaxSelectableSlots() {
+  return flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
+}
+
+function clearSlotSelectionVisual_() {
+  document.querySelectorAll('#timetable .slot.selected').forEach((s) => {
+    s.classList.remove('selected');
+  });
+}
+
 function handleSlotClick(slot) {
   if (slot.classList.contains('unavailable') ||
       slot.classList.contains('bulk-limit-reached') ||
       slot.classList.contains('slot-conflict')) return;
 
   const dateTime = slot.dataset.datetime;
-  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
+  const maxBulk = getMaxSelectableSlots();
 
   if (slot.classList.contains('selected')) {
     // 選択解除
     slot.classList.remove('selected');
     bookingState.selectedSlots = bookingState.selectedSlots.filter(s => s !== dateTime);
-  } else {
-    // 新規選択（上限未満のみ）
-    if (bookingState.selectedSlots.length < maxBulk) {
-      slot.classList.add('selected');
-      bookingState.selectedSlots.push(dateTime);
-    }
+  } else if (maxBulk === 1) {
+    // 単一選択: 別週で選択済みでも新しい枠を選べるよう、既存選択を置き換える
+    clearSlotSelectionVisual_();
+    slot.classList.add('selected');
+    bookingState.selectedSlots = [dateTime];
+  } else if (bookingState.selectedSlots.length < maxBulk) {
+    slot.classList.add('selected');
+    bookingState.selectedSlots.push(dateTime);
   }
 
   updateSubmitButton();
@@ -328,7 +340,7 @@ function handleSlotClick(slot) {
 function updateSubmitButton() {
   const submitButton = document.getElementById('submitButton');
   const count = bookingState.selectedSlots.length;
-  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
+  const maxBulk = getMaxSelectableSlots();
 
   if (flowMode === 'manage-reschedule') {
     if (count === 0) {
@@ -362,7 +374,7 @@ function updateSubmitButton() {
  * どちらも該当しない場合は両クラスを除去する。
  */
 function updateBulkSlotAvailability() {
-  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
+  const maxBulk = getMaxSelectableSlots();
   const count = bookingState.selectedSlots.length;
   const limitReached = maxBulk > 1 && count >= maxBulk;
   const duration = bookingState.menu ? bookingState.menu.duration : 0;
