@@ -364,24 +364,29 @@ function updateBulkSlotAvailability() {
 
 /**
  * 現在週を再描画した後に selectedSlots の選択状態を視覚的に復元する。
- * 空き枠（◯）のみ復元し、× になった枠は selectedSlots から除去する。
+ * 表示中の週に存在する枠のみ検証し、× になった枠だけ selectedSlots から除去する。
+ * （別週で選択した枠は DOM に無いため selectedSlots に残す）
  */
 function restoreSlotSelections() {
   if (bookingState.selectedSlots.length === 0) return;
 
-  const validSlots = [];
+  const removedDateTimes = [];
   document.querySelectorAll('#timetable .slot[data-datetime]').forEach((slot) => {
-    if (!bookingState.selectedSlots.includes(slot.dataset.datetime)) return;
+    const dateTime = slot.dataset.datetime;
+    if (!bookingState.selectedSlots.includes(dateTime)) return;
+
     if (slot.classList.contains('unavailable')) {
       slot.classList.remove('selected');
+      removedDateTimes.push(dateTime);
       return;
     }
     slot.classList.add('selected');
-    validSlots.push(slot.dataset.datetime);
   });
 
-  if (validSlots.length !== bookingState.selectedSlots.length) {
-    bookingState.selectedSlots = validSlots;
+  if (removedDateTimes.length > 0) {
+    bookingState.selectedSlots = bookingState.selectedSlots.filter(
+      (dt) => !removedDateTimes.includes(dt)
+    );
     updateSubmitButton();
     updateBulkCounter();
   }
