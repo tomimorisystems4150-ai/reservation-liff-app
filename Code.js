@@ -2729,6 +2729,37 @@ function sendLineMessage_(lineUserId, messages) {
 }
 
 /**
+ * LINE リマインドメッセージ本文を組み立てる。
+ * @param {'dayBefore'|'hourBefore'} kind
+ * @param {Date} startTime
+ * @param {string} menuName
+ * @param {string} staffName
+ * @returns {string}
+ */
+function buildLineReminderMessage_(kind, startTime, menuName, staffName) {
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const d = startTime;
+  const dateTimeStr = `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const title = kind === 'dayBefore'
+    ? '📅【明日の予約リマインド】'
+    : '📅【本日の予約リマインド】';
+
+  let text = `${title}\n\n`;
+  if (kind === 'hourBefore') {
+    text += '1時間後のご来店をお待ちしております。\n\n';
+  }
+  text += `日時: ${dateTimeStr}\n`;
+  text += `メニュー: ${menuName}\n`;
+  if (staffName && staffName !== '指名なし') {
+    text += `担当者: ${staffName}\n`;
+  }
+  if (kind === 'dayBefore') {
+    text += '\nお気をつけてご来店ください。';
+  }
+  return text;
+}
+
+/**
  * 前日リマインド（毎日18時トリガー）。
  * reminderMode が "LINE" の場合のみ、翌日予約の顧客にプッシュ通知を送る。
  * PropertiesService でキーを保存し二重送信を防止する。
@@ -2753,7 +2784,6 @@ function sendDayBeforeReminders() {
     const staffCol   = h.indexOf('担当者名');
 
     const props = PropertiesService.getScriptProperties();
-    const dayNames = ['日','月','火','水','木','金','土'];
 
     for (let i = 1; i < data.length; i++) {
       const row    = data[i];
@@ -2770,10 +2800,7 @@ function sendDayBeforeReminders() {
       const lineUserId = row[userIdCol];
       if (!lineUserId) continue;
 
-      const d = startTime;
-      const dateStr  = `${d.getMonth()+1}月${d.getDate()}日(${dayNames[d.getDay()]}) ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      const staffStr = (row[staffCol] && row[staffCol] !== '指名なし') ? `\n担当者: ${row[staffCol]}` : '';
-      const text = `【明日の予約リマインド🔔】\n\n📅 ${dateStr}\n📋 ${row[menuCol]}${staffStr}\n\nお気をつけてご来店ください。`;
+      const text = buildLineReminderMessage_('dayBefore', startTime, row[menuCol], row[staffCol]);
 
       try {
         sendLineMessage_(lineUserId, [{ type: 'text', text }]);
@@ -2827,9 +2854,7 @@ function sendHourBeforeReminders() {
       const lineUserId = row[userIdCol];
       if (!lineUserId) continue;
 
-      const timeStr  = `${String(startTime.getHours()).padStart(2,'0')}:${String(startTime.getMinutes()).padStart(2,'0')}`;
-      const staffStr = (row[staffCol] && row[staffCol] !== '指名なし') ? `\n担当者: ${row[staffCol]}` : '';
-      const text = `【本日の予約リマインド🔔】\n1時間後のご来店をお待ちしております。\n\n🕐 ${timeStr}\n📋 ${row[menuCol]}${staffStr}`;
+      const text = buildLineReminderMessage_('hourBefore', startTime, row[menuCol], row[staffCol]);
 
       try {
         sendLineMessage_(lineUserId, [{ type: 'text', text }]);
