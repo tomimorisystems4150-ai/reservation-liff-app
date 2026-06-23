@@ -37,6 +37,27 @@ const bookingState = {
 
 let initData = {};
 let currentWeekStartDate = null;
+/** renderTimetable の世代番号（古い API 応答を DOM に反映しない） */
+let timetableRenderGeneration = 0;
+
+function isStaffSelectionRequired() {
+  return !!(initData.isStaffFeatureEnabled && initData.staffs && initData.staffs.length > 0);
+}
+
+function canRenderTimetable() {
+  if (!bookingState.menu || !currentWeekStartDate) return false;
+  if (isStaffSelectionRequired() && !bookingState.staff) return false;
+  return true;
+}
+
+function clearSelectedSlots() {
+  bookingState.selectedSlots = [];
+  document.querySelectorAll('#timetable .slot.selected').forEach((slot) => {
+    slot.classList.remove('selected');
+  });
+  updateSubmitButton();
+  updateBulkCounter();
+}
 
 // =================================================================
 // 初期化処理
@@ -137,7 +158,7 @@ function setupEventListeners() {
     if (!staffEmail) return; // プレースホルダー選択時は無視
     const staff = initData.staffs.find(s => s.email === staffEmail);
     bookingState.staff = staff || { name: '指名なし', email: 'any' };
-    // 担当者が選択されたらカレンダーを表示
+    clearSelectedSlots();
     document.getElementById('timetable-container').style.display = 'block';
     renderTimetable();
   });
@@ -343,14 +364,27 @@ function updateBulkSlotAvailability() {
 
 /**
  * 現在週を再描画した後に selectedSlots の選択状態を視覚的に復元する。
+ * 空き枠（◯）のみ復元し、× になった枠は selectedSlots から除去する。
  */
 function restoreSlotSelections() {
   if (bookingState.selectedSlots.length === 0) return;
-  document.querySelectorAll('#timetable .slot[data-datetime]').forEach(slot => {
-    if (bookingState.selectedSlots.includes(slot.dataset.datetime)) {
-      slot.classList.add('selected');
+
+  const validSlots = [];
+  document.querySelectorAll('#timetable .slot[data-datetime]').forEach((slot) => {
+    if (!bookingState.selectedSlots.includes(slot.dataset.datetime)) return;
+    if (slot.classList.contains('unavailable')) {
+      slot.classList.remove('selected');
+      return;
     }
+    slot.classList.add('selected');
+    validSlots.push(slot.dataset.datetime);
   });
+
+  if (validSlots.length !== bookingState.selectedSlots.length) {
+    bookingState.selectedSlots = validSlots;
+    updateSubmitButton();
+    updateBulkCounter();
+  }
 }
 
 function handleStepCompletion(completedSectionId, selectedValue, targetElement) {
@@ -415,8 +449,10 @@ function prepareSection(sectionId) {
         infoEl.style.display = 'none';
       }
       updateSubmitButton();
-      updateBulkCounter(); // updateSelectedDatesPanel も内部で呼ばれる
-      renderTimetable();
+      updateBulkCounter();
+      if (canRenderTimetable()) {
+        renderTimetable();
+      }
       break;
   }
 }
@@ -462,6 +498,12 @@ function renderStaffSelector() {
 // ...（既存のrenderTimetable関数を完全に置き換え）...
 
 async function renderTimetable() {
+  if (!canRenderTimetable()) return;
+
+  const renderGeneration = ++timetableRenderGeneration;
+  const weekStartMs = currentWeekStartDate.getTime();
+  const staffEmailAtRequest = bookingState.staff ? bookingState.staff.email : null;
+
   const timetableBody = document.querySelector('#timetable tbody');
   const timetableHead = document.querySelector('#timetable thead');
   timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
@@ -474,17 +516,22 @@ async function renderTimetable() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   document.getElementById('prev-week-button').disabled = currentWeekStartDate.getTime() <= today.getTime();
-  
+
   const maxDate = new Date();
-  maxDate.setHours(0,0,0,0);
+  maxDate.setHours(0, 0, 0, 0);
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', { 
+  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', {
     date: `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`,
     duration: bookingState.menu.duration,
-    staffEmail: bookingState.staff ? bookingState.staff.email : null
+    staffEmail: staffEmailAtRequest,
   });
+
+  if (renderGeneration !== timetableRenderGeneration) return;
+  if (currentWeekStartDate.getTime() !== weekStartMs) return;
+  const staffEmailNow = bookingState.staff ? bookingState.staff.email : null;
+  if (staffEmailNow !== staffEmailAtRequest) return;
 
   let headerHtml = '<tr><th></th>';
   const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
