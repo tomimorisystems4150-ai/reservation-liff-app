@@ -667,11 +667,15 @@ async function renderTimetable() {
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', {
+  const slotRequest = {
     date: `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`,
     duration: bookingState.menu.duration,
     staffEmail: staffEmailAtRequest,
-  });
+  };
+  if (flowMode === 'manage-reschedule' && manageState.selectedBooking?.bookingId) {
+    slotRequest.excludeBookingId = manageState.selectedBooking.bookingId;
+  }
+  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', slotRequest);
 
   if (renderGeneration !== timetableRenderGeneration) return;
   if (currentWeekStartDate.getTime() !== weekStartMs) return;

@@ -350,7 +350,12 @@ function doPost(e) {
           if (!postData.date || !postData.duration) {
             throw new Error('日付または所要時間が指定されていません。');
           }
-          response = getAvailableSlots(postData.date, postData.duration, postData.staffEmail);
+          response = getAvailableSlots(
+            postData.date,
+            postData.duration,
+            postData.staffEmail,
+            postData.excludeBookingId || null
+          );
           break;
         }
 
@@ -1218,7 +1223,51 @@ function isSlotInNonOperatingHours_(dateStr, timeStr, nonOperatingHours) {
   return false;
 }
 
-function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
+/**
+ * 予約シートから週次の予約件数マップを構築する。
+ * excludeBookingId 指定時は変更対象予約を満席カウントから除外する（予約変更UI用）。
+ */
+function buildWeeklyBookingCountsFromSheet_(configs, startDateStr, endDateStr, staffEmail, isStaffNominated, excludeBookingId) {
+  const weeklyBookingCounts = {};
+  const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
+  const reservationSheet = getReservationSheet(configs);
+  const data = reservationSheet.getDataRange().getValues();
+  const headers = data[0];
+  const statusCol = headers.indexOf('ステータス');
+  const startTimeCol = headers.indexOf('予約日時');
+  const endTimeCol = headers.indexOf('終了日時');
+  const staffEmailCol = headers.indexOf('担当者Email');
+  const bookingIdCol = headers.indexOf('予約ID');
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const status = row[statusCol];
+    if (status !== '予約' && status !== '仮予約') continue;
+    if (excludeBookingId && row[bookingIdCol] === excludeBookingId) continue;
+    if (isStaffNominated && row[staffEmailCol] !== staffEmail) continue;
+
+    const bookingStart = new Date(row[startTimeCol]);
+    const bookingEnd = new Date(row[endTimeCol]);
+    const rowDateStr = Utilities.formatDate(bookingStart, 'JST', 'yyyy-MM-dd');
+
+    if (rowDateStr >= startDateStr && rowDateStr < endDateStr) {
+      if (!weeklyBookingCounts[rowDateStr]) {
+        weeklyBookingCounts[rowDateStr] = new Map();
+      }
+      let currentSlot = new Date(bookingStart);
+      while (currentSlot < bookingEnd) {
+        const timeSlotStr = Utilities.formatDate(currentSlot, 'JST', 'HH:mm');
+        const existingCount = weeklyBookingCounts[rowDateStr].get(timeSlotStr) || 0;
+        weeklyBookingCounts[rowDateStr].set(timeSlotStr, existingCount + 1);
+        currentSlot.setMinutes(currentSlot.getMinutes() + timeUnit);
+      }
+    }
+  }
+
+  return weeklyBookingCounts;
+}
+
+function getAvailableSlots(startDateString, durationMinutes, staffEmail, excludeBookingId) {
   const configs = getConfigs();
   const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const businessHours = configs.businessHours || { start: '10:00', end: '19:00' };
@@ -1233,8 +1282,6 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
   const startDateStr = Utilities.formatDate(startDate, 'JST', 'yyyy-MM-dd');
   const endDateStr = Utilities.formatDate(endDate, 'JST', 'yyyy-MM-dd');
 
-  const weeklyBookingCounts = {};
-
   const isStaffNominated = staffEmail && staffEmail !== 'any';
 
   // --- ブロックカレンダーの同期と、ブロックスロットの取得 ---
@@ -1244,42 +1291,15 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail) {
   }
   const blockedSlots = getBlockedSlotsForWeek(startDateStr, endDateStr, blockCalendarIds, businessHours, timeUnit);
 
-  if (isStaffNominated) {
-    // ▼ Bルート（指名あり）：予約シートから該当担当者の予定をリアルタイム計算
-    const reservationSheet = getReservationSheet(configs);
-    const data = reservationSheet.getDataRange().getValues();
-    const headers = data[0];
-    const statusCol = headers.indexOf('ステータス');
-    const startTimeCol = headers.indexOf('予約日時');
-    const endTimeCol = headers.indexOf('終了日時');
-    const staffEmailCol = headers.indexOf('担当者Email');
-
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const status = row[statusCol];
-      if (status !== '予約' && status !== '仮予約') continue;
-      if (row[staffEmailCol] !== staffEmail) continue; // 該当担当者以外の予約は除外
-
-      const bookingStart = new Date(row[startTimeCol]);
-      const bookingEnd = new Date(row[endTimeCol]);
-      const rowDateStr = Utilities.formatDate(bookingStart, 'JST', 'yyyy-MM-dd');
-
-      if (rowDateStr >= startDateStr && rowDateStr < endDateStr) {
-        if (!weeklyBookingCounts[rowDateStr]) {
-          weeklyBookingCounts[rowDateStr] = new Map();
-        }
-        let currentSlot = new Date(bookingStart);
-        while (currentSlot < bookingEnd) {
-          const timeSlotStr = Utilities.formatDate(currentSlot, 'JST', 'HH:mm');
-          const existingCount = weeklyBookingCounts[rowDateStr].get(timeSlotStr) || 0;
-          weeklyBookingCounts[rowDateStr].set(timeSlotStr, existingCount + 1);
-          currentSlot.setMinutes(currentSlot.getMinutes() + timeUnit);
-        }
-      }
-    }
+  let weeklyBookingCounts;
+  if (isStaffNominated || excludeBookingId) {
+    // Bルート（指名あり）または予約変更時: 予約シートからリアルタイム計算
+    weeklyBookingCounts = buildWeeklyBookingCountsFromSheet_(
+      configs, startDateStr, endDateStr, staffEmail, isStaffNominated, excludeBookingId
+    );
   } else {
-    // ▼ Aルート（指名なし）：満席タイムテーブルから店舗全体の予定を高速取得
-    // 予約シートとズレないよう、読み取り前に再構築する
+    // Aルート（指名なし）：満席タイムテーブルから店舗全体の予定を高速取得
+    weeklyBookingCounts = {};
     rebuildTimetableFromReservations_();
     const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (availabilitySheet) {

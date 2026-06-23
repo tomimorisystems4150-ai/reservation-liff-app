@@ -502,6 +502,56 @@ function runAPITests_() {
     assertEqual_(savedStart, new Date(newSlot).toISOString(), '予約日時');
   }));
 
+  // TC-B-053: getAvailableSlots - excludeBookingId（予約変更UI用）
+  results.push(runTest_('TC-B-053: getAvailableSlots - excludeBookingId', () => {
+    const configs = getConfigs();
+    const slot = _getTestSlot(45);
+    const slotDate = new Date(slot);
+    const dateStr = Utilities.formatDate(slotDate, 'JST', 'yyyy-MM-dd');
+    const staffEmail = configs.isStaffFeatureEnabled && configs.staffs && configs.staffs.length > 0
+      ? configs.staffs[0].email
+      : null;
+
+    const createResp = _callDoPost({
+      action: 'createBooking',
+      bookingData: {
+        lineUserId: TEST_LINE_USER_ID,
+        userName: TEST_CUSTOMER_NAME,
+        menuName: _getFirstMenuName(),
+        duration: 30,
+        startDateTime: slot,
+        staffEmail: staffEmail || 'any',
+        staffName: staffEmail ? configs.staffs[0].name : '',
+      },
+    });
+    assert_(createResp.success, `予約作成失敗: ${createResp.message}`);
+
+    const withoutExclude = _callDoPost({
+      action: 'getAvailableSlots',
+      date: dateStr,
+      duration: 30,
+      staffEmail: staffEmail,
+    });
+    assert_(withoutExclude.success, withoutExclude.message);
+    assert_(
+      !(withoutExclude.data[dateStr] || []).includes('14:00'),
+      '通常取得: 自分の予約時刻が空きとして返された'
+    );
+
+    const withExclude = _callDoPost({
+      action: 'getAvailableSlots',
+      date: dateStr,
+      duration: 30,
+      staffEmail: staffEmail,
+      excludeBookingId: createResp.data.bookingId,
+    });
+    assert_(withExclude.success, withExclude.message);
+    assert_(
+      (withExclude.data[dateStr] || []).includes('14:00'),
+      'excludeBookingId指定: 自分の予約時刻が空きとして返されない'
+    );
+  }));
+
   // TC-B: 無効なアクション
   results.push(runTest_('TC-B-999: 無効なアクション', () => {
     const response = _callDoPost({ action: 'invalidAction_xyz' });
