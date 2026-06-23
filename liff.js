@@ -20,7 +20,9 @@ function getLiffParams() {
 }
 
 const { gasApiUrl: GAS_API_URL, liffId: LIFF_ID } = getLiffParams();
-const ICS_DEBUG_BUILD = '20260621-ics-fix8';
+const ICS_DEBUG_BUILD = '20260622-ics-fix9';
+/** Cloudflare Worker 上の ICS 配信（Google アカウント非依存） */
+const ICS_SERVE_BASE = 'https://reservation-onboarding.reservation-onboarding.workers.dev/ics';
 const ICS_SESSION_KEY = 'pending_ics_export';
 
 /** 一時デバッグ（ICS 切り分け用。確認後に false へ） */
@@ -885,7 +887,7 @@ function showBookingCompleteScreen(results) {
     icsDebugLog(`bookingIds(param)=${bookingIdParams || '(empty)'}`);
     icsDebugLog(`dataset.icsUrl=${icsDebugUrlSummary(icsLink ? icsLink.dataset.icsUrl : '')}`);
     icsDebugLog(`icsContentLen=${icsContent.length}`);
-    icsDebugLog(`icsMode=${inClient ? 'in-client-ics-bridge-tap' : 'external-blob-download'}`);
+    icsDebugLog(`icsMode=${inClient ? 'in-client-worker-ics' : 'external-blob-download'}`);
     icsDebugLog(`icsLinkInDom=${!!icsLink}`);
     icsDebugLog(`isInClient(now)=${inClient}`);
     icsDebugShowPanel();
@@ -912,10 +914,10 @@ function base64EncodeUtf8(str) {
   return btoa(binary);
 }
 
-function buildIcsBridgeUrl(icsContent) {
-  const bridgeUrl = new URL('ics.html', window.location.href);
-  bridgeUrl.searchParams.set('d', base64EncodeUtf8(icsContent));
-  return bridgeUrl.toString();
+function buildIcsServeUrl(icsContent) {
+  const url = new URL(ICS_SERVE_BASE);
+  url.searchParams.set('d', base64EncodeUtf8(icsContent));
+  return url.toString();
 }
 
 function downloadIcsBlob(content, filename) {
@@ -973,14 +975,14 @@ async function handleIcsDownloadClick(e) {
     return;
   }
 
-  // iOS Safari では script.google.com の ICS URL が Google ドライブ画面になるため、
-  // GitHub Pages の ics.html（ユーザー操作で Blob を開く）を使う。
+  // script.google.com / GitHub Pages blob は Safari の Google ログイン状態で挙動が変わるため、
+  // Worker が text/calendar を inline 返却する URL を開く（全ユーザー共通）。
   if (inClient && icsContent && typeof liff !== 'undefined' && typeof liff.openWindow === 'function') {
-    const bridgeUrl = buildIcsBridgeUrl(icsContent);
-    icsDebugLog('CALL: liff.openWindow(ics.html bridge, external=true)');
-    icsDebugLog(`bridgeUrlLen=${bridgeUrl.length}`);
+    const serveUrl = buildIcsServeUrl(icsContent);
+    icsDebugLog('CALL: liff.openWindow(Worker ICS URL, external=true)');
+    icsDebugLog(`serveUrlLen=${serveUrl.length}`);
     try {
-      const result = liff.openWindow({ url: bridgeUrl, external: true });
+      const result = liff.openWindow({ url: serveUrl, external: true });
       if (result && typeof result.then === 'function') {
         result
           .then(() => icsDebugLog('OK: openWindow Promise resolved'))
