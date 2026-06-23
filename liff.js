@@ -37,6 +37,14 @@ const bookingState = {
 
 let initData = {};
 let currentWeekStartDate = null;
+/** 'new-booking' | 'manage-reschedule' */
+let flowMode = 'new-booking';
+/** 予約確認・変更フロー用 */
+const manageState = {
+  bookings: [],
+  selectedBooking: null,
+  reminderMode: 'ICS',
+};
 /** renderTimetable の世代番号（古い API 応答を DOM に反映しない） */
 let timetableRenderGeneration = 0;
 
@@ -183,7 +191,29 @@ function setupEventListeners() {
   });
 
   // 予約確定ボタン
-  document.getElementById('submitButton').addEventListener('click', handleBookingSubmit);
+  document.getElementById('submitButton').addEventListener('click', () => {
+    if (flowMode === 'manage-reschedule') {
+      handleRescheduleSubmit();
+    } else {
+      handleBookingSubmit();
+    }
+  });
+
+  document.getElementById('manage-reschedule-button').addEventListener('click', () => {
+    if (!manageState.selectedBooking) return;
+    flowMode = 'manage-reschedule';
+    showSection('section-step4-datetime');
+  });
+
+  document.getElementById('manage-cancel-button').addEventListener('click', handleManageCancel);
+
+  document.getElementById('manage-complete-close-button').addEventListener('click', () => {
+    if (typeof liff !== 'undefined' && liff.isInClient()) {
+      liff.closeWindow();
+    } else {
+      window.location.reload();
+    }
+  });
 
   document.getElementById('icsDownloadLink').addEventListener('click', handleIcsDownloadClick);
 
@@ -222,11 +252,6 @@ function handleSelectionButtonClick(button) {
   
   handleStepCompletion(currentSectionId, value, button);
 
-  if (nextStepId === 'unimplemented') {
-    alert('この機能は現在準備中です。');
-    return;
-  }
-
   if (currentSectionId === 'section-step1-visit-experience') {
     showSection(resolveStep1Destination(value, nextStepId));
     return;
@@ -263,6 +288,12 @@ function updateStep1ButtonTargets() {
 
 function handleBackButtonClick(button) {
   const prevStepId = button.dataset.prevStep;
+  if (prevStepId === 'step2-booking-type' || prevStepId === 'step3-menu') {
+    flowMode = 'new-booking';
+  }
+  if (prevStepId === 'manage-booking-detail') {
+    flowMode = 'manage-reschedule';
+  }
   showSection(`section-${prevStepId}`);
 }
 
@@ -272,7 +303,7 @@ function handleSlotClick(slot) {
       slot.classList.contains('slot-conflict')) return;
 
   const dateTime = slot.dataset.datetime;
-  const maxBulk = initData.maxBulkBookings || 1;
+  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
 
   if (slot.classList.contains('selected')) {
     // 選択解除
@@ -297,7 +328,18 @@ function handleSlotClick(slot) {
 function updateSubmitButton() {
   const submitButton = document.getElementById('submitButton');
   const count = bookingState.selectedSlots.length;
-  const maxBulk = initData.maxBulkBookings || 1;
+  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
+
+  if (flowMode === 'manage-reschedule') {
+    if (count === 0) {
+      submitButton.disabled = true;
+      submitButton.textContent = '新しい日時を選択してください';
+    } else {
+      submitButton.disabled = false;
+      submitButton.textContent = '変更を確定';
+    }
+    return;
+  }
 
   if (count === 0) {
     submitButton.disabled = true;
@@ -320,7 +362,7 @@ function updateSubmitButton() {
  * どちらも該当しない場合は両クラスを除去する。
  */
 function updateBulkSlotAvailability() {
-  const maxBulk = initData.maxBulkBookings || 1;
+  const maxBulk = flowMode === 'manage-reschedule' ? 1 : (initData.maxBulkBookings || 1);
   const count = bookingState.selectedSlots.length;
   const limitReached = maxBulk > 1 && count >= maxBulk;
   const duration = bookingState.menu ? bookingState.menu.duration : 0;
@@ -422,6 +464,14 @@ function showSection(sectionId) {
 
 function prepareSection(sectionId) {
   switch (sectionId) {
+    case 'section-manage-bookings-list':
+      loadManageBookingsList();
+      break;
+    case 'section-manage-booking-detail':
+      renderManageBookingDetail();
+      break;
+    case 'section-manage-action-complete':
+      break;
     case 'section-customer-registration':
       document.getElementById('customer-name').value = '';
       document.getElementById('customer-phone').value = '';
@@ -431,32 +481,87 @@ function prepareSection(sectionId) {
       break;
     case 'section-step4-datetime':
       bookingState.selectedSlots = [];
-      if (bookingState.menu) {
-        document.getElementById('current-selected-menu').textContent = `${bookingState.menu.name} (${bookingState.menu.duration}分)`;
-      }
-      renderStaffSelector();
-      const infoEl = document.getElementById('lookahead-days-info');
-      const infoParts = [];
-      if (initData.bookingLookaheadDays) {
-        infoParts.push(`※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`);
-      }
-      if (initData.allowSameDayBooking === false) {
-        infoParts.push('※当日予約は受け付けておりません。');
-      }
-      if (infoParts.length) {
-        infoEl.textContent = infoParts.join('\n');
-        infoEl.style.whiteSpace = 'pre-line';
-        infoEl.style.display = '';
+      if (flowMode === 'manage-reschedule' && manageState.selectedBooking) {
+        prepareRescheduleDatetimeSection();
       } else {
-        infoEl.textContent = '';
-        infoEl.style.display = 'none';
-      }
-      updateSubmitButton();
-      updateBulkCounter();
-      if (canRenderTimetable()) {
-        renderTimetable();
+        flowMode = 'new-booking';
+        prepareNewBookingDatetimeSection();
       }
       break;
+  }
+}
+
+function prepareNewBookingDatetimeSection() {
+  document.getElementById('bulk-chip-container').style.display = '';
+  document.getElementById('selected-menu-display').style.display = '';
+  const backBtn = document.querySelector('#section-step4-datetime .back-button');
+  if (backBtn) backBtn.dataset.prevStep = 'step3-menu';
+
+  if (bookingState.menu) {
+    document.getElementById('current-selected-menu').textContent =
+      `${bookingState.menu.name} (${bookingState.menu.duration}分)`;
+  }
+  renderStaffSelector();
+  const infoEl = document.getElementById('lookahead-days-info');
+  const infoParts = [];
+  if (initData.bookingLookaheadDays) {
+    infoParts.push(`※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`);
+  }
+  if (initData.allowSameDayBooking === false) {
+    infoParts.push('※当日予約は受け付けておりません。');
+  }
+  if (infoParts.length) {
+    infoEl.textContent = infoParts.join('\n');
+    infoEl.style.whiteSpace = 'pre-line';
+    infoEl.style.display = '';
+  } else {
+    infoEl.textContent = '';
+    infoEl.style.display = 'none';
+  }
+  updateSubmitButton();
+  updateBulkCounter();
+  if (canRenderTimetable()) {
+    renderTimetable();
+  }
+}
+
+function prepareRescheduleDatetimeSection() {
+  const booking = manageState.selectedBooking;
+  bookingState.menu = initData.serviceMenus.find((m) => m.name === booking.menuName)
+    || { name: booking.menuName, duration: booking.duration || 60 };
+
+  if (booking.staffEmail && booking.staffEmail !== 'any') {
+    bookingState.staff = initData.staffs.find((s) => s.email === booking.staffEmail)
+      || { name: booking.staffName || '担当者', email: booking.staffEmail };
+  } else {
+    bookingState.staff = { name: '指名なし', email: 'any' };
+  }
+
+  document.getElementById('staff-selector-container').style.display = 'none';
+  document.getElementById('bulk-chip-container').style.display = 'none';
+  document.getElementById('timetable-container').style.display = 'block';
+  document.getElementById('selected-menu-display').style.display = '';
+  document.getElementById('current-selected-menu').textContent =
+    `${booking.menuName}（変更対象・${bookingState.menu.duration}分）`;
+
+  const backBtn = document.querySelector('#section-step4-datetime .back-button');
+  if (backBtn) backBtn.dataset.prevStep = 'manage-booking-detail';
+
+  const infoEl = document.getElementById('lookahead-days-info');
+  const infoParts = ['※新しい日時を1つ選択してください。'];
+  if (initData.bookingLookaheadDays) {
+    infoParts.push(`※本日より${initData.bookingLookaheadDays}日後まで変更可能です。`);
+  }
+  if (initData.allowSameDayBooking === false) {
+    infoParts.push('※当日への変更は受け付けておりません。');
+  }
+  infoEl.textContent = infoParts.join('\n');
+  infoEl.style.whiteSpace = 'pre-line';
+  infoEl.style.display = '';
+
+  updateSubmitButton();
+  if (canRenderTimetable()) {
+    renderTimetable();
   }
 }
 
@@ -966,4 +1071,172 @@ function generateICS(results, shopName) {
 
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
+}
+
+// =================================================================
+// 予約確認・変更
+// =================================================================
+
+function formatBookingDateTime(isoStr) {
+  const d = new Date(isoStr);
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const datePart = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${days[d.getDay()]})`;
+  const timePart = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  return `${datePart} ${timePart}`;
+}
+
+async function loadManageBookingsList() {
+  const loadingEl = document.getElementById('manage-bookings-loading');
+  const emptyEl = document.getElementById('manage-bookings-empty');
+  const container = document.getElementById('manage-bookings-list-container');
+
+  loadingEl.style.display = 'block';
+  emptyEl.style.display = 'none';
+  container.innerHTML = '';
+  flowMode = 'new-booking';
+  manageState.selectedBooking = null;
+
+  try {
+    const data = await fetchApi('getMyBookings', { lineUserId: userProfile.userId });
+    manageState.bookings = data.bookings || [];
+    manageState.reminderMode = data.reminderMode || initData.reminderMode || 'ICS';
+    loadingEl.style.display = 'none';
+
+    if (manageState.bookings.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    manageState.bookings.forEach((booking) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'selection-button manage-booking-item';
+      button.dataset.bookingId = booking.bookingId;
+      button.innerHTML = `
+        <span class="manage-booking-datetime">${formatBookingDateTime(booking.startTime)}</span>
+        <span class="manage-booking-menu">${booking.menuName}</span>
+      `;
+      button.addEventListener('click', () => {
+        manageState.selectedBooking = booking;
+        showSection('section-manage-booking-detail');
+      });
+      container.appendChild(button);
+    });
+  } catch (error) {
+    loadingEl.style.display = 'none';
+    console.error('予約一覧の取得に失敗しました:', error);
+    alert(`予約一覧の取得に失敗しました: ${error.message}`);
+  }
+}
+
+function renderManageBookingDetail() {
+  const booking = manageState.selectedBooking;
+  const bodyEl = document.getElementById('manage-booking-detail-body');
+  if (!booking || !bodyEl) return;
+
+  let html = `<p><strong>日時:</strong> ${formatBookingDateTime(booking.startTime)}</p>`;
+  html += `<p><strong>メニュー:</strong> ${booking.menuName}</p>`;
+  if (booking.staffName && booking.staffName !== '指名なし') {
+    html += `<p><strong>担当者:</strong> ${booking.staffName}</p>`;
+  }
+  bodyEl.innerHTML = html;
+}
+
+async function handleManageCancel() {
+  const booking = manageState.selectedBooking;
+  if (!booking) return;
+
+  const confirmed = window.confirm(
+    `以下の予約をキャンセルします。よろしいですか？\n\n${formatBookingDateTime(booking.startTime)}\n${booking.menuName}`
+  );
+  if (!confirmed) return;
+
+  const cancelButton = document.getElementById('manage-cancel-button');
+  const rescheduleButton = document.getElementById('manage-reschedule-button');
+  cancelButton.disabled = true;
+  rescheduleButton.disabled = true;
+  cancelButton.textContent = '処理中...';
+
+  try {
+    const result = await fetchApi('cancelBookingByUser', {
+      lineUserId: userProfile.userId,
+      bookingId: booking.bookingId,
+    });
+    showManageActionComplete('cancel', result, booking);
+  } catch (error) {
+    console.error('キャンセルに失敗しました:', error);
+    alert(`キャンセルに失敗しました: ${error.message}`);
+  } finally {
+    cancelButton.disabled = false;
+    rescheduleButton.disabled = false;
+    cancelButton.textContent = '予約をキャンセル';
+  }
+}
+
+async function handleRescheduleSubmit() {
+  const booking = manageState.selectedBooking;
+  const newSlot = bookingState.selectedSlots[0];
+  if (!booking || !newSlot) return;
+
+  const confirmed = window.confirm(
+    `予約日時を以下に変更します。よろしいですか？\n\n${formatBookingDateTime(newSlot)}\n${booking.menuName}`
+  );
+  if (!confirmed) return;
+
+  const submitButton = document.getElementById('submitButton');
+  submitButton.disabled = true;
+  submitButton.textContent = '変更処理中...';
+
+  try {
+    const result = await fetchApi('rescheduleBookingByUser', {
+      lineUserId: userProfile.userId,
+      bookingId: booking.bookingId,
+      newStartDateTime: newSlot,
+    });
+    showManageActionComplete('reschedule', result, booking);
+  } catch (error) {
+    console.error('予約変更に失敗しました:', error);
+    alert(`予約変更に失敗しました: ${error.message}`);
+    submitButton.textContent = '空き枠を更新中...';
+    try {
+      await renderTimetable();
+    } finally {
+      updateSubmitButton();
+    }
+  }
+}
+
+function showManageActionComplete(actionType, result, previousBooking) {
+  flowMode = 'new-booking';
+  manageState.selectedBooking = null;
+
+  const titleEl = document.getElementById('manage-complete-title');
+  const bodyEl = document.getElementById('manage-complete-body');
+  const icsEl = document.getElementById('manage-ics-reminder');
+  const reminderMode = result.reminderMode || manageState.reminderMode || 'ICS';
+
+  if (actionType === 'cancel') {
+    titleEl.textContent = '予約をキャンセルしました';
+    bodyEl.innerHTML = `
+      <p>${formatBookingDateTime(previousBooking.startTime)} のご予約をキャンセルしました。</p>
+      <p><strong>メニュー:</strong> ${previousBooking.menuName}</p>
+    `;
+  } else {
+    titleEl.textContent = '予約日時を変更しました';
+    bodyEl.innerHTML = `
+      <p>ご予約日時を変更しました。</p>
+      <p><strong>変更後:</strong> ${formatBookingDateTime(result.startTime)}</p>
+      <p><strong>メニュー:</strong> ${result.menuName || previousBooking.menuName}</p>
+    `;
+  }
+
+  if (reminderMode === 'ICS') {
+    icsEl.textContent =
+      'カレンダーに追加済みの予定がある場合は、端末のカレンダーアプリから手動で削除または修正してください。';
+    icsEl.style.display = 'block';
+  } else {
+    icsEl.style.display = 'none';
+  }
+
+  showSection('section-manage-action-complete');
 }

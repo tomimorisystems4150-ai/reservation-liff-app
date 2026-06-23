@@ -309,6 +309,7 @@ function doPost(e) {
             customerName: customerRecord ? customerRecord['顧客名'] : '',
             maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10),
             allowSameDayBooking: isSameDayBookingAllowed_(configs),
+            reminderMode: configs.reminderMode || 'ICS',
           };
           break;
         }
@@ -358,6 +359,34 @@ function doPost(e) {
           }
           requireVerifiedLineUserId_(postData, postData.bookingData.lineUserId);
           response = createBooking(postData.bookingData);
+          break;
+        }
+
+        case 'getMyBookings': {
+          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          response = getMyBookings(postData.lineUserId);
+          break;
+        }
+
+        case 'cancelBookingByUser': {
+          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          if (!postData.bookingId) {
+            throw new Error('予約IDが指定されていません。');
+          }
+          response = cancelBookingByUser(postData.lineUserId, postData.bookingId);
+          break;
+        }
+
+        case 'rescheduleBookingByUser': {
+          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          if (!postData.bookingId || !postData.newStartDateTime) {
+            throw new Error('予約IDまたは新しい日時が指定されていません。');
+          }
+          response = rescheduleBookingByUser(
+            postData.lineUserId,
+            postData.bookingId,
+            postData.newStartDateTime
+          );
           break;
         }
 
@@ -781,6 +810,272 @@ function getFutureBookingsByUserId(userId, configs) {
   futureBookings.sort((a, b) => a.startTime - b.startTime);
 
   return futureBookings;
+}
+
+/** Config の serviceMenus からメニュー所要時間（分）を取得する */
+function getMenuDurationByName_(configs, menuName) {
+  const menus = configs.serviceMenus || [];
+  const menu = menus.find(m => m.name === menuName);
+  return menu ? parseInt(menu.duration, 10) : 0;
+}
+
+/**
+ * 予約IDで行を検索し、予約オブジェクトと行番号を返す（見つからなければ null）
+ */
+function findBookingRowById_(bookingId) {
+  const configs = getConfigs();
+  const sheet = getReservationSheet(configs);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return null;
+  const h = data[0];
+  const bookingIdCol = h.indexOf('予約ID');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][bookingIdCol] === bookingId) {
+      return {
+        sheet: sheet,
+        rowIndex: i + 1,
+        headers: h,
+        row: data[i],
+        booking: {
+          bookingId: data[i][bookingIdCol],
+          status: data[i][h.indexOf('ステータス')],
+          lineUserId: data[i][h.indexOf('LINE User ID')],
+          userName: data[i][h.indexOf('顧客名')],
+          menuName: data[i][h.indexOf('メニュー名')],
+          startTime: new Date(data[i][h.indexOf('予約日時')]),
+          endTime: new Date(data[i][h.indexOf('終了日時')]),
+          eventId: data[i][h.indexOf('イベントID')],
+          staffName: data[i][h.indexOf('担当者名')],
+          staffEmail: data[i][h.indexOf('担当者Email')],
+        },
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * LIFF 向け: ログインユーザーの未来予約一覧（変更・キャンセル可能な「予約」ステータスのみ）
+ */
+function getMyBookings(lineUserId) {
+  const configs = getConfigs();
+  const sheet = getReservationSheet(configs);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { bookings: [], reminderMode: configs.reminderMode || 'ICS' };
+  }
+
+  const data = sheet.getRange(1, 1, lastRow, sheet.getLastColumn()).getValues();
+  const h = data[0];
+  const now = new Date();
+  const bookings = [];
+
+  const userIdCol = h.indexOf('LINE User ID');
+  const statusCol = h.indexOf('ステータス');
+  const bookingIdCol = h.indexOf('予約ID');
+  const startTimeCol = h.indexOf('予約日時');
+  const endTimeCol = h.indexOf('終了日時');
+  const menuNameCol = h.indexOf('メニュー名');
+  const staffNameCol = h.indexOf('担当者名');
+  const staffEmailCol = h.indexOf('担当者Email');
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const startTime = new Date(row[startTimeCol]);
+    if (row[userIdCol] !== lineUserId || row[statusCol] !== '予約' || startTime <= now) continue;
+
+    const menuName = row[menuNameCol];
+    bookings.push({
+      bookingId: row[bookingIdCol],
+      startTime: startTime.toISOString(),
+      endTime: new Date(row[endTimeCol]).toISOString(),
+      menuName: menuName,
+      duration: getMenuDurationByName_(configs, menuName),
+      staffName: staffNameCol >= 0 ? row[staffNameCol] : '',
+      staffEmail: staffEmailCol >= 0 ? row[staffEmailCol] : '',
+    });
+  }
+
+  bookings.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+  return { bookings, reminderMode: configs.reminderMode || 'ICS' };
+}
+
+/**
+ * エンドユーザーによる予約キャンセル（本人確認 + 未来予約のみ）
+ */
+function cancelBookingByUser(lineUserId, bookingId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const found = findBookingRowById_(bookingId);
+    if (!found) throw new Error('予約が見つかりません。');
+    const { booking } = found;
+    if (booking.lineUserId !== lineUserId) {
+      throw new Error('この予約を操作する権限がありません。');
+    }
+    if (booking.status !== '予約') {
+      throw new Error('この予約は変更・キャンセルできません。');
+    }
+    if (booking.startTime <= new Date()) {
+      throw new Error('開始済みまたは過去の予約はキャンセルできません。');
+    }
+
+    confirmBookingStatus(bookingId, 'キャンセル');
+    const configs = getConfigs();
+    return {
+      bookingId: bookingId,
+      shopName: configs.shopName,
+      reminderMode: configs.reminderMode || 'ICS',
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 指定時間帯が予約可能か検証する（変更対象の予約IDは重複カウントから除外）
+ */
+function assertSlotAvailableForBooking_(startTime, endTime, staffEmail, excludeBookingId, configs) {
+  const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
+  const maxBookings = parseInt(configs.maxConcurrentBookings || 1, 10);
+  const isStaffNominated = staffEmail && staffEmail !== 'any';
+  const effectiveMaxBookings = isStaffNominated ? 1 : maxBookings;
+
+  const reservationSheet = getReservationSheet(configs);
+  const data = reservationSheet.getDataRange().getValues();
+  const headers = data[0];
+  const bookingIdCol = headers.indexOf('予約ID');
+  const statusCol = headers.indexOf('ステータス');
+  const startTimeCol = headers.indexOf('予約日時');
+  const endTimeCol = headers.indexOf('終了日時');
+  const staffEmailCol = headers.indexOf('担当者Email');
+
+  let checkTime = new Date(startTime);
+  while (checkTime < endTime) {
+    let concurrentBookings = 0;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row[bookingIdCol] === excludeBookingId) continue;
+      const status = row[statusCol];
+      if (status !== '予約' && status !== '仮予約') continue;
+      if (isStaffNominated && row[staffEmailCol] !== staffEmail) continue;
+
+      const existingStart = new Date(row[startTimeCol]);
+      const existingEnd = new Date(row[endTimeCol]);
+      if (checkTime >= existingStart && checkTime < existingEnd) {
+        concurrentBookings++;
+      }
+    }
+    if (concurrentBookings >= effectiveMaxBookings) {
+      const timeStr = Utilities.formatDate(checkTime, 'JST', 'HH:mm');
+      throw new Error(`申し訳ありません。タッチの差で ${timeStr} の枠が埋まってしまいました。`);
+    }
+    checkTime.setMinutes(checkTime.getMinutes() + timeUnit);
+  }
+}
+
+/**
+ * 予約変更時に Google カレンダーイベントの日時を更新する（イベントが無い場合は新規作成）
+ */
+function updateCalendarEventTimes_(configs, eventId, startTime, endTime, bookingInfo) {
+  if (!configs.reservationCalendarId) {
+    throw new Error('予約カレンダーが設定されていません。');
+  }
+  const calendar = CalendarApp.getCalendarById(configs.reservationCalendarId);
+  if (!calendar) throw new Error('予約カレンダーが見つかりません。');
+
+  const { userName, menuName, staffName } = bookingInfo;
+  const eventTitle = staffName && staffName !== '指名なし'
+    ? `【${userName}様／担当：${staffName}】${menuName}`
+    : `【${userName}様】${menuName}`;
+
+  if (eventId) {
+    const event = getReservationCalendarEvent_(configs, eventId);
+    if (event) {
+      event.setTime(startTime, endTime);
+      event.setTitle(eventTitle);
+      return event.getId();
+    }
+  }
+
+  const newEvent = calendar.createEvent(eventTitle, startTime, endTime);
+  return newEvent.getId();
+}
+
+/**
+ * エンドユーザーによる予約日時変更（メニュー・担当者は変更不可）
+ */
+function rescheduleBookingByUser(lineUserId, bookingId, newStartDateTime) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const configs = getConfigs();
+    const found = findBookingRowById_(bookingId);
+    if (!found) throw new Error('予約が見つかりません。');
+
+    const { sheet, rowIndex, headers, booking } = found;
+    if (booking.lineUserId !== lineUserId) {
+      throw new Error('この予約を操作する権限がありません。');
+    }
+    if (booking.status !== '予約') {
+      throw new Error('この予約は変更・キャンセルできません。');
+    }
+    if (booking.startTime <= new Date()) {
+      throw new Error('開始済みまたは過去の予約は変更できません。');
+    }
+
+    const duration = getMenuDurationByName_(configs, booking.menuName);
+    if (!duration) {
+      throw new Error(`メニュー「${booking.menuName}」の所要時間が設定されていません。`);
+    }
+
+    const newStart = new Date(newStartDateTime);
+    const newEnd = new Date(newStart.getTime() + duration * 60000);
+
+    if (!isSlotBookableBySameDayRules_(newStart, configs)) {
+      throw new Error('申し訳ありません。当日予約は受け付けておりません。');
+    }
+
+    assertSlotAvailableForBooking_(
+      newStart,
+      newEnd,
+      booking.staffEmail,
+      bookingId,
+      configs
+    );
+
+    const startTimeCol = headers.indexOf('予約日時');
+    const endTimeCol = headers.indexOf('終了日時');
+    const eventIdCol = headers.indexOf('イベントID');
+
+    sheet.getRange(rowIndex, startTimeCol + 1).setValue(newStart);
+    sheet.getRange(rowIndex, endTimeCol + 1).setValue(newEnd);
+
+    const updatedEventId = updateCalendarEventTimes_(
+      configs,
+      booking.eventId,
+      newStart,
+      newEnd,
+      booking
+    );
+    if (updatedEventId && updatedEventId !== booking.eventId) {
+      sheet.getRange(rowIndex, eventIdCol + 1).setValue(updatedEventId);
+    }
+
+    rebuildTimetableFromReservations_();
+
+    return {
+      bookingId: bookingId,
+      startTime: newStart.toISOString(),
+      endTime: newEnd.toISOString(),
+      menuName: booking.menuName,
+      staffName: booking.staffName,
+      shopName: configs.shopName,
+      reminderMode: configs.reminderMode || 'ICS',
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function replyToUser(replyToken, text, accessToken) {

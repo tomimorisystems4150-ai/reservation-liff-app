@@ -7,7 +7,7 @@
   <title>予約</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="liff.css?v=20260621-ics-debug3">
+  <link rel="stylesheet" href="liff.css?v=20260619-manage-bookings">
 </head>
 <body>
   <div id="loading" class="loading-overlay">
@@ -68,9 +68,37 @@
         <h2>ご予約の種類</h2>
         <div class="selection-group">
           <button class="selection-button" data-next-step="step3-menu">新規の予約</button>
-          <button class="selection-button" data-next-step="unimplemented">予約内容の確認・変更</button>
+          <button class="selection-button" data-next-step="manage-bookings-list">予約内容の確認・変更</button>
         </div>
         <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
+      </section>
+
+      <!-- 予約一覧（確認・変更） -->
+      <section id="section-manage-bookings-list" class="page-section" style="display: none;">
+        <h2>ご予約一覧</h2>
+        <p id="manage-bookings-loading" class="info-text">読み込み中...</p>
+        <p id="manage-bookings-empty" class="info-text" style="display: none;">現在、変更・キャンセル可能なご予約はございません。</p>
+        <div id="manage-bookings-list-container" class="selection-group"></div>
+        <button class="back-button" data-prev-step="step2-booking-type">戻る</button>
+      </section>
+
+      <!-- 予約詳細（確認・変更） -->
+      <section id="section-manage-booking-detail" class="page-section" style="display: none;">
+        <h2>予約内容の確認</h2>
+        <div id="manage-booking-detail-body" class="booking-details"></div>
+        <div class="manage-action-buttons">
+          <button id="manage-reschedule-button" class="submit-button">日時を変更</button>
+          <button id="manage-cancel-button" class="cancel-action-button">予約をキャンセル</button>
+        </div>
+        <button class="back-button" data-prev-step="manage-bookings-list">戻る</button>
+      </section>
+
+      <!-- 変更・キャンセル完了 -->
+      <section id="section-manage-action-complete" class="page-section" style="display: none;">
+        <h2 id="manage-complete-title">処理が完了しました</h2>
+        <div id="manage-complete-body" class="complete-message"></div>
+        <p id="manage-ics-reminder" class="info-text ics-manual-reminder" style="display: none;"></p>
+        <button id="manage-complete-close-button" class="submit-button">閉じる</button>
       </section>
 
       <!-- ステップ3: メニュー選択 -->
@@ -161,6 +189,6 @@
   </div>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="liff.js?v=20260622-slot-fix3"></script>
+  <script src="liff.js?v=20260619-manage-bookings"></script>
 </body>
 </html>
