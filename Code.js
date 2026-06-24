@@ -284,17 +284,22 @@ function doPost(e) {
       Logger.log('受信アクション: [' + postData.action + '] / postData keys: ' + Object.keys(postData).join(', '));
 
       if (postData.action !== 'runTests') {
-        const configsForSuspend = getConfigs();
-        if (isServiceSuspended_(configsForSuspend)) {
+        if (isServiceSuspendedFromSheet_()) {
           return createServiceSuspendedResponse_();
         }
+      }
+
+      var liPublicConfigs_ = null;
+      function getLiPublicConfigs_() {
+        if (!liPublicConfigs_) liPublicConfigs_ = getPublicConfigs_();
+        return liPublicConfigs_;
       }
 
       let response;
       switch (postData.action) {
         case 'getInitData': {
-          requireVerifiedLineUserId_(postData, postData.lineUserId || null);
-          const configs = getConfigs();
+          requireVerifiedLineUserId_(postData, postData.lineUserId || null, getLiPublicConfigs_());
+          const configs = getLiPublicConfigs_();
           const lineUserId = postData.lineUserId || null;
           const customerRecord = lineUserId ? findCustomerByUserId_(lineUserId) : null;
           const isRegistered = customerRecord !== null;
@@ -328,7 +333,7 @@ function doPost(e) {
             throw new Error('予約情報リストがありません。');
           }
           const bulkUserId = postData.bookingDataList[0].lineUserId;
-          requireVerifiedLineUserId_(postData, bulkUserId);
+          requireVerifiedLineUserId_(postData, bulkUserId, getLiPublicConfigs_());
           for (let i = 1; i < postData.bookingDataList.length; i++) {
             if (postData.bookingDataList[i].lineUserId !== bulkUserId) {
               throw new Error('一括予約の LINE User ID が一致しません。');
@@ -342,7 +347,7 @@ function doPost(e) {
           if (!postData.lineUserId || !postData.customerName) {
             throw new Error('LINE User ID と顧客名は必須です。');
           }
-          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          requireVerifiedLineUserId_(postData, postData.lineUserId, getLiPublicConfigs_());
           response = registerCustomer(
             postData.lineUserId,
             postData.customerName,
@@ -360,7 +365,8 @@ function doPost(e) {
             postData.date,
             postData.duration,
             postData.staffEmail,
-            postData.excludeBookingId || null
+            postData.excludeBookingId || null,
+            getLiPublicConfigs_()
           );
           break;
         }
@@ -369,19 +375,19 @@ function doPost(e) {
           if (!postData.bookingData) {
             throw new Error('予約情報がありません。');
           }
-          requireVerifiedLineUserId_(postData, postData.bookingData.lineUserId);
+          requireVerifiedLineUserId_(postData, postData.bookingData.lineUserId, getLiPublicConfigs_());
           response = createBooking(postData.bookingData);
           break;
         }
 
         case 'getMyBookings': {
-          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          requireVerifiedLineUserId_(postData, postData.lineUserId, getLiPublicConfigs_());
           response = getMyBookings(postData.lineUserId);
           break;
         }
 
         case 'cancelBookingByUser': {
-          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          requireVerifiedLineUserId_(postData, postData.lineUserId, getLiPublicConfigs_());
           if (!postData.bookingId) {
             throw new Error('予約IDが指定されていません。');
           }
@@ -390,7 +396,7 @@ function doPost(e) {
         }
 
         case 'rescheduleBookingByUser': {
-          requireVerifiedLineUserId_(postData, postData.lineUserId);
+          requireVerifiedLineUserId_(postData, postData.lineUserId, getLiPublicConfigs_());
           if (!postData.bookingId || !postData.newStartDateTime) {
             throw new Error('予約IDまたは新しい日時が指定されていません。');
           }
@@ -461,6 +467,173 @@ function getConfigs() {
   return configs;
 }
 
+// =================================================================
+// 性能: ScriptCache・Config 軽量読み（v3.5）
+// =================================================================
+
+var CONFIG_CACHE_KEY_ = 'config:public:v1';
+var CONFIG_CACHE_TTL_SEC_ = 300;
+var LINE_VERIFY_CACHE_PREFIX_ = 'lineVerify:v1:';
+var LINE_VERIFY_CACHE_MAX_TTL_SEC_ = 600;
+var LINE_VERIFY_CACHE_SKEW_SEC_ = 30;
+var BLOCK_SYNC_MIN_INTERVAL_SEC_ = 300;
+var BLOCK_SYNC_LAST_RUN_KEY_ = 'blockSyncLastRunAt';
+var CONFIG_CACHE_MAX_BYTES_ = 90000;
+
+var PUBLIC_CONFIG_KEYS_ = [
+  'shopName', 'serviceMenus', 'businessHours', 'holidays', 'nonOperatingHours',
+  'isStaffFeatureEnabled', 'staffs', 'bookingTimeUnit', 'bookingLookaheadDays',
+  'maxConcurrentBookings', 'maxBulkBookings', 'allowSameDayBooking',
+  'alternateBookingGuide', 'reminderMode', 'lineLoginChannelId',
+  'reservationCalendarId', 'reservationSheetId', 'block_input_calendar_id',
+  'staff_block_calendar_id_map',
+];
+
+var REQUIRED_SHEET_HEADERS_ = {
+  reservation: ['予約ID', 'ステータス', '予約日時', '終了日時', '担当者Email'],
+  timetable: ['日付', '時間枠', '予約数'],
+  blockSync: ['予定ID', 'カレンダーID', '開始日時', '終了日時'],
+};
+
+function buildPublicConfigSubset_(configs) {
+  const out = {};
+  PUBLIC_CONFIG_KEYS_.forEach(function(k) {
+    if (configs[k] !== undefined) out[k] = configs[k];
+  });
+  return out;
+}
+
+function getPublicConfigs_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(CONFIG_CACHE_KEY_);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      cache.remove(CONFIG_CACHE_KEY_);
+    }
+  }
+  const subset = buildPublicConfigSubset_(getConfigs());
+  const json = JSON.stringify(subset);
+  if (json.length <= CONFIG_CACHE_MAX_BYTES_) {
+    cache.put(CONFIG_CACHE_KEY_, json, CONFIG_CACHE_TTL_SEC_);
+  }
+  return subset;
+}
+
+function invalidateScriptCaches_() {
+  CacheService.getScriptCache().remove(CONFIG_CACHE_KEY_);
+}
+
+function getConfigValue_(key) {
+  const sheet = getConfigSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return undefined;
+  const values = sheet.getRange(2, 1, lastRow, 2).getValues();
+  const normalizedKey = String(key || '').trim();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === normalizedKey) return values[i][1];
+  }
+  return undefined;
+}
+
+function isServiceSuspendedFromSheet_() {
+  const v = getConfigValue_('serviceSuspended');
+  return v === true || String(v).toLowerCase() === 'true' || v === 1 || v === '1';
+}
+
+function decodeJwtPayload_(idToken) {
+  try {
+    const parts = String(idToken || '').split('.');
+    if (parts.length < 2) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = Utilities.newBlob(Utilities.base64Decode(payload)).getDataAsString();
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+function verifyLineIdTokenCached_(idToken, configs) {
+  const clientId = String((configs && configs.lineLoginChannelId) || '').trim();
+  if (!clientId) return verifyLineIdToken_(idToken, configs);
+
+  const payload = decodeJwtPayload_(idToken);
+  const cache = CacheService.getScriptCache();
+  if (payload && payload.sub) {
+    const cacheKey = LINE_VERIFY_CACHE_PREFIX_ + payload.sub;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      try {
+        const entry = JSON.parse(cached);
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (entry.clientId === clientId &&
+            entry.sub === payload.sub &&
+            entry.exp > nowSec + LINE_VERIFY_CACHE_SKEW_SEC_) {
+          return entry.sub;
+        }
+        cache.remove(cacheKey);
+      } catch (e) {
+        cache.remove(cacheKey);
+      }
+    }
+  }
+
+  const sub = verifyLineIdToken_(idToken, configs);
+  const exp = payload && payload.exp
+    ? parseInt(payload.exp, 10)
+    : Math.floor(Date.now() / 1000) + LINE_VERIFY_CACHE_MAX_TTL_SEC_;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ttlSec = Math.min(LINE_VERIFY_CACHE_MAX_TTL_SEC_, exp - nowSec - LINE_VERIFY_CACHE_SKEW_SEC_);
+  if (ttlSec > 0) {
+    cache.put(
+      LINE_VERIFY_CACHE_PREFIX_ + sub,
+      JSON.stringify({ sub: sub, exp: exp, clientId: clientId }),
+      ttlSec
+    );
+  }
+  return sub;
+}
+
+function validateRequiredSheetHeaders_(sheetKeys) {
+  if (!sheetKeys || !sheetKeys.length) return;
+  const ss = getSpreadsheet_();
+  sheetKeys.forEach(function(key) {
+    const required = REQUIRED_SHEET_HEADERS_[key];
+    if (!required) return;
+    let sheetName;
+    if (key === 'reservation') sheetName = '予約';
+    else if (key === 'timetable') sheetName = '満席タイムテーブル';
+    else if (key === 'blockSync') sheetName = 'ブロック予定同期';
+    else return;
+
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 1) {
+      if (key === 'blockSync' || key === 'timetable') return;
+      throw new Error('必須シート「' + sheetName + '」が見つかりません。');
+    }
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function(h) { return String(h || '').trim(); });
+    required.forEach(function(col) {
+      if (headers.indexOf(col) < 0) {
+        throw new Error('シート「' + sheetName + '」に列「' + col + '」がありません。列の追加・削除を確認してください。');
+      }
+    });
+  });
+}
+
+function syncBlockCalendarsOnDemand_(calendarIds) {
+  if (!calendarIds || calendarIds.length === 0) return;
+  const props = PropertiesService.getScriptProperties();
+  const lastRun = props.getProperty(BLOCK_SYNC_LAST_RUN_KEY_);
+  if (lastRun) {
+    const elapsedSec = (Date.now() - new Date(lastRun).getTime()) / 1000;
+    if (elapsedSec < BLOCK_SYNC_MIN_INTERVAL_SEC_) return;
+  }
+  syncBlockCalendars(calendarIds);
+  props.setProperty(BLOCK_SYNC_LAST_RUN_KEY_, new Date().toISOString());
+}
+
 /**
  * 開発者側でサービス停止が設定されているか（Config.serviceSuspended）
  */
@@ -523,8 +696,8 @@ function verifyLineIdToken_(idToken, configs) {
  * リクエストの idToken を検証し、expectedUserId と一致することを要求する。
  * lineLoginChannelId 未設定時は移行モード（警告ログのみ）。
  */
-function requireVerifiedLineUserId_(postData, expectedUserId) {
-  const configs = getConfigs();
+function requireVerifiedLineUserId_(postData, expectedUserId, configsOptional) {
+  const configs = configsOptional || getPublicConfigs_();
   if (!isLineIdTokenVerificationEnabled_(configs)) {
     Logger.log('lineLoginChannelId 未設定: ID Token 検証をスキップ（移行モード）');
     if (!expectedUserId) {
@@ -532,7 +705,7 @@ function requireVerifiedLineUserId_(postData, expectedUserId) {
     }
     return expectedUserId;
   }
-  const verified = verifyLineIdToken_(postData.idToken, configs);
+  const verified = verifyLineIdTokenCached_(postData.idToken, configs);
   if (!expectedUserId || verified !== expectedUserId) {
     Logger.log('LINE User ID mismatch: expected=%s verified=%s', expectedUserId, verified);
     throw new Error('LINE認証情報が一致しません。');
@@ -599,6 +772,7 @@ function saveConfigs(configs) {
     });
 
     Logger.log('設定を保存しました。');
+    invalidateScriptCaches_();
     return { success: true, message: 'OK' };
 
   } catch (e) {
@@ -637,7 +811,8 @@ function createBooking(bookingData) {
   lock.waitLock(30000);
 
   try {
-    const configs = getConfigs();
+    validateRequiredSheetHeaders_(['reservation', 'timetable']);
+    const configs = getPublicConfigs_();
     const { lineUserId, userName, menuName, duration, startDateTime, staffEmail, staffName } = bookingData;
     const startTime = new Date(startDateTime);
     const endTime = new Date(startTime.getTime() + duration * 60000);
@@ -703,7 +878,7 @@ function createBooking(bookingData) {
     reservationSheet.getRange(reservationSheet.getLastRow(), headers.indexOf('イベントID') + 1).setValue(event.getId());
 
     // 満席タイムテーブルの動的更新（既存行はインクリメント、なければ新規追記）
-    updateTimetableSlots_(startTime, endTime, timeUnit);
+    rebuildTimetableFromReservations_(configs);
 
     return {
       bookingId: newBookingId,
@@ -1283,8 +1458,9 @@ function buildWeeklyBookingCountsFromSheet_(configs, startDateStr, endDateStr, s
   return weeklyBookingCounts;
 }
 
-function getAvailableSlots(startDateString, durationMinutes, staffEmail, excludeBookingId) {
-  const configs = getConfigs();
+function getAvailableSlots(startDateString, durationMinutes, staffEmail, excludeBookingId, configsOptional) {
+  validateRequiredSheetHeaders_(['reservation', 'timetable', 'blockSync']);
+  const configs = configsOptional || getPublicConfigs_();
   const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const businessHours = configs.businessHours || { start: '10:00', end: '19:00' };
   const maxBookings = parseInt(configs.maxConcurrentBookings || 1, 10);
@@ -1303,7 +1479,7 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail, exclude
   // --- ブロックカレンダーの同期と、ブロックスロットの取得 ---
   const blockCalendarIds = getBlockCalendarIds_(configs, staffEmail, isStaffNominated);
   if (blockCalendarIds.length > 0) {
-    syncBlockCalendars(blockCalendarIds);
+    syncBlockCalendarsOnDemand_(blockCalendarIds);
   }
   const blockedSlots = getBlockedSlotsForWeek(startDateStr, endDateStr, blockCalendarIds, businessHours, timeUnit);
 
@@ -1314,9 +1490,8 @@ function getAvailableSlots(startDateString, durationMinutes, staffEmail, exclude
       configs, startDateStr, endDateStr, staffEmail, isStaffNominated, excludeBookingId
     );
   } else {
-    // Aルート（指名なし）：満席タイムテーブルから店舗全体の予定を高速取得
+    // Aルート（指名なし）：満席タイムテーブルを読み取りのみ（v3.5）
     weeklyBookingCounts = {};
-    rebuildTimetableFromReservations_();
     const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (availabilitySheet) {
       const data = availabilitySheet.getDataRange().getValues();
@@ -1807,7 +1982,8 @@ function createBulkBookings(bookingDataList) {
   lock.waitLock(30000);
 
   try {
-    const configs = getConfigs();
+    validateRequiredSheetHeaders_(['reservation', 'timetable']);
+    const configs = getPublicConfigs_();
     const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
     const maxBookings = parseInt(configs.maxConcurrentBookings || 1, 10);
     const maxBulkBookings = parseInt(configs.maxBulkBookings || 1, 10);
@@ -1911,8 +2087,6 @@ function createBulkBookings(bookingDataList) {
         headers.indexOf('イベントID') + 1
       ).setValue(event.getId());
 
-      updateTimetableSlots_(startTime, endTime, timeUnit);
-
       results.push({
         bookingId: newBookingId,
         eventTitle: eventTitle,
@@ -1921,6 +2095,8 @@ function createBulkBookings(bookingDataList) {
         shopName: configs.shopName
       });
     }
+
+    rebuildTimetableFromReservations_(configs);
 
     return results;
 
@@ -2029,8 +2205,8 @@ function writeTimetableFromMap_(availabilitySheet, slotMap) {
 /**
  * 予約シート（予約/仮予約）から満席タイムテーブルを全件再構築する（正のデータ源）。
  */
-function rebuildTimetableFromReservations_() {
-  const configs = getConfigs();
+function rebuildTimetableFromReservations_(configsOptional) {
+  const configs = configsOptional || getConfigs();
   const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const availabilitySheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
   if (!availabilitySheet) return;
@@ -2068,7 +2244,7 @@ function rebuildTimetableFromReservations_() {
   Logger.log('満席タイムテーブルを予約シートから再構築しました（%s スロット）', slotMap.size);
 }
 
-/** 新規予約後に満席タイムテーブルを更新する */
+/** 新規予約後に満席タイムテーブルを更新する（1回フル再構築） */
 function updateTimetableSlots_(startTime, endTime, timeUnit) {
   rebuildTimetableFromReservations_();
 }

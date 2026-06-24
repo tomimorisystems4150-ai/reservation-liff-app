@@ -204,6 +204,7 @@ function runAPITests_() {
     assert_(Array.isArray(response.data.serviceMenus), 'serviceMenusが配列でない');
     assert_(typeof response.data.isRegistered === 'boolean', 'isRegisteredがboolean以外');
     assert_(typeof response.data.maxBulkBookings === 'number', 'maxBulkBookingsが数値でない');
+    assert_(typeof response.data.alternateBookingGuide === 'string', 'alternateBookingGuideが文字列でない');
     assertEqual_(response.data.isRegistered, false, 'isRegistered (新規ユーザー)');
   }));
 
@@ -670,6 +671,37 @@ function runLogicTests_() {
   results.push(runTest_('TC-L-003: findCustomerByUserId_ - 未登録ユーザー', () => {
     const customer = findCustomerByUserId_('never_registered_user_xyz_12345');
     assert_(customer === null, 'nullでない（登録されていないはず）');
+  }));
+
+  // TC-L-003b: 当日予約案内文の正規化
+  results.push(runTest_('TC-L-003b: normalizeAlternateBookingGuide_ - 100文字制限', () => {
+    assertEqual_(normalizeAlternateBookingGuide_('  案内文  '), '案内文', 'trim');
+    assertEqual_(normalizeAlternateBookingGuide_('a'.repeat(120)).length, 100, '最大100文字');
+    assertEqual_(normalizeAlternateBookingGuide_(null), '', 'null');
+  }));
+
+  // TC-L-003c: public Config サブセット（秘密情報除外）
+  results.push(runTest_('TC-L-003c: buildPublicConfigSubset_ - 秘密情報除外', () => {
+    const subset = buildPublicConfigSubset_({
+      shopName: 'テスト店',
+      lineChannelAccessToken: 'secret-token',
+      lineChannelSecret: 'secret',
+      serviceMenus: [{ name: 'カット', duration: 60 }],
+    });
+    assertEqual_(subset.shopName, 'テスト店', 'shopName');
+    assert_(subset.lineChannelAccessToken === undefined, 'lineChannelAccessToken が含まれている');
+    assert_(subset.lineChannelSecret === undefined, 'lineChannelSecret が含まれている');
+    assert_(Array.isArray(subset.serviceMenus), 'serviceMenus');
+  }));
+
+  // TC-L-003d: 必須シートヘッダー検証
+  results.push(runTest_('TC-L-003d: validateRequiredSheetHeaders_ - 予約シート', () => {
+    validateRequiredSheetHeaders_(['reservation']);
+  }));
+
+  // TC-L-003e: ScriptCache 無効化
+  results.push(runTest_('TC-L-003e: invalidateScriptCaches_ - 例外なし', () => {
+    invalidateScriptCaches_();
   }));
 
   // TC-L-004: 予約ID生成の一意性
