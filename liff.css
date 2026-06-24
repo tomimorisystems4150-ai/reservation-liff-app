@@ -164,6 +164,31 @@ body {
   margin-bottom: 4px;
 }
 
+.liff-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #27ae60;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 10px;
+  z-index: 2000;
+  font-size: 0.92em;
+  font-weight: bold;
+  line-height: 1.5;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  max-width: calc(100vw - 32px);
+}
+
+.liff-toast.show {
+  opacity: 1;
+}
+
 .form-label {
   display: block;
   font-size: 0.82em;

@@ -850,6 +850,27 @@ function showError(message) {
   document.getElementById('error').style.display = 'block';
 }
 
+let toastHideTimer = null;
+
+/** 画面下部に短い通知を表示する（登録完了など） */
+function showToast(message, durationMs = 2800) {
+  const el = document.getElementById('liff-toast');
+  if (!el) return;
+
+  if (toastHideTimer) {
+    clearTimeout(toastHideTimer);
+    toastHideTimer = null;
+  }
+
+  el.textContent = message;
+  el.classList.add('show');
+
+  toastHideTimer = setTimeout(() => {
+    el.classList.remove('show');
+    toastHideTimer = null;
+  }, durationMs);
+}
+
 // =================================================================
 // API通信
 // =================================================================
@@ -925,8 +946,8 @@ async function handleCustomerRegistration() {
 
     isCustomerRegistered = true;
     updateStep1ButtonTargets();
-    // 新規登録直後は「登録済み案内」を挟まず Step2 へ（テスト仕様 ST-P1-01 準拠）
     proceedToBookingStep2();
+    showToast('お客様情報の登録が完了しました！');
 
   } catch (error) {
     console.error('顧客登録に失敗しました:', error);
