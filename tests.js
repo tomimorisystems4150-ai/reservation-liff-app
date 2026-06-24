@@ -210,7 +210,7 @@ function runAPITests_() {
   // TC-B-002: getInitData 登録済みユーザー
   results.push(runTest_('TC-B-002: getInitData - 登録済みユーザー', () => {
     // 先に顧客登録
-    registerCustomer(TEST_LINE_USER_ID, TEST_CUSTOMER_NAME, '');
+    registerCustomer(TEST_LINE_USER_ID, TEST_CUSTOMER_NAME, '女性', '30代');
     const response = _callDoPost({ action: 'getInitData', lineUserId: TEST_LINE_USER_ID });
     assert_(response.success, `success=false: ${response.message}`);
     assertEqual_(response.data.isRegistered, true, 'isRegistered (登録済みユーザー)');
@@ -223,13 +223,15 @@ function runAPITests_() {
       action: 'registerCustomer',
       lineUserId: uniqueId,
       customerName: TEST_CUSTOMER_NAME,
-      phone: '090-0000-9999'
+      gender: '女性',
+      ageGroup: '30代',
     });
     assert_(response.success, `success=false: ${response.message}`);
     assert_(response.data['LINE User ID'] === uniqueId, 'LINE User IDが一致しない');
+    assertEqual_(response.data['性別'], '女性', '性別');
+    assertEqual_(response.data['年代'], '30代', '年代');
     assertEqual_(response.data['ステータス'], '有効', 'ステータス');
 
-    // シートに登録されていることを確認
     const customer = findCustomerByUserId_(uniqueId);
     assert_(customer !== null, '顧客マスタに登録されていない');
   }));
@@ -243,7 +245,8 @@ function runAPITests_() {
       action: 'registerCustomer',
       lineUserId: TEST_LINE_USER_ID,
       customerName: TEST_CUSTOMER_NAME,
-      phone: ''
+      gender: '女性',
+      ageGroup: '30代',
     });
     assert_(response.success, `success=false: ${response.message}`);
 
@@ -257,10 +260,23 @@ function runAPITests_() {
       action: 'registerCustomer',
       lineUserId: 'test_empty_name',
       customerName: '',
-      phone: ''
+      gender: '女性',
+      ageGroup: '30代',
     });
     assert_(!response.success, 'success=trueが返った（エラーになるべき）');
     assert_(response.message, 'エラーメッセージが空');
+  }));
+
+  // TC-B-013: registerCustomer 性別未指定
+  results.push(runTest_('TC-B-013: registerCustomer - 性別未指定', () => {
+    const response = _callDoPost({
+      action: 'registerCustomer',
+      lineUserId: 'test_no_gender_' + new Date().getTime(),
+      customerName: TEST_CUSTOMER_NAME,
+      ageGroup: '30代',
+    });
+    assert_(!response.success, 'success=trueが返った（エラーになるべき）');
+    assertContains_(response.message, '性別', 'エラーメッセージ');
   }));
 
   // TC-B-020: getAvailableSlots 正常系

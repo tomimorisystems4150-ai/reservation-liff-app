@@ -95,6 +95,13 @@
     .form-label { display: block; font-size: 0.82em; font-weight: bold; color: #555; margin-bottom: 5px; }
     .form-control { width: 100%; padding: 9px 11px; border: 1px solid #d5d8dc; border-radius: 7px; font-size: 0.93em; }
     textarea.form-control { height: 76px; resize: vertical; }
+    .modal-section-title { font-size: 0.78em; font-weight: bold; color: #999; text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 10px; }
+    .analytics-box { background: #f8f9fa; border-radius: 8px; padding: 12px; font-size: 0.84em; color: #444; line-height: 1.6; }
+    .analytics-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .analytics-row:last-child { margin-bottom: 0; }
+    .analytics-label { color: #777; flex-shrink: 0; }
+    .radio-inline { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 4px; }
+    .radio-inline label { display: flex; align-items: center; gap: 5px; font-size: 0.9em; cursor: pointer; }
 
     /* Error log */
     .log-card { background: #fff; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 3px solid #e74c3c; }
@@ -120,7 +127,7 @@
     <div>
       <h1>予約管理</h1>
       <div class="header-sub" id="shop-name-display"></div>
-      <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.2</div>
+      <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.3</div>
     </div>
     <div class="header-actions">
       <a class="header-link" id="linkSettings" href="#" target="_top">システム設定へ</a>
@@ -188,12 +195,42 @@
     <div class="modal-title">顧客情報の編集</div>
     <input type="hidden" id="modal-uid">
     <div class="form-group">
-      <label class="form-label">お名前 *</label>
+      <label class="form-label">氏名 *</label>
       <input type="text" id="modal-name" class="form-control" placeholder="山田太郎">
+    </div>
+    <div class="form-group">
+      <label class="form-label">性別</label>
+      <div class="radio-inline" id="modal-gender-group">
+        <label><input type="radio" name="modal-gender" value="女性"> 女性</label>
+        <label><input type="radio" name="modal-gender" value="男性"> 男性</label>
+        <label><input type="radio" name="modal-gender" value="未回答"> 未回答</label>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">年代</label>
+      <select id="modal-age-group" class="form-control">
+        <option value="">未設定</option>
+        <option value="10代">10代</option>
+        <option value="20代">20代</option>
+        <option value="30代">30代</option>
+        <option value="40代">40代</option>
+        <option value="50代">50代</option>
+        <option value="60代">60代</option>
+        <option value="70代">70代</option>
+        <option value="80代">80代</option>
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">電話番号</label>
       <input type="tel" id="modal-phone" class="form-control" placeholder="090-0000-0000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">生年月日</label>
+      <input type="date" id="modal-birth-date" class="form-control">
+    </div>
+    <div class="form-group">
+      <label class="form-label">住所</label>
+      <input type="text" id="modal-address" class="form-control" placeholder="東京都...">
     </div>
     <div class="form-group">
       <label class="form-label">メモ</label>
@@ -206,6 +243,8 @@
         <option value="無効">無効（論理削除）</option>
       </select>
     </div>
+    <div class="modal-section-title">分析情報（自動計算）</div>
+    <div id="modal-analytics" class="analytics-box"></div>
     <button class="btn btn-primary btn-block" id="modal-save-btn">保存する</button>
   </div>
 </div>
@@ -392,6 +431,28 @@ function loadCustomers() {
     .getCustomersForManagement();
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderCustomerAnalyticsHtml(c) {
+  const firstVisit = c.firstVisitDate
+    ? new Date(c.firstVisitDate + 'T00:00:00').toLocaleDateString('ja-JP')
+    : '—';
+  return `
+    <div class="analytics-row"><span class="analytics-label">来店回数</span><span>${c.visitCount || 0}回</span></div>
+    <div class="analytics-row"><span class="analytics-label">初回来店日</span><span>${firstVisit}</span></div>
+    <div class="analytics-row"><span class="analytics-label">キャンセル率</span><span>${c.cancelRate || 0}%</span></div>
+    <div class="analytics-row"><span class="analytics-label">無断率</span><span>${c.noShowRate || 0}%</span></div>
+    <div class="analytics-row"><span class="analytics-label">よく使うメニュー</span><span>${escapeHtml(c.topMenu || '—')}</span></div>
+    <div class="analytics-row"><span class="analytics-label">担当者指名傾向</span><span>${escapeHtml(c.staffTendency || '—')}</span></div>
+  `;
+}
+
 function renderCustomers(list) {
   const el = document.getElementById('customer-list');
   if (!list || !list.length) {
@@ -400,14 +461,17 @@ function renderCustomers(list) {
   }
   el.innerHTML = list.map(c => {
     const lastVisit = c.lastVisit ? '最終来店: ' + new Date(c.lastVisit).toLocaleDateString('ja-JP') : '来店履歴なし';
+    const profile = [c.gender, c.ageGroup].filter(Boolean).join(' / ') || '属性未登録';
+    const uid = String(c.lineUserId).replace(/'/g, "\\'");
     return `<div class="cust-card">
       <div>
-        <div class="cust-name">${c.name} <span class="cust-status-${c.status}">${c.status}</span></div>
-        <div class="cust-sub">📞 ${c.phone || '未登録'}</div>
-        <div class="cust-sub">🗓 ${lastVisit}</div>
-        ${c.memo ? '<div class="cust-sub">📝 ' + c.memo + '</div>' : ''}
+        <div class="cust-name">${escapeHtml(c.name)} <span class="cust-status-${c.status}">${c.status}</span></div>
+        <div class="cust-sub">${escapeHtml(profile)}</div>
+        <div class="cust-sub">来店 ${c.visitCount || 0}回 / キャンセル ${c.cancelRate || 0}% / 無断 ${c.noShowRate || 0}%</div>
+        <div class="cust-sub">${lastVisit}</div>
+        ${c.memo ? '<div class="cust-sub">' + escapeHtml(c.memo) + '</div>' : ''}
       </div>
-      <button class="btn btn-outline" onclick="openModal('${c.lineUserId}')">編集</button>
+      <button class="btn btn-outline" onclick="openModal('${uid}')">編集</button>
     </div>`;
   }).join('');
 }
@@ -418,9 +482,16 @@ function openModal(uid) {
   if (!c) return;
   document.getElementById('modal-uid').value       = uid;
   document.getElementById('modal-name').value      = c.name || '';
+  document.querySelectorAll('input[name="modal-gender"]').forEach(r => {
+    r.checked = (r.value === c.gender);
+  });
+  document.getElementById('modal-age-group').value = c.ageGroup || '';
   document.getElementById('modal-phone').value     = c.phone || '';
+  document.getElementById('modal-birth-date').value = c.birthDate || '';
+  document.getElementById('modal-address').value   = c.address || '';
   document.getElementById('modal-memo').value      = c.memo || '';
   document.getElementById('modal-status').value    = c.status || '有効';
+  document.getElementById('modal-analytics').innerHTML = renderCustomerAnalyticsHtml(c);
   document.getElementById('cust-modal').classList.add('open');
 }
 
@@ -431,10 +502,15 @@ function closeModal() {
 function saveCustomer() {
   const uid  = document.getElementById('modal-uid').value;
   const name = document.getElementById('modal-name').value.replace(/\s+/g, '');
-  if (!name) { alert('お名前を入力してください。'); return; }
+  const genderInput = document.querySelector('input[name="modal-gender"]:checked');
+  if (!name) { alert('氏名を入力してください。'); return; }
   const changes = {
     name:   name,
+    gender: genderInput ? genderInput.value : '',
+    ageGroup: document.getElementById('modal-age-group').value,
     phone:  document.getElementById('modal-phone').value.trim(),
+    birthDate: document.getElementById('modal-birth-date').value.trim(),
+    address: document.getElementById('modal-address').value.trim(),
     memo:   document.getElementById('modal-memo').value.trim(),
     status: document.getElementById('modal-status').value
   };

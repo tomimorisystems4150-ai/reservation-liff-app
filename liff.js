@@ -505,7 +505,8 @@ function prepareSection(sectionId) {
       break;
     case 'section-customer-registration':
       document.getElementById('customer-name').value = '';
-      document.getElementById('customer-phone').value = '';
+      document.querySelectorAll('input[name="customer-gender"]').forEach(r => { r.checked = false; });
+      document.getElementById('customer-age-group').value = '';
       break;
     case 'section-step3-menu':
       renderMenuList();
@@ -881,13 +882,23 @@ async function fetchApi(action, payload = {}) {
 
 async function handleCustomerRegistration() {
   const nameInput = document.getElementById('customer-name');
-  const phoneInput = document.getElementById('customer-phone');
+  const ageGroupInput = document.getElementById('customer-age-group');
+  const genderInput = document.querySelector('input[name="customer-gender"]:checked');
   const registerButton = document.getElementById('register-customer-button');
 
   const customerName = nameInput.value.trim().replace(/\s+/g, '');
   if (!customerName) {
-    alert('お名前を入力してください。（空白は使用できません）');
+    alert('氏名を入力してください。（空白は使用できません）');
     nameInput.focus();
+    return;
+  }
+  if (!genderInput) {
+    alert('性別を選択してください。');
+    return;
+  }
+  if (!ageGroupInput.value) {
+    alert('年代を選択してください。');
+    ageGroupInput.focus();
     return;
   }
 
@@ -898,7 +909,8 @@ async function handleCustomerRegistration() {
     await fetchApi('registerCustomer', {
       lineUserId: userProfile.userId,
       customerName: customerName,
-      phone: phoneInput.value.trim()
+      gender: genderInput.value,
+      ageGroup: ageGroupInput.value,
     });
 
     isCustomerRegistered = true;

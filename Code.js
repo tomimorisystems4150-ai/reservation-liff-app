@@ -342,7 +342,12 @@ function doPost(e) {
             throw new Error('LINE User ID と顧客名は必須です。');
           }
           requireVerifiedLineUserId_(postData, postData.lineUserId);
-          response = registerCustomer(postData.lineUserId, postData.customerName, postData.phone || '');
+          response = registerCustomer(
+            postData.lineUserId,
+            postData.customerName,
+            postData.gender,
+            postData.ageGroup
+          );
           break;
         }
 
@@ -2068,7 +2073,12 @@ function releaseTimetableSlots_(startTime, endTime, timeUnit) {
 // =================================================================
 
 const CUSTOMER_SHEET_NAME = '顧客マスタ';
-const CUSTOMER_HEADERS = ['LINE User ID', '顧客名', '電話番号', '登録日時', '最終来店日', 'メモ', 'ステータス'];
+const CUSTOMER_HEADERS = [
+  'LINE User ID', '顧客名', '性別', '年代', '電話番号', '生年月日', '住所',
+  '登録日時', '最終来店日', 'メモ', 'ステータス'
+];
+const CUSTOMER_GENDER_OPTIONS = ['女性', '男性', '未回答'];
+const CUSTOMER_AGE_GROUP_OPTIONS = ['10代', '20代', '30代', '40代', '50代', '60代', '70代', '80代'];
 
 /**
  * 顧客マスタシートを取得する。存在しない場合は自動作成してヘッダーを設定する。
@@ -2077,11 +2087,104 @@ function getCustomerSheet_() {
   let sheet = getSpreadsheet_().getSheetByName(CUSTOMER_SHEET_NAME);
   if (!sheet) {
     sheet = getSpreadsheet_().insertSheet(CUSTOMER_SHEET_NAME);
-    sheet.appendRow(CUSTOMER_HEADERS);
-    sheet.getRange(1, 1, 1, CUSTOMER_HEADERS.length).setFontWeight('bold');
     Logger.log('顧客マスタシートを自動作成しました。');
   }
+  ensureCustomerSheetColumns_(sheet);
   return sheet;
+}
+
+function getCustomerSheetHeaders_(sheet) {
+  ensureCustomerSheetColumns_(sheet);
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  return sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+}
+
+/** 既存シートに不足カラムを追加する */
+function ensureCustomerSheetColumns_(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 0);
+  let headers = lastCol > 0
+    ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim())
+    : [];
+
+  if (headers.length === 0 || headers.every(h => !h)) {
+    sheet.clear();
+    sheet.appendRow(CUSTOMER_HEADERS);
+    sheet.getRange(1, 1, 1, CUSTOMER_HEADERS.length).setFontWeight('bold');
+    return;
+  }
+
+  let changed = false;
+  CUSTOMER_HEADERS.forEach(header => {
+    if (headers.indexOf(header) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
+      headers.push(header);
+      changed = true;
+    }
+  });
+  if (changed) {
+    sheet.getRange(1, 1, 1, sheet.getLastColumn()).setFontWeight('bold');
+  }
+}
+
+function validateCustomerGender_(gender) {
+  if (!gender || CUSTOMER_GENDER_OPTIONS.indexOf(String(gender)) === -1) {
+    throw new Error('性別を選択してください。');
+  }
+}
+
+function validateCustomerAgeGroup_(ageGroup) {
+  if (!ageGroup || CUSTOMER_AGE_GROUP_OPTIONS.indexOf(String(ageGroup)) === -1) {
+    throw new Error('年代を選択してください。');
+  }
+}
+
+function formatBirthDateForStorage_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, 'JST', 'yyyy-MM-dd');
+  }
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'JST', 'yyyy-MM-dd');
+  throw new Error('生年月日の形式が正しくありません（yyyy-MM-dd）。');
+}
+
+function formatBirthDateForDisplay_(value) {
+  if (!value) return '';
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, 'JST', 'yyyy-MM-dd');
+  }
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  return s;
+}
+
+function buildCustomerRowValues_(headers, record) {
+  return headers.map(header => {
+    const val = record[header];
+    if (header === '電話番号') return formatPhoneForStorage_(val || '');
+    if (header === '生年月日') return val ? formatBirthDateForStorage_(val) : '';
+    if (val instanceof Date) return val;
+    return val !== undefined && val !== null ? val : '';
+  });
+}
+
+function appendCustomerRow_(sheet, record) {
+  const headers = getCustomerSheetHeaders_(sheet);
+  sheet.appendRow(buildCustomerRowValues_(headers, record));
+  const phoneCol = headers.indexOf('電話番号') + 1;
+  if (phoneCol > 0 && record['電話番号']) {
+    setPhoneCellValue_(sheet, sheet.getLastRow(), phoneCol, record['電話番号']);
+  }
+}
+
+function rowToCustomerRecord_(row, headers) {
+  const record = {};
+  headers.forEach((header, idx) => {
+    record[header] = row[idx];
+  });
+  return record;
 }
 
 /**
@@ -2094,17 +2197,14 @@ function findCustomerByUserId_(lineUserId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
 
-  const data = sheet.getRange(2, 1, lastRow, CUSTOMER_HEADERS.length).getValues();
-  const userIdCol = CUSTOMER_HEADERS.indexOf('LINE User ID');
-  const statusCol = CUSTOMER_HEADERS.indexOf('ステータス');
+  const headers = getCustomerSheetHeaders_(sheet);
+  const data = sheet.getRange(2, 1, lastRow, headers.length).getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  const statusCol = headers.indexOf('ステータス');
 
   for (let i = 0; i < data.length; i++) {
     if (data[i][userIdCol] === lineUserId && data[i][statusCol] !== '無効') {
-      const record = {};
-      CUSTOMER_HEADERS.forEach((header, idx) => {
-        record[header] = data[i][idx];
-      });
-      return record;
+      return rowToCustomerRecord_(data[i], headers);
     }
   }
   return null;
@@ -2138,14 +2238,15 @@ function setPhoneCellValue_(sheet, row, col, phone) {
 /**
  * 新規顧客を顧客マスタに登録する。
  */
-function registerCustomer(lineUserId, customerName, phone) {
+function registerCustomer(lineUserId, customerName, gender, ageGroup) {
   if (!lineUserId || !customerName || !normalizeCustomerName_(customerName)) {
     throw new Error('LINE User ID と顧客名は必須です。');
   }
+  validateCustomerGender_(gender);
+  validateCustomerAgeGroup_(ageGroup);
 
   const normalizedName = normalizeCustomerName_(customerName);
 
-  // 重複登録チェック
   const existing = findCustomerByUserId_(lineUserId);
   if (existing) {
     Logger.log(`顧客登録スキップ: ${lineUserId} はすでに登録済みです。`);
@@ -2154,24 +2255,30 @@ function registerCustomer(lineUserId, customerName, phone) {
 
   const sheet = getCustomerSheet_();
   const now = new Date();
-  const phoneCol = CUSTOMER_HEADERS.indexOf('電話番号') + 1;
-  sheet.appendRow([
-    lineUserId,
-    normalizedName,
-    '',
-    now,
-    '',
-    '',
-    '有効'
-  ]);
-  const rowNum = sheet.getLastRow();
-  setPhoneCellValue_(sheet, rowNum, phoneCol, phone);
+  const record = {
+    'LINE User ID': lineUserId,
+    '顧客名': normalizedName,
+    '性別': gender,
+    '年代': ageGroup,
+    '電話番号': '',
+    '生年月日': '',
+    '住所': '',
+    '登録日時': now,
+    '最終来店日': '',
+    'メモ': '',
+    'ステータス': '有効'
+  };
+  appendCustomerRow_(sheet, record);
   Logger.log(`顧客登録完了: ${normalizedName} (${lineUserId})`);
 
   return {
     'LINE User ID': lineUserId,
     '顧客名': normalizedName,
-    '電話番号': formatPhoneForStorage_(phone),
+    '性別': gender,
+    '年代': ageGroup,
+    '電話番号': '',
+    '生年月日': '',
+    '住所': '',
     '登録日時': now.toISOString(),
     'ステータス': '有効'
   };
@@ -2485,7 +2592,109 @@ function getCustomersForManagement() {
   archived.forEach(c => {
     if (!merged.has(c.lineUserId)) merged.set(c.lineUserId, c);
   });
-  return Array.from(merged.values());
+  return Array.from(merged.values()).map(c => Object.assign(c, computeCustomerAnalytics_(c.lineUserId)));
+}
+
+/** 予約シート（＋アーカイブ）から顧客の全予約を収集 */
+function getAllBookingsForCustomer_(lineUserId) {
+  const configs = getConfigs();
+  const bookings = [];
+
+  const collectFromSheet = (sheet) => {
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const data = sheet.getDataRange().getValues();
+    const h = data[0];
+    const userIdCol = h.indexOf('LINE User ID');
+    if (userIdCol < 0) return;
+    const statusCol = h.indexOf('ステータス');
+    const menuCol = h.indexOf('メニュー名');
+    const startCol = h.indexOf('予約日時');
+    const staffCol = h.indexOf('担当者名');
+    const staffEmailCol = h.indexOf('担当者Email');
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][userIdCol] !== lineUserId) continue;
+      const startTime = new Date(data[i][startCol]);
+      if (isNaN(startTime.getTime())) continue;
+      bookings.push({
+        status: data[i][statusCol],
+        menuName: data[i][menuCol],
+        startTime: startTime,
+        staffName: staffCol >= 0 ? data[i][staffCol] : '',
+        staffEmail: staffEmailCol >= 0 ? data[i][staffEmailCol] : '',
+      });
+    }
+  };
+
+  collectFromSheet(getReservationSheet(configs));
+  if (configs.archiveSpreadsheetId) {
+    try {
+      const archiveSS = SpreadsheetApp.openById(configs.archiveSpreadsheetId);
+      collectFromSheet(archiveSS.getSheetByName('予約'));
+    } catch (e) {
+      Logger.log('アーカイブ予約取得エラー: %s', e.message);
+    }
+  }
+  return bookings;
+}
+
+/**
+ * 予約データから顧客分析指標を算出する（管理画面表示用）
+ */
+function computeCustomerAnalytics_(lineUserId) {
+  const bookings = getAllBookingsForCustomer_(lineUserId);
+  const visits = bookings.filter(b => b.status === '来店');
+  const cancels = bookings.filter(b => b.status === 'キャンセル');
+  const noShows = bookings.filter(b => b.status === '無断キャンセル');
+  const terminal = visits.length + cancels.length + noShows.length;
+
+  let firstVisitDate = '';
+  if (visits.length > 0) {
+    const earliest = visits.reduce((a, b) => (a.startTime < b.startTime ? a : b));
+    firstVisitDate = formatJstDate_(earliest.startTime);
+  }
+
+  const cancelRate = terminal > 0 ? Math.round(cancels.length / terminal * 100) : 0;
+  const noShowRate = terminal > 0 ? Math.round(noShows.length / terminal * 100) : 0;
+
+  const menuCounts = {};
+  const menuSource = visits.length > 0 ? visits : bookings.filter(b => b.menuName);
+  menuSource.forEach(b => {
+    menuCounts[b.menuName] = (menuCounts[b.menuName] || 0) + 1;
+  });
+  const topMenu = Object.keys(menuCounts).sort((a, b) => menuCounts[b] - menuCounts[a])[0] || '';
+
+  const staffSource = bookings.filter(b => b.status === '来店' || b.status === '予約');
+  let staffTendency = '';
+  if (staffSource.length > 0) {
+    const nominated = {};
+    let noneCount = 0;
+    staffSource.forEach(b => {
+      const email = b.staffEmail;
+      const name = b.staffName;
+      if (!email || email === 'any' || !name || name === '指名なし') {
+        noneCount++;
+      } else {
+        nominated[name] = (nominated[name] || 0) + 1;
+      }
+    });
+    const parts = Object.entries(nominated)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => `${name}(${Math.round(count / staffSource.length * 100)}%)`);
+    if (noneCount > 0) {
+      parts.push(`指名なし(${Math.round(noneCount / staffSource.length * 100)}%)`);
+    }
+    staffTendency = parts.join(' / ');
+  }
+
+  return {
+    visitCount: visits.length,
+    firstVisitDate: firstVisitDate,
+    cancelRate: cancelRate,
+    noShowRate: noShowRate,
+    topMenu: topMenu,
+    staffTendency: staffTendency,
+  };
 }
 
 function readCustomersFromSheet_(sheet) {
@@ -2513,7 +2722,11 @@ function mapCustomerRows_(data, fromArchive) {
   const h = data[0];
   const userIdCol    = h.indexOf('LINE User ID');
   const nameCol      = h.indexOf('顧客名');
+  const genderCol    = h.indexOf('性別');
+  const ageGroupCol  = h.indexOf('年代');
   const phoneCol     = h.indexOf('電話番号');
+  const birthDateCol = h.indexOf('生年月日');
+  const addressCol   = h.indexOf('住所');
   const regDateCol   = h.indexOf('登録日時');
   const lastVisitCol = h.indexOf('最終来店日');
   const memoCol      = h.indexOf('メモ');
@@ -2525,10 +2738,14 @@ function mapCustomerRows_(data, fromArchive) {
     .map(row => ({
       lineUserId:   row[userIdCol],
       name:         row[nameCol],
-      phone:        formatPhoneForStorage_(row[phoneCol]),
+      gender:       genderCol >= 0 ? (row[genderCol] || '') : '',
+      ageGroup:     ageGroupCol >= 0 ? (row[ageGroupCol] || '') : '',
+      phone:        phoneCol >= 0 ? formatPhoneForStorage_(row[phoneCol]) : '',
+      birthDate:    birthDateCol >= 0 ? formatBirthDateForDisplay_(row[birthDateCol]) : '',
+      address:      addressCol >= 0 ? String(row[addressCol] || '') : '',
       registeredAt: toISO(row[regDateCol]),
       lastVisit:    row[lastVisitCol] ? toISO(row[lastVisitCol]) : '',
-      memo:         row[memoCol] || '',
+      memo:         memoCol >= 0 ? (row[memoCol] || '') : '',
       status:       row[statusCol] || '有効',
       fromArchive:  !!fromArchive,
     }));
@@ -2567,19 +2784,36 @@ function restoreCustomerFromArchive_(lineUserId) {
  */
 function updateCustomerInfo(lineUserId, changes) {
   const sheet = getCustomerSheet_();
-  let data = sheet.getDataRange().getValues();
-  const h = data[0];
-  const userIdCol = h.indexOf('LINE User ID');
-  const nameCol   = h.indexOf('顧客名');
-  const phoneCol  = h.indexOf('電話番号');
-  const memoCol   = h.indexOf('メモ');
-  const statusCol = h.indexOf('ステータス');
+  const headers = getCustomerSheetHeaders_(sheet);
+  const data = sheet.getDataRange().getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  const nameCol   = headers.indexOf('顧客名');
+  const genderCol = headers.indexOf('性別');
+  const ageGroupCol = headers.indexOf('年代');
+  const phoneCol  = headers.indexOf('電話番号');
+  const birthDateCol = headers.indexOf('生年月日');
+  const addressCol = headers.indexOf('住所');
+  const memoCol   = headers.indexOf('メモ');
+  const statusCol = headers.indexOf('ステータス');
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][userIdCol] === lineUserId) {
       const r = i + 1;
       if (changes.name   !== undefined) sheet.getRange(r, nameCol + 1).setValue(normalizeCustomerName_(changes.name));
+      if (changes.gender !== undefined) {
+        if (changes.gender) validateCustomerGender_(changes.gender);
+        sheet.getRange(r, genderCol + 1).setValue(changes.gender || '');
+      }
+      if (changes.ageGroup !== undefined) {
+        if (changes.ageGroup) validateCustomerAgeGroup_(changes.ageGroup);
+        sheet.getRange(r, ageGroupCol + 1).setValue(changes.ageGroup || '');
+      }
       if (changes.phone  !== undefined) setPhoneCellValue_(sheet, r, phoneCol + 1, changes.phone);
+      if (changes.birthDate !== undefined) {
+        const birth = changes.birthDate ? formatBirthDateForStorage_(changes.birthDate) : '';
+        sheet.getRange(r, birthDateCol + 1).setValue(birth);
+      }
+      if (changes.address !== undefined) sheet.getRange(r, addressCol + 1).setValue(changes.address);
       if (changes.memo   !== undefined) sheet.getRange(r, memoCol + 1).setValue(changes.memo);
       if (changes.status !== undefined) sheet.getRange(r, statusCol + 1).setValue(changes.status);
       return;

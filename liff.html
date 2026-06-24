@@ -7,7 +7,7 @@
   <title>予約</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="liff.css?v=20260619-manage-bookings3">
+  <link rel="stylesheet" href="liff.css?v=20260619-customer-fields">
 </head>
 <body>
   <div id="loading" class="loading-overlay">
@@ -36,12 +36,30 @@
         <h2>お客様情報のご登録</h2>
         <p class="info-text">初めてご利用いただく方は、お客様情報をご登録ください。</p>
         <div class="form-group">
-          <label for="customer-name" class="form-label">お名前 <span class="required-badge">必須</span></label>
+          <label for="customer-name" class="form-label">氏名 <span class="required-badge">必須</span></label>
           <input type="text" id="customer-name" class="form-control" placeholder="例：山田太郎" autocomplete="name">
         </div>
+        <div class="form-group">
+          <span class="form-label">性別 <span class="required-badge">必須</span></span>
+          <div class="radio-group" id="customer-gender-group">
+            <label class="radio-option"><input type="radio" name="customer-gender" value="女性"> 女性</label>
+            <label class="radio-option"><input type="radio" name="customer-gender" value="男性"> 男性</label>
+            <label class="radio-option"><input type="radio" name="customer-gender" value="未回答"> 未回答</label>
+          </div>
+        </div>
         <div class="form-group form-group-last">
-          <label for="customer-phone" class="form-label">お電話番号 <span class="optional-badge">任意</span></label>
-          <input type="tel" id="customer-phone" class="form-control" placeholder="例：090-1234-5678" autocomplete="tel">
+          <label for="customer-age-group" class="form-label">年代 <span class="required-badge">必須</span></label>
+          <select id="customer-age-group" class="form-control">
+            <option value="">選択してください</option>
+            <option value="10代">10代</option>
+            <option value="20代">20代</option>
+            <option value="30代">30代</option>
+            <option value="40代">40代</option>
+            <option value="50代">50代</option>
+            <option value="60代">60代</option>
+            <option value="70代">70代</option>
+            <option value="80代">80代</option>
+          </select>
         </div>
         <button id="register-customer-button" class="submit-button registration-action-button">登録して予約に進む</button>
         <button class="back-button" data-prev-step="step1-visit-experience">戻る</button>
@@ -196,6 +214,6 @@
   </div>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="liff.js?v=20260619-reschedule-slots"></script>
+  <script src="liff.js?v=20260619-customer-fields"></script>
 </body>
 </html>
