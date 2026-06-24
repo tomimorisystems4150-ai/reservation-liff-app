@@ -265,6 +265,8 @@ function setupEventListeners() {
 // =================================================================
 
 function handleSelectionButtonClick(button) {
+  if (button.disabled) return;
+
   const nextStepId = button.dataset.nextStep;
   const value = button.dataset.value;
   const currentSectionId = button.closest('.page-section').id;
@@ -281,12 +283,12 @@ function handleSelectionButtonClick(button) {
 
 /**
  * Step1 の選択に応じた遷移先を決定する。
- * 未登録 → 顧客情報登録（初めて / 2回目以降 共通）
+ * 初めて + 未登録 → 顧客情報登録
  * 初めて + 登録済み → 登録済み案内
  * 2回目以降 + 登録済み → 予約種別選択
  */
 function resolveStep1Destination(selectedValue, nextStepId) {
-  if (!isCustomerRegistered) {
+  if (selectedValue === 'first-time' && !isCustomerRegistered) {
     return 'section-customer-registration';
   }
   if (selectedValue === 'first-time') {
@@ -295,15 +297,23 @@ function resolveStep1Destination(selectedValue, nextStepId) {
   return `section-${nextStepId || 'step2-booking-type'}`;
 }
 
-/** Step1「初めてのご予約」ボタンの遷移先を登録状態に合わせて更新する */
+/** Step1 ボタンの遷移先・活性状態を登録状態に合わせて更新する */
 function updateStep1ButtonTargets() {
   const firstTimeBtn = document.querySelector(
     '#section-step1-visit-experience .selection-button[data-value="first-time"]'
   );
-  if (!firstTimeBtn) return;
-  firstTimeBtn.dataset.nextStep = isCustomerRegistered
-    ? 'customer-already-registered'
-    : 'customer-registration';
+  if (firstTimeBtn) {
+    firstTimeBtn.dataset.nextStep = isCustomerRegistered
+      ? 'customer-already-registered'
+      : 'customer-registration';
+  }
+
+  const repeatBtn = document.querySelector(
+    '#section-step1-visit-experience .selection-button[data-value="repeat"]'
+  );
+  if (repeatBtn) {
+    repeatBtn.disabled = !isCustomerRegistered;
+  }
 }
 
 function handleBackButtonClick(button) {

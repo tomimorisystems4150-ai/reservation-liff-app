@@ -97,10 +97,22 @@ body {
   padding-right: 32px;
 }
 
-.selection-button:hover {
+.selection-button:hover:not(:disabled) {
   border-color: #3498db;
   background: #eaf4fd;
   color: #2471a3;
+}
+
+.selection-button:disabled {
+  background: #f4f6f7;
+  color: #aaa;
+  border-color: #e0e3e5;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.selection-button:disabled::after {
+  color: #ccc;
 }
 
 .selection-button::after {
