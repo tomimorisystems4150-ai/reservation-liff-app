@@ -2187,6 +2187,119 @@ function rowToCustomerRecord_(row, headers) {
   return record;
 }
 
+/** 同一顧客の複数行を1レコードに統合する（管理画面の保存内容を優先） */
+function mergeCustomerRecordFields_(records) {
+  if (!records.length) return null;
+  if (records.length === 1) return Object.assign({}, records[0]);
+
+  const merged = {};
+  merged['LINE User ID'] = normalizeCustomerUserId_(records[0]['LINE User ID']);
+
+  ['顧客名', '性別', '年代', '電話番号', '生年月日', '住所', 'メモ'].forEach(field => {
+    for (let i = records.length - 1; i >= 0; i--) {
+      const v = records[i][field];
+      if (v !== null && v !== undefined && String(v).trim() !== '') {
+        merged[field] = v;
+        break;
+      }
+    }
+    if (merged[field] === undefined) merged[field] = '';
+  });
+  if (merged['顧客名']) merged['顧客名'] = normalizeCustomerName_(merged['顧客名']);
+
+  merged['ステータス'] = records.some(r => String(r['ステータス'] || '').trim() === '無効')
+    ? '無効'
+    : (String(records[records.length - 1]['ステータス'] || '').trim() || '有効');
+
+  let earliestReg = null;
+  let latestVisit = null;
+  records.forEach(r => {
+    const reg = r['登録日時'];
+    if (reg) {
+      const regDt = reg instanceof Date ? reg : new Date(reg);
+      if (!isNaN(regDt.getTime()) && (!earliestReg || regDt < earliestReg)) earliestReg = regDt;
+    }
+    const visit = r['最終来店日'];
+    if (visit) {
+      const visitDt = visit instanceof Date ? visit : new Date(visit);
+      if (!isNaN(visitDt.getTime()) && (!latestVisit || visitDt > latestVisit)) latestVisit = visitDt;
+    }
+  });
+  merged['登録日時'] = earliestReg || records[0]['登録日時'] || '';
+  merged['最終来店日'] = latestVisit || '';
+
+  return merged;
+}
+
+function applyCustomerRecordToRow_(sheet, rowNum, headers, record) {
+  const values = buildCustomerRowValues_(headers, record);
+  sheet.getRange(rowNum, 1, rowNum, values.length).setValues([values]);
+  const phoneCol = headers.indexOf('電話番号') + 1;
+  if (phoneCol > 0 && record['電話番号']) {
+    setPhoneCellValue_(sheet, rowNum, phoneCol, record['電話番号']);
+  }
+}
+
+/**
+ * 顧客マスタ内の同一 LINE User ID 行を1行に統合する。
+ * @returns {number} 削除した重複行数
+ */
+function mergeDuplicateCustomerRowsByUserId_(lineUserId) {
+  const normalizedUserId = normalizeCustomerUserId_(lineUserId);
+  if (!normalizedUserId) return 0;
+
+  const sheet = getCustomerSheet_();
+  const headers = getCustomerSheetHeaders_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const data = sheet.getRange(2, 1, lastRow, headers.length).getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  const rowNums = [];
+  const records = [];
+
+  for (let i = 0; i < data.length; i++) {
+    if (!customerUserIdMatches_(data[i][userIdCol], normalizedUserId)) continue;
+    rowNums.push(i + 2);
+    records.push(rowToCustomerRecord_(data[i], headers));
+  }
+
+  if (records.length <= 1) return 0;
+
+  const merged = mergeCustomerRecordFields_(records);
+  applyCustomerRecordToRow_(sheet, rowNums[0], headers, merged);
+  rowNums.slice(1).sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
+  Logger.log(`顧客マスタ統合: ${normalizedUserId} (${records.length}行 → 1行)`);
+  return records.length - 1;
+}
+
+/** 顧客マスタ全体の重複 LINE User ID を統合する */
+function mergeAllDuplicateCustomers_() {
+  const sheet = getCustomerSheet_();
+  const headers = getCustomerSheetHeaders_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const data = sheet.getRange(2, 1, lastRow, headers.length).getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  const duplicateUserIds = new Set();
+
+  const counts = {};
+  data.forEach(row => {
+    const key = normalizeCustomerUserId_(row[userIdCol]);
+    if (!key) return;
+    counts[key] = (counts[key] || 0) + 1;
+    if (counts[key] > 1) duplicateUserIds.add(key);
+  });
+
+  let removed = 0;
+  duplicateUserIds.forEach(userId => {
+    removed += mergeDuplicateCustomerRowsByUserId_(userId);
+  });
+  if (removed > 0) Logger.log(`顧客マスタ重複統合完了: ${removed}行を削除`);
+  return removed;
+}
+
 /**
  * LINE User ID で顧客マスタを検索する。
  * @param {string} lineUserId
@@ -2203,7 +2316,7 @@ function findCustomerByUserId_(lineUserId) {
   const statusCol = headers.indexOf('ステータス');
 
   for (let i = 0; i < data.length; i++) {
-    if (data[i][userIdCol] === lineUserId && data[i][statusCol] !== '無効') {
+    if (customerUserIdMatches_(data[i][userIdCol], lineUserId) && data[i][statusCol] !== '無効') {
       return rowToCustomerRecord_(data[i], headers);
     }
   }
@@ -2269,6 +2382,7 @@ function registerCustomer(lineUserId, customerName, gender, ageGroup) {
     'ステータス': '有効'
   };
   appendCustomerRow_(sheet, record);
+  mergeDuplicateCustomerRowsByUserId_(lineUserId);
   Logger.log(`顧客登録完了: ${normalizedName} (${lineUserId})`);
 
   return {
@@ -2412,7 +2526,8 @@ function getBookingsForManagement(filterType, searchKeyword) {
 }
 
 /**
- * 本日の未確定予約（ステータスが「予約」または「仮予約」）一覧を返す。
+ * 終業後処理用: 現在時刻より前の未確定予約（ステータス「予約」「仮予約」）一覧を返す。
+ * 本日以前の未処理分も含む。
  */
 function getUnconfirmedTodayBookings() {
   const configs = getConfigs();
@@ -2428,20 +2543,20 @@ function getUnconfirmedTodayBookings() {
   const staffNameCol = h.indexOf('担当者名');
 
   const now = new Date();
-  const todayStr = formatJstDate_(now);
 
   const bookings = [];
   for (let i = 1; i < data.length; i++) {
     const row    = data[i];
     const status = row[statusCol];
     if (!row[bookingIdCol] || (status !== '予約' && status !== '仮予約')) continue;
-    if (formatJstDate_(row[startTimeCol]) !== todayStr) continue;
+    const startTime = new Date(row[startTimeCol]);
+    if (isNaN(startTime.getTime()) || startTime >= now) continue;
     bookings.push({
       bookingId: row[bookingIdCol],
       status:    status,
       userName:  row[userNameCol],
       menuName:  row[menuNameCol],
-      startTime: new Date(row[startTimeCol]).toISOString(),
+      startTime: startTime.toISOString(),
       endTime:   new Date(row[endTimeCol]).toISOString(),
       staffName: row[staffNameCol]
     });
@@ -2584,13 +2699,26 @@ function updateCustomerLastVisit_(lineUserId, visitDate) {
 /**
  * 顧客マスタ一覧を返す（管理画面用）。アーカイブ済みの無効顧客も含む。
  */
+function normalizeCustomerUserId_(lineUserId) {
+  return String(lineUserId || '').trim();
+}
+
+function customerUserIdMatches_(rowValue, lineUserId) {
+  return normalizeCustomerUserId_(rowValue) === normalizeCustomerUserId_(lineUserId);
+}
+
 function getCustomersForManagement() {
+  mergeAllDuplicateCustomers_();
   const customers = readCustomersFromSheet_(getCustomerSheet_());
   const archived = readArchivedCustomers_();
   const merged = new Map();
-  customers.forEach(c => merged.set(c.lineUserId, c));
+  customers.forEach(c => {
+    const key = normalizeCustomerUserId_(c.lineUserId);
+    if (key) merged.set(key, Object.assign({}, c, { lineUserId: key }));
+  });
   archived.forEach(c => {
-    if (!merged.has(c.lineUserId)) merged.set(c.lineUserId, c);
+    const key = normalizeCustomerUserId_(c.lineUserId);
+    if (key && !merged.has(key)) merged.set(key, Object.assign({}, c, { lineUserId: key }));
   });
   return Array.from(merged.values()).map(c => Object.assign(c, computeCustomerAnalytics_(c.lineUserId)));
 }
@@ -2736,7 +2864,7 @@ function mapCustomerRows_(data, fromArchive) {
   return data.slice(1)
     .filter(row => row[userIdCol])
     .map(row => ({
-      lineUserId:   row[userIdCol],
+      lineUserId:   normalizeCustomerUserId_(row[userIdCol]),
       name:         row[nameCol],
       gender:       genderCol >= 0 ? (row[genderCol] || '') : '',
       ageGroup:     ageGroupCol >= 0 ? (row[ageGroupCol] || '') : '',
@@ -2767,12 +2895,10 @@ function restoreCustomerFromArchive_(lineUserId) {
   const userIdCol = h.indexOf('LINE User ID');
 
   for (let i = 1; i < data.length; i++) {
-    if (data[i][userIdCol] !== lineUserId) continue;
+    if (!customerUserIdMatches_(data[i][userIdCol], lineUserId)) continue;
     const masterSheet = getCustomerSheet_();
-    masterSheet.appendRow(data[i]);
-    const rowNum = masterSheet.getLastRow();
-    const phoneColIndex = h.indexOf('電話番号') + 1;
-    setPhoneCellValue_(masterSheet, rowNum, phoneColIndex, data[i][h.indexOf('電話番号')]);
+    const record = rowToCustomerRecord_(data[i], h);
+    appendCustomerRow_(masterSheet, record);
     archiveSheet.deleteRow(i + 1);
     return;
   }
@@ -2780,13 +2906,9 @@ function restoreCustomerFromArchive_(lineUserId) {
 }
 
 /**
- * 顧客情報を更新する（管理画面から呼び出される）。
+ * 顧客マスタ1行分の変更を反映する。
  */
-function updateCustomerInfo(lineUserId, changes) {
-  const sheet = getCustomerSheet_();
-  const headers = getCustomerSheetHeaders_(sheet);
-  const data = sheet.getDataRange().getValues();
-  const userIdCol = headers.indexOf('LINE User ID');
+function applyCustomerInfoChanges_(sheet, rowNum, headers, changes) {
   const nameCol   = headers.indexOf('顧客名');
   const genderCol = headers.indexOf('性別');
   const ageGroupCol = headers.indexOf('年代');
@@ -2796,33 +2918,66 @@ function updateCustomerInfo(lineUserId, changes) {
   const memoCol   = headers.indexOf('メモ');
   const statusCol = headers.indexOf('ステータス');
 
+  if (statusCol < 0 && changes.status !== undefined) {
+    throw new Error('顧客マスタに「ステータス」列が見つかりません。');
+  }
+
+  if (changes.name   !== undefined && nameCol >= 0) {
+    sheet.getRange(rowNum, nameCol + 1).setValue(normalizeCustomerName_(changes.name));
+  }
+  if (changes.gender !== undefined && genderCol >= 0) {
+    if (changes.gender) validateCustomerGender_(changes.gender);
+    sheet.getRange(rowNum, genderCol + 1).setValue(changes.gender || '');
+  }
+  if (changes.ageGroup !== undefined && ageGroupCol >= 0) {
+    if (changes.ageGroup) validateCustomerAgeGroup_(changes.ageGroup);
+    sheet.getRange(rowNum, ageGroupCol + 1).setValue(changes.ageGroup || '');
+  }
+  if (changes.phone !== undefined && phoneCol >= 0) {
+    setPhoneCellValue_(sheet, rowNum, phoneCol + 1, changes.phone);
+  }
+  if (changes.birthDate !== undefined && birthDateCol >= 0) {
+    const birth = changes.birthDate ? formatBirthDateForStorage_(changes.birthDate) : '';
+    sheet.getRange(rowNum, birthDateCol + 1).setValue(birth);
+  }
+  if (changes.address !== undefined && addressCol >= 0) {
+    sheet.getRange(rowNum, addressCol + 1).setValue(changes.address);
+  }
+  if (changes.memo !== undefined && memoCol >= 0) {
+    sheet.getRange(rowNum, memoCol + 1).setValue(changes.memo);
+  }
+  if (changes.status !== undefined && statusCol >= 0) {
+    sheet.getRange(rowNum, statusCol + 1).setValue(changes.status);
+  }
+}
+
+/**
+ * 顧客情報を更新する（管理画面から呼び出される）。
+ */
+function updateCustomerInfo(lineUserId, changes) {
+  const normalizedUserId = normalizeCustomerUserId_(lineUserId);
+  if (!normalizedUserId) throw new Error('LINE User ID が不正です。');
+
+  const sheet = getCustomerSheet_();
+  const headers = getCustomerSheetHeaders_(sheet);
+  const data = sheet.getDataRange().getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  if (userIdCol < 0) throw new Error('顧客マスタに「LINE User ID」列が見つかりません。');
+
+  let updated = false;
   for (let i = 1; i < data.length; i++) {
-    if (data[i][userIdCol] === lineUserId) {
-      const r = i + 1;
-      if (changes.name   !== undefined) sheet.getRange(r, nameCol + 1).setValue(normalizeCustomerName_(changes.name));
-      if (changes.gender !== undefined) {
-        if (changes.gender) validateCustomerGender_(changes.gender);
-        sheet.getRange(r, genderCol + 1).setValue(changes.gender || '');
-      }
-      if (changes.ageGroup !== undefined) {
-        if (changes.ageGroup) validateCustomerAgeGroup_(changes.ageGroup);
-        sheet.getRange(r, ageGroupCol + 1).setValue(changes.ageGroup || '');
-      }
-      if (changes.phone  !== undefined) setPhoneCellValue_(sheet, r, phoneCol + 1, changes.phone);
-      if (changes.birthDate !== undefined) {
-        const birth = changes.birthDate ? formatBirthDateForStorage_(changes.birthDate) : '';
-        sheet.getRange(r, birthDateCol + 1).setValue(birth);
-      }
-      if (changes.address !== undefined) sheet.getRange(r, addressCol + 1).setValue(changes.address);
-      if (changes.memo   !== undefined) sheet.getRange(r, memoCol + 1).setValue(changes.memo);
-      if (changes.status !== undefined) sheet.getRange(r, statusCol + 1).setValue(changes.status);
-      return;
-    }
+    if (!customerUserIdMatches_(data[i][userIdCol], normalizedUserId)) continue;
+    applyCustomerInfoChanges_(sheet, i + 1, headers, changes);
+    updated = true;
+  }
+  if (updated) {
+    mergeDuplicateCustomerRowsByUserId_(normalizedUserId);
+    return;
   }
 
   try {
-    restoreCustomerFromArchive_(lineUserId);
-    return updateCustomerInfo(lineUserId, changes);
+    restoreCustomerFromArchive_(normalizedUserId);
+    return updateCustomerInfo(normalizedUserId, changes);
   } catch (restoreErr) {
     throw new Error('顧客が見つかりません。');
   }

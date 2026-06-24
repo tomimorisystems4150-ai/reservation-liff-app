@@ -66,8 +66,14 @@
     .btn-block   { display: block; width: 100%; margin-top: 10px; padding: 10px; }
 
     /* Action bar */
-    .action-bar { margin-bottom: 14px; display: flex; gap: 8px; align-items: center; }
+    .action-bar { margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .section-label { font-size: 0.8em; font-weight: bold; color: #999; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+
+    /* End-of-day selection */
+    .eod-card { display: flex; gap: 10px; align-items: flex-start; }
+    .eod-check { margin-top: 4px; flex-shrink: 0; width: 18px; height: 18px; cursor: pointer; }
+    .eod-card-body { flex: 1; min-width: 0; }
+    .eod-date-label { font-size: 0.78em; color: #888; margin-bottom: 2px; }
 
     /* Search */
     .search-box { width: 100%; padding: 9px 13px; border: 1px solid #d5d8dc; border-radius: 8px; font-size: 0.93em; margin-bottom: 12px; outline: none; }
@@ -165,9 +171,13 @@
   <!-- Tab: 終業後処理 -->
   <div id="tab-endofday" class="tab-content">
     <div class="action-bar">
-      <button id="batch-visit-btn" class="btn btn-success" disabled>全員 来店確定</button>
+      <button id="eod-select-all-btn" class="btn btn-outline" type="button">全選択</button>
+      <button id="eod-deselect-all-btn" class="btn btn-outline" type="button">選択解除</button>
+      <button id="eod-batch-visit-btn" class="btn btn-visit" type="button" disabled>選択を来店確定</button>
+      <button id="eod-batch-noshow-btn" class="btn btn-noshow" type="button" disabled>選択を無断キャンセル</button>
+      <button id="eod-batch-cancel-btn" class="btn btn-cancel" type="button" disabled>選択をキャンセル</button>
     </div>
-    <div class="section-label">本日の未確定予約</div>
+    <div class="section-label">未確定予約（現在時刻より前）</div>
     <div id="endofday-list"><div class="empty"><div>読み込み中...</div></div></div>
   </div>
 
@@ -269,7 +279,7 @@ let currentStatusFilter = 'all';
 let bookingSearchQuery = '';
 let allBookings      = [];
 let allCustomers     = [];
-let todayUnconfirmed = [];
+let eodUnconfirmed   = [];
 
 // ===== Tab navigation =====
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -317,16 +327,51 @@ document.getElementById('customer-search').addEventListener('input', e => {
   renderCustomers(q ? allCustomers.filter(c => String(c.name || '').replace(/\s+/g, '').includes(q)) : allCustomers);
 });
 
-// ===== Batch visit =====
-document.getElementById('batch-visit-btn').addEventListener('click', () => {
-  const ids = todayUnconfirmed.map(b => b.bookingId);
-  if (!ids.length || !confirm('本日の未確定予約 ' + ids.length + ' 件をすべて「来店確定」にしますか？')) return;
+// ===== End-of-day selection =====
+document.getElementById('eod-select-all-btn').addEventListener('click', () => {
+  document.querySelectorAll('#endofday-list .eod-check').forEach(cb => { cb.checked = true; });
+  updateEodBatchButtons();
+});
+document.getElementById('eod-deselect-all-btn').addEventListener('click', () => {
+  document.querySelectorAll('#endofday-list .eod-check').forEach(cb => { cb.checked = false; });
+  updateEodBatchButtons();
+});
+document.getElementById('eod-batch-visit-btn').addEventListener('click', () => eodBatchConfirm('来店'));
+document.getElementById('eod-batch-noshow-btn').addEventListener('click', () => eodBatchConfirm('無断キャンセル'));
+document.getElementById('eod-batch-cancel-btn').addEventListener('click', () => eodBatchConfirm('キャンセル'));
+document.getElementById('endofday-list').addEventListener('change', e => {
+  if (e.target.classList.contains('eod-check')) updateEodBatchButtons();
+});
+
+function getEodCheckedIds() {
+  return Array.from(document.querySelectorAll('#endofday-list .eod-check:checked'))
+    .map(cb => cb.value);
+}
+
+function updateEodBatchButtons() {
+  const hasSelection = getEodCheckedIds().length > 0;
+  document.getElementById('eod-batch-visit-btn').disabled = !hasSelection;
+  document.getElementById('eod-batch-noshow-btn').disabled = !hasSelection;
+  document.getElementById('eod-batch-cancel-btn').disabled = !hasSelection;
+}
+
+function eodBatchConfirm(status) {
+  const ids = getEodCheckedIds();
+  const labels = { '来店': '来店確定', 'キャンセル': 'キャンセル', '無断キャンセル': '無断キャンセル' };
+  if (!ids.length) return;
+  if (!confirm('選択した ' + ids.length + ' 件を「' + labels[status] + '」にしますか？')) return;
   setLoading('endofday-list');
   google.script.run
-    .withSuccessHandler(() => { toast('一括来店確定が完了しました', 'ok'); loadEndOfDay(); })
-    .withFailureHandler(e => toast('エラー: ' + e.message, 'err'))
-    .batchConfirmStatuses(ids, '来店');
-});
+    .withSuccessHandler(() => {
+      toast(ids.length + ' 件を' + labels[status] + 'に更新しました', 'ok');
+      loadEndOfDay();
+    })
+    .withFailureHandler(e => {
+      toast('エラー: ' + e.message, 'err');
+      loadEndOfDay();
+    })
+    .batchConfirmStatuses(ids, status);
+}
 
 // ===== Customer modal =====
 document.getElementById('cust-modal-close').addEventListener('click', closeModal);
@@ -363,24 +408,58 @@ function loadEndOfDay() {
   setLoading('endofday-list');
   google.script.run
     .withSuccessHandler(data => {
-      todayUnconfirmed = data;
+      eodUnconfirmed = data;
       renderEOD(data);
       const badge = document.getElementById('eod-badge');
       if (data.length) { badge.textContent = data.length; badge.style.display = 'inline'; }
       else { badge.style.display = 'none'; }
-      document.getElementById('batch-visit-btn').disabled = !data.length;
+      updateEodBatchButtons();
     })
     .withFailureHandler(e => setError('endofday-list', e.message))
     .getUnconfirmedTodayBookings();
 }
 
+function formatEodDatetime(isoString) {
+  const d = new Date(isoString);
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const now = new Date();
+  const isToday = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  const time = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' 〜';
+  if (isToday) return { dateLabel: '', timeLabel: time };
+  return {
+    dateLabel: (d.getMonth() + 1) + '月' + d.getDate() + '日(' + days[d.getDay()] + ')',
+    timeLabel: time,
+  };
+}
+
 function renderEOD(bookings) {
   const el = document.getElementById('endofday-list');
   if (!bookings || !bookings.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-message">本日の未確定予約はありません</div></div>';
+    el.innerHTML = '<div class="empty"><div class="empty-message">未確定予約はありません</div></div>';
     return;
   }
-  el.innerHTML = bookings.map(b => bookingCard(b, true)).join('');
+  el.innerHTML = bookings.map(b => eodBookingCard(b)).join('');
+  updateEodBatchButtons();
+}
+
+function eodBookingCard(b) {
+  const dt = formatEodDatetime(b.startTime);
+  const staff = b.staffName && b.staffName !== '指名なし' ? ' / ' + escapeHtml(b.staffName) : '';
+  const bookingId = escapeHtml(b.bookingId);
+  return `<div class="card eod-card" id="eod-${bookingId}">
+    <input type="checkbox" class="eod-check" value="${bookingId}" aria-label="予約を選択">
+    <div class="eod-card-body">
+      ${dt.dateLabel ? '<div class="eod-date-label">' + dt.dateLabel + '</div>' : ''}
+      <div class="card-header">
+        <div class="card-datetime">${dt.timeLabel}</div>
+        <span class="badge badge-${b.status}">${escapeHtml(b.status)}</span>
+      </div>
+      <div class="card-name">👤 ${escapeHtml(b.userName)}</div>
+      <div class="card-meta">📋 ${escapeHtml(b.menuName)}${staff}</div>
+    </div>
+  </div>`;
 }
 
 // ===== Booking card HTML =====
@@ -492,11 +571,15 @@ function openModal(uid) {
   document.getElementById('modal-memo').value      = c.memo || '';
   document.getElementById('modal-status').value    = c.status || '有効';
   document.getElementById('modal-analytics').innerHTML = renderCustomerAnalyticsHtml(c);
+  document.getElementById('modal-save-btn').disabled = false;
+  document.getElementById('modal-save-btn').textContent = '保存する';
   document.getElementById('cust-modal').classList.add('open');
 }
 
 function closeModal() {
   document.getElementById('cust-modal').classList.remove('open');
+  document.getElementById('modal-save-btn').disabled = false;
+  document.getElementById('modal-save-btn').textContent = '保存する';
 }
 
 function saveCustomer() {
@@ -514,10 +597,22 @@ function saveCustomer() {
     memo:   document.getElementById('modal-memo').value.trim(),
     status: document.getElementById('modal-status').value
   };
-  document.getElementById('modal-save-btn').disabled = true;
+  const saveBtn = document.getElementById('modal-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中...';
   google.script.run
-    .withSuccessHandler(() => { toast('顧客情報を更新しました', 'ok'); closeModal(); loadCustomers(); })
-    .withFailureHandler(e => { toast('エラー: ' + e.message, 'err'); document.getElementById('modal-save-btn').disabled = false; })
+    .withSuccessHandler(() => {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存する';
+      toast('顧客情報を更新しました', 'ok');
+      closeModal();
+      loadCustomers();
+    })
+    .withFailureHandler(e => {
+      toast('エラー: ' + e.message, 'err');
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存する';
+    })
     .updateCustomerInfo(uid, changes);
 }
 
