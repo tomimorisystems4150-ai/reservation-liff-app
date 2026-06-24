@@ -97,7 +97,7 @@
 <header class="header">
   <div>
     <h1>予約システム設定</h1>
-    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.2（定休日・非稼働時間対応）</div>
+    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.4（当日予約案内文対応）</div>
   </div>
   <a class="header-link" id="linkKanri" href="#" target="_top">予約管理へ</a>
 </header>
@@ -192,6 +192,11 @@
         <option value="false">許可しない</option>
       </select>
       <div class="form-hint">「許可しない」の場合、本日の予約枠はすべて選択できません。現在時刻より前の枠は、設定に関わらず選択できません。</div>
+    </div>
+    <div class="form-group" id="alternateBookingGuideGroup" style="display:none;">
+      <label class="form-label" for="alternateBookingGuide">当日予約不可時の案内文</label>
+      <textarea id="alternateBookingGuide" class="form-control" maxlength="100" rows="3" placeholder="例：お急ぎの場合はお電話（03-xxxx-xxxx）にてご連絡ください。"></textarea>
+      <div class="form-hint"><span id="alternateBookingGuideCount">0</span>/100文字。LIFFの日時選択画面に表示されます。</div>
     </div>
   </div>
 
@@ -361,6 +366,8 @@
     document.getElementById('blockInputCalendarId').value   = configs.block_input_calendar_id || '';
     const allowSameDay = configs.allowSameDayBooking !== false && configs.allowSameDayBooking !== 'FALSE';
     document.getElementById('allowSameDayBooking').value = allowSameDay ? 'true' : 'false';
+    document.getElementById('alternateBookingGuide').value = configs.alternateBookingGuide || '';
+    updateAlternateBookingGuideUi();
 
     renderHolidayChecks();
     renderBreakList();
@@ -586,6 +593,15 @@
 
   function markError(el) { el.classList.add('input-error'); }
 
+  function updateAlternateBookingGuideUi() {
+    const allowed = document.getElementById('allowSameDayBooking').value === 'true';
+    const group = document.getElementById('alternateBookingGuideGroup');
+    const field = document.getElementById('alternateBookingGuide');
+    group.style.display = allowed ? 'none' : '';
+    field.disabled = allowed;
+    document.getElementById('alternateBookingGuideCount').textContent = String(field.value.length);
+  }
+
   function validateForm() {
     clearErrors();
     let ok = true;
@@ -615,6 +631,12 @@
     const bulkEl  = document.getElementById('maxBulkBookings');
     const bulkVal = parseInt(bulkEl.value, 10);
     if (isNaN(bulkVal) || bulkVal < 1 || bulkVal > 52) { markError(bulkEl); ok = false; }
+
+    const guideEl = document.getElementById('alternateBookingGuide');
+    if (document.getElementById('allowSameDayBooking').value === 'false' && guideEl.value.length > 100) {
+      markError(guideEl);
+      ok = false;
+    }
 
     if (document.getElementById('staffOn').checked) {
       const names = [], emails = [];
@@ -712,6 +734,9 @@
       reservationCalendarId: document.getElementById('reservationCalendarId').value.trim(),
       block_input_calendar_id: document.getElementById('blockInputCalendarId').value.trim(),
       allowSameDayBooking: document.getElementById('allowSameDayBooking').value === 'true',
+      alternateBookingGuide: document.getElementById('allowSameDayBooking').value === 'true'
+        ? ''
+        : document.getElementById('alternateBookingGuide').value.trim().slice(0, 100),
       lineChannelAccessToken:document.getElementById('lineChannelAccessToken').value.trim(),
       lineChannelSecret:     document.getElementById('lineChannelSecret').value.trim(),
       lineLoginChannelId:    document.getElementById('lineLoginChannelId').value.trim(),
@@ -757,6 +782,9 @@
     document.querySelectorAll('input[name="reminderMode"]').forEach(r => {
       r.addEventListener('change', function() { updateReminderHint(this.value); });
     });
+
+    document.getElementById('allowSameDayBooking').addEventListener('change', updateAlternateBookingGuideUi);
+    document.getElementById('alternateBookingGuide').addEventListener('input', updateAlternateBookingGuideUi);
   };
 </script>
 </body>

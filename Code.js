@@ -310,6 +310,7 @@ function doPost(e) {
             customerName: customerRecord ? customerRecord['顧客名'] : '',
             maxBulkBookings: parseInt(configs.maxBulkBookings || 1, 10),
             allowSameDayBooking: isSameDayBookingAllowed_(configs),
+            alternateBookingGuide: normalizeAlternateBookingGuide_(configs.alternateBookingGuide),
             reminderMode: configs.reminderMode || 'ICS',
           };
           break;
@@ -582,7 +583,10 @@ function saveConfigs(configs) {
     const keyToRow = buildConfigKeyRowMap_(sheet);
 
     Object.keys(configs).forEach(key => {
-      const newValue = configs[key];
+      let newValue = configs[key];
+      if (key === 'alternateBookingGuide') {
+        newValue = normalizeAlternateBookingGuide_(newValue);
+      }
       const cellValue = (typeof newValue === 'object') ? JSON.stringify(newValue) : newValue;
       const rowNum = keyToRow[key];
       if (rowNum) {
@@ -1183,6 +1187,13 @@ function updateAvailabilityCache() {
 /**
  * 指定された週の7日分の空き枠をまとめて取得する
  */
+/**
+ * 当日予約不可時の LIFF 案内文（最大100文字）
+ */
+function normalizeAlternateBookingGuide_(value) {
+  return String(value || '').trim().slice(0, 100);
+}
+
 /**
  * 当日予約の受付ルールに基づき、指定スロットが予約可能か判定する
  * - 現在時刻以前の枠は常に不可

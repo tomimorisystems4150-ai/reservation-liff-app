@@ -36,6 +36,13 @@ const bookingState = {
 };
 
 let initData = {};
+
+/** 当日予約不可時の LIFF 案内文（設定がなければデフォルト文言） */
+function getSameDayBookingNotice(defaultMessage) {
+  if (initData.allowSameDayBooking !== false) return '';
+  const guide = String(initData.alternateBookingGuide || '').trim();
+  return guide || defaultMessage;
+}
 let currentWeekStartDate = null;
 /** 'new-booking' | 'manage-reschedule' */
 let flowMode = 'new-booking';
@@ -551,9 +558,8 @@ function prepareNewBookingDatetimeSection() {
   if (initData.bookingLookaheadDays) {
     infoParts.push(`※本日より${initData.bookingLookaheadDays}日後までのご予約が可能です。`);
   }
-  if (initData.allowSameDayBooking === false) {
-    infoParts.push('※当日予約は受け付けておりません。');
-  }
+  const sameDayNotice = getSameDayBookingNotice('※当日予約は受け付けておりません。');
+  if (sameDayNotice) infoParts.push(sameDayNotice);
   if (infoParts.length) {
     infoEl.textContent = infoParts.join('\n');
     infoEl.style.whiteSpace = 'pre-line';
@@ -600,9 +606,8 @@ function prepareRescheduleDatetimeSection() {
   if (initData.bookingLookaheadDays) {
     infoParts.push(`※本日より${initData.bookingLookaheadDays}日後まで変更可能です。`);
   }
-  if (initData.allowSameDayBooking === false) {
-    infoParts.push('※当日への変更は受け付けておりません。');
-  }
+  const sameDayNotice = getSameDayBookingNotice('※当日への変更は受け付けておりません。');
+  if (sameDayNotice) infoParts.push(sameDayNotice);
   infoEl.textContent = infoParts.join('\n');
   infoEl.style.whiteSpace = 'pre-line';
   infoEl.style.display = '';
