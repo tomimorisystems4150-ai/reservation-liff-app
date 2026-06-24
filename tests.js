@@ -26,6 +26,9 @@ function runAllGASTests() {
   Logger.log('  GAS テストスイート 開始');
   Logger.log('========================================');
 
+  // 前回実行が中断された場合の残骸を除去してから開始
+  cleanupTestData_();
+
   const startTime = new Date();
   const results = [];
   results.push(...runAPITests_());
@@ -97,9 +100,9 @@ const TEST_RESULT_SHEET_NAME = 'テスト結果';
  */
 function saveTestResults_(summary, results) {
   try {
-    let sheet = SPREADSHEET.getSheetByName(TEST_RESULT_SHEET_NAME);
+    let sheet = getSpreadsheet_().getSheetByName(TEST_RESULT_SHEET_NAME);
     if (!sheet) {
-      sheet = SPREADSHEET.insertSheet(TEST_RESULT_SHEET_NAME);
+      sheet = getSpreadsheet_().insertSheet(TEST_RESULT_SHEET_NAME);
       sheet.appendRow(['実行日時', '合計', '合格', '失敗', '実行時間(秒)', 'テストID', '結果', 'エラー内容', '性能指標(avg/max ms)']);
       sheet.setFrozenRows(1);
       sheet.getRange(1, 1, 1, 9).setFontWeight('bold');
@@ -636,7 +639,7 @@ function runLogicTests_() {
 
   // TC-L-001: 満席タイムテーブル更新（updateTimetableSlots_）
   results.push(runTest_('TC-L-001: updateTimetableSlots_ - スロット追加', () => {
-    const sheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+    const sheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (!sheet) {
       Logger.log('    (満席タイムテーブルシートなしのためスキップ)');
       return;
@@ -650,7 +653,7 @@ function runLogicTests_() {
 
   // TC-L-001b: 予約シートから満席タイムテーブル再構築
   results.push(runTest_('TC-L-001b: rebuildTimetableFromReservations_ - 予約数集計', () => {
-    const sheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+    const sheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (!sheet) {
       Logger.log('    (満席タイムテーブルシートなしのためスキップ)');
       return;
@@ -839,7 +842,7 @@ function runBatchTests_() {
 
   // TC-BG-004: cleanPastTimetable_（過去エントリ削除）
   results.push(runTest_('TC-BG-004: cleanPastTimetable_ - 過去エントリ削除', () => {
-    const sheet = SPREADSHEET.getSheetByName('満席タイムテーブル');
+    const sheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
     if (!sheet) {
       Logger.log('    (満席タイムテーブルシートなしのためスキップ)');
       return;
@@ -1018,6 +1021,11 @@ function cleanupTestData_() {
   _deleteTestCustomers();
   _deleteTestBookings();
   _deleteTestErrorLogs();
+  try {
+    rebuildTimetableFromReservations_();
+  } catch (e) {
+    Logger.log('満席TT再構築スキップ: ' + e.message);
+  }
 }
 
 function cleanupTestData() {
@@ -1026,7 +1034,7 @@ function cleanupTestData() {
 }
 
 function _deleteTestCustomers() {
-  const sheet = SPREADSHEET.getSheetByName('顧客マスタ');
+  const sheet = getSpreadsheet_().getSheetByName('顧客マスタ');
   if (!sheet || sheet.getLastRow() < 2) return;
 
   const data = sheet.getDataRange().getValues();
@@ -1082,7 +1090,7 @@ function _deleteTestBookings() {
 }
 
 function _deleteTestErrorLogs() {
-  const sheet = SPREADSHEET.getSheetByName('エラーログ');
+  const sheet = getSpreadsheet_().getSheetByName('エラーログ');
   if (!sheet || sheet.getLastRow() < 2) return;
 
   const data = sheet.getDataRange().getValues();
