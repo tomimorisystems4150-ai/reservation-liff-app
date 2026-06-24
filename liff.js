@@ -281,15 +281,16 @@ function handleSelectionButtonClick(button) {
 
 /**
  * Step1 の選択に応じた遷移先を決定する。
- * 初めて + 未登録 → 顧客情報登録
+ * 未登録 → 顧客情報登録（初めて / 2回目以降 共通）
  * 初めて + 登録済み → 登録済み案内
- * 2回目以降 → 予約種別選択
+ * 2回目以降 + 登録済み → 予約種別選択
  */
 function resolveStep1Destination(selectedValue, nextStepId) {
+  if (!isCustomerRegistered) {
+    return 'section-customer-registration';
+  }
   if (selectedValue === 'first-time') {
-    return isCustomerRegistered
-      ? 'section-customer-already-registered'
-      : 'section-customer-registration';
+    return 'section-customer-already-registered';
   }
   return `section-${nextStepId || 'step2-booking-type'}`;
 }
