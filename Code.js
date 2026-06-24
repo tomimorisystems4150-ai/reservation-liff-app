@@ -479,6 +479,9 @@ var LINE_VERIFY_CACHE_SKEW_SEC_ = 30;
 var BLOCK_SYNC_MIN_INTERVAL_SEC_ = 300;
 var BLOCK_SYNC_LAST_RUN_KEY_ = 'blockSyncLastRunAt';
 var CONFIG_CACHE_MAX_BYTES_ = 90000;
+var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
+var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
+var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
 
 var PUBLIC_CONFIG_KEYS_ = [
   'shopName', 'serviceMenus', 'businessHours', 'holidays', 'nonOperatingHours',
@@ -523,6 +526,23 @@ function getPublicConfigs_() {
 
 function invalidateScriptCaches_() {
   CacheService.getScriptCache().remove(CONFIG_CACHE_KEY_);
+}
+
+function invalidateCustomerLookupCache_(lineUserId) {
+  const normalized = normalizeCustomerUserId_(lineUserId);
+  if (!normalized) return;
+  CacheService.getScriptCache().remove(CUSTOMER_LOOKUP_CACHE_PREFIX_ + normalized);
+}
+
+/**
+ * GAS コールドスタート緩和用の軽量 ping（time-driven trigger から呼ばれる）。
+ */
+function keepWarm_() {
+  try {
+    getConfigValue_('shopName');
+  } catch (e) {
+    Logger.log('keepWarm_: ' + e.message);
+  }
 }
 
 function getConfigValue_(key) {
@@ -2520,9 +2540,27 @@ function findCustomerRowsByUserId_(lineUserId) {
  * @returns {Object|null} 顧客レコードのオブジェクト、未登録の場合は null
  */
 function findCustomerByUserId_(lineUserId) {
+  const normalizedUserId = normalizeCustomerUserId_(lineUserId);
+  if (!normalizedUserId) return null;
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = CUSTOMER_LOOKUP_CACHE_PREFIX_ + normalizedUserId;
+  const cached = cache.get(cacheKey);
+  if (cached !== null) {
+    if (cached === CUSTOMER_LOOKUP_CACHE_MISS_) return null;
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      cache.remove(cacheKey);
+    }
+  }
+
   const sheet = getCustomerSheet_();
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
+  if (lastRow < 2) {
+    cache.put(cacheKey, CUSTOMER_LOOKUP_CACHE_MISS_, CUSTOMER_LOOKUP_CACHE_TTL_SEC_);
+    return null;
+  }
 
   const headers = getCustomerSheetHeaders_(sheet);
   const data = sheet.getRange(2, 1, lastRow, headers.length).getValues();
@@ -2530,10 +2568,14 @@ function findCustomerByUserId_(lineUserId) {
   const statusCol = headers.indexOf('ステータス');
 
   for (let i = 0; i < data.length; i++) {
-    if (customerUserIdMatches_(data[i][userIdCol], lineUserId) && data[i][statusCol] !== '無効') {
-      return rowToCustomerRecord_(data[i], headers);
+    if (customerUserIdMatches_(data[i][userIdCol], normalizedUserId) && data[i][statusCol] !== '無効') {
+      const record = rowToCustomerRecord_(data[i], headers);
+      cache.put(cacheKey, JSON.stringify(record), CUSTOMER_LOOKUP_CACHE_TTL_SEC_);
+      return record;
     }
   }
+
+  cache.put(cacheKey, CUSTOMER_LOOKUP_CACHE_MISS_, CUSTOMER_LOOKUP_CACHE_TTL_SEC_);
   return null;
 }
 
@@ -2610,6 +2652,7 @@ function registerCustomer(lineUserId, customerName, gender, ageGroup) {
   }
 
   mergeDuplicateCustomerRowsByUserId_(normalizedUserId);
+  invalidateCustomerLookupCache_(normalizedUserId);
 
   const regDate = record['登録日時'];
   return {
@@ -3295,7 +3338,11 @@ function setupTriggers() {
   ScriptApp.newTrigger('runDailyArchive')
     .timeBased().everyDays(1).atHour(3).create();
 
-  Logger.log('トリガーを設定しました（全6種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/日次アーカイブ）。');
+  // GAS コールドスタート緩和（5分ごと・軽量 ping）
+  ScriptApp.newTrigger('keepWarm_')
+    .timeBased().everyMinutes(5).create();
+
+  Logger.log('トリガーを設定しました（全7種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/日次アーカイブ/keepWarm）。');
   return { success: true };
 }
 

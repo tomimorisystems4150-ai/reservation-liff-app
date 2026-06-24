@@ -707,6 +707,30 @@ function runLogicTests_() {
     invalidateScriptCaches_();
   }));
 
+  // TC-L-003f: 顧客検索キャッシュ
+  results.push(runTest_('TC-L-003f: findCustomerByUserId_ - ScriptCache', () => {
+    const uniqueId = 'test_cust_cache_' + new Date().getTime();
+    registerCustomer(uniqueId, TEST_CUSTOMER_NAME, '女性', '30代');
+    const first = findCustomerByUserId_(uniqueId);
+    assert_(first !== null, '顧客が見つからない');
+    assertEqual_(first['顧客名'], TEST_CUSTOMER_NAME, '顧客名');
+    const second = findCustomerByUserId_(uniqueId);
+    assert_(second !== null, 'キャッシュヒット後に顧客が見つからない');
+    invalidateCustomerLookupCache_(uniqueId);
+    const third = findCustomerByUserId_(uniqueId);
+    assert_(third !== null, 'purge 後に顧客が見つからない');
+  }));
+
+  // TC-L-003g: registerCustomer 後のキャッシュ purge
+  results.push(runTest_('TC-L-003g: registerCustomer - キャッシュ purge', () => {
+    const uniqueId = 'test_cust_purge_' + new Date().getTime();
+    registerCustomer(uniqueId, TEST_CUSTOMER_NAME, '女性', '30代');
+    findCustomerByUserId_(uniqueId);
+    const again = registerCustomer(uniqueId, TEST_CUSTOMER_NAME, '女性', '30代');
+    assert_(again !== null, '再登録（べき等）が失敗');
+    assertEqual_(again['ステータス'], '有効', 'ステータス');
+  }));
+
   // TC-L-004: 予約ID生成の一意性
   results.push(runTest_('TC-L-004: generateBookingId - 一意性', () => {
     const ids = new Set();
@@ -992,6 +1016,10 @@ function runPerformanceTests_() {
     Logger.log(`      合計: ${totalMs}ms (平均 ${avg}ms/件)`);
 
     return { avg, max, count: ITERATIONS };
+  }));
+
+  results.push(runTest_('TC-P-004: keepWarm_ - 例外なし', () => {
+    keepWarm_();
   }));
 
   return results;

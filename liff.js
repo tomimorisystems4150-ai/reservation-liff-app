@@ -55,6 +55,88 @@ const manageState = {
 /** renderTimetable の世代番号（古い API 応答を DOM に反映しない） */
 let timetableRenderGeneration = 0;
 
+/** getAvailableSlots クライアントキャッシュ（v3.6 先読み） */
+const slotsCache = new Map();
+const inflightSlotFetches = new Map();
+const SLOTS_CACHE_TTL_MS = 45000;
+
+function formatWeekStartYmd_(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function buildSlotRequest_() {
+  const staffEmailAtRequest = bookingState.staff ? bookingState.staff.email : null;
+  const slotRequest = {
+    date: formatWeekStartYmd_(currentWeekStartDate),
+    duration: bookingState.menu.duration,
+    staffEmail: staffEmailAtRequest,
+  };
+  if (flowMode === 'manage-reschedule' && manageState.selectedBooking?.bookingId) {
+    slotRequest.excludeBookingId = manageState.selectedBooking.bookingId;
+  }
+  return slotRequest;
+}
+
+function buildSlotsCacheKey_(slotRequest) {
+  return [
+    slotRequest.date,
+    slotRequest.duration,
+    slotRequest.staffEmail || '',
+    slotRequest.excludeBookingId || '',
+  ].join('|');
+}
+
+function getCachedSlots_(key) {
+  const entry = slotsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > SLOTS_CACHE_TTL_MS) {
+    slotsCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedSlots_(key, data) {
+  slotsCache.set(key, { data, fetchedAt: Date.now() });
+}
+
+function invalidateSlotsCache_() {
+  slotsCache.clear();
+}
+
+async function fetchAvailableSlotsData_(slotRequest) {
+  const key = buildSlotsCacheKey_(slotRequest);
+  const cached = getCachedSlots_(key);
+  if (cached) return cached;
+
+  if (inflightSlotFetches.has(key)) {
+    return inflightSlotFetches.get(key);
+  }
+
+  const promise = fetchApi('getAvailableSlots', slotRequest)
+    .then((data) => {
+      setCachedSlots_(key, data);
+      return data;
+    })
+    .finally(() => {
+      inflightSlotFetches.delete(key);
+    });
+
+  inflightSlotFetches.set(key, promise);
+  return promise;
+}
+
+function prefetchAvailableSlotsIfReady_() {
+  if (!bookingState.menu || !currentWeekStartDate) return;
+  if (isStaffSelectionRequired() && !bookingState.staff) return;
+  const slotRequest = buildSlotRequest_();
+  const key = buildSlotsCacheKey_(slotRequest);
+  if (getCachedSlots_(key) || inflightSlotFetches.has(key)) return;
+  fetchAvailableSlotsData_(slotRequest).catch((err) => {
+    console.warn('空き枠先読み失敗:', err.message);
+  });
+}
+
 function isStaffSelectionRequired() {
   return !!(initData.isStaffFeatureEnabled && initData.staffs && initData.staffs.length > 0);
 }
@@ -192,6 +274,7 @@ function setupEventListeners() {
     bookingState.staff = staff || { name: '指名なし', email: 'any' };
     clearSelectedSlots();
     document.getElementById('timetable-container').style.display = 'block';
+    prefetchAvailableSlotsIfReady_();
     renderTimetable();
   });
 
@@ -488,6 +571,7 @@ function handleStepCompletion(completedSectionId, selectedValue, targetElement) 
     case 'section-step3-menu':
       const menu = initData.serviceMenus.find(m => m.name === targetElement.dataset.value);
       bookingState.menu = menu;
+      prefetchAvailableSlotsIfReady_();
       break;
   }
 }
@@ -570,6 +654,7 @@ function prepareNewBookingDatetimeSection() {
   }
   updateSubmitButton();
   updateBulkCounter();
+  prefetchAvailableSlotsIfReady_();
   if (canRenderTimetable()) {
     renderTimetable();
   }
@@ -613,6 +698,7 @@ function prepareRescheduleDatetimeSection() {
   infoEl.style.display = '';
 
   updateSubmitButton();
+  prefetchAvailableSlotsIfReady_();
   if (canRenderTimetable()) {
     renderTimetable();
   }
@@ -667,8 +753,14 @@ async function renderTimetable() {
 
   const timetableBody = document.querySelector('#timetable tbody');
   const timetableHead = document.querySelector('#timetable thead');
-  timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
-  timetableHead.innerHTML = '';
+
+  const slotRequest = buildSlotRequest_();
+  const cacheKey = buildSlotsCacheKey_(slotRequest);
+  const cachedSlots = getCachedSlots_(cacheKey);
+  if (!cachedSlots && !inflightSlotFetches.has(cacheKey)) {
+    timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
+    timetableHead.innerHTML = '';
+  }
 
   const monthDisplay = new Date(currentWeekStartDate.getTime());
   monthDisplay.setDate(monthDisplay.getDate() + 3);
@@ -683,15 +775,7 @@ async function renderTimetable() {
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  const slotRequest = {
-    date: `${currentWeekStartDate.getFullYear()}-${String(currentWeekStartDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStartDate.getDate()).padStart(2, '0')}`,
-    duration: bookingState.menu.duration,
-    staffEmail: staffEmailAtRequest,
-  };
-  if (flowMode === 'manage-reschedule' && manageState.selectedBooking?.bookingId) {
-    slotRequest.excludeBookingId = manageState.selectedBooking.bookingId;
-  }
-  const weeklyAvailableSlots = await fetchApi('getAvailableSlots', slotRequest);
+  const weeklyAvailableSlots = await fetchAvailableSlotsData_(slotRequest);
 
   if (renderGeneration !== timetableRenderGeneration) return;
   if (currentWeekStartDate.getTime() !== weekStartMs) return;
@@ -1009,6 +1093,7 @@ async function handleBookingSubmit() {
     alert(`エラーが発生しました: ${error.message}`);
     
     submitButton.textContent = '空き枠を更新中...';
+    invalidateSlotsCache_();
     try {
       await renderTimetable();
     } finally {
@@ -1328,6 +1413,7 @@ async function handleRescheduleSubmit() {
     console.error('予約変更に失敗しました:', error);
     alert(`予約変更に失敗しました: ${error.message}`);
     submitButton.textContent = '空き枠を更新中...';
+    invalidateSlotsCache_();
     try {
       await renderTimetable();
     } finally {
