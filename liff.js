@@ -199,15 +199,9 @@ function setupEventListeners() {
     });
   }
 
-  // 登録済み案内 → 予約に進む
-  document.getElementById('proceed-to-booking-button').addEventListener('click', () => {
-    showSection('section-step2-booking-type');
-  });
-
-  // 新規登録完了 → 予約に進む
-  document.getElementById('registration-complete-proceed-button').addEventListener('click', () => {
-    showSection('section-step2-booking-type');
-  });
+  // 登録済み案内 / 新規登録完了 → 予約に進む
+  document.getElementById('proceed-to-booking-button').addEventListener('click', proceedToBookingStep2);
+  document.getElementById('registration-complete-proceed-button').addEventListener('click', proceedToBookingStep2);
 
   // 予約確定ボタン
   document.getElementById('submitButton').addEventListener('click', () => {
@@ -295,6 +289,11 @@ function resolveStep1Destination(selectedValue, nextStepId) {
     return 'section-customer-already-registered';
   }
   return `section-${nextStepId || 'step2-booking-type'}`;
+}
+
+/** 予約種別選択（Step2）へ進む */
+function proceedToBookingStep2() {
+  showSection('section-step2-booking-type');
 }
 
 /** Step1 ボタンの遷移先・活性状態を登録状態に合わせて更新する */
@@ -926,7 +925,8 @@ async function handleCustomerRegistration() {
 
     isCustomerRegistered = true;
     updateStep1ButtonTargets();
-    showSection('section-customer-registration-complete');
+    // 新規登録直後は「登録済み案内」を挟まず Step2 へ（テスト仕様 ST-P1-01 準拠）
+    proceedToBookingStep2();
 
   } catch (error) {
     console.error('顧客登録に失敗しました:', error);
