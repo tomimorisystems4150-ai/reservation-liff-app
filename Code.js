@@ -2207,9 +2207,7 @@ function mergeCustomerRecordFields_(records) {
   });
   if (merged['顧客名']) merged['顧客名'] = normalizeCustomerName_(merged['顧客名']);
 
-  merged['ステータス'] = records.some(r => String(r['ステータス'] || '').trim() === '無効')
-    ? '無効'
-    : (String(records[records.length - 1]['ステータス'] || '').trim() || '有効');
+  merged['ステータス'] = String(records[records.length - 1]['ステータス'] || '').trim() || '有効';
 
   let earliestReg = null;
   let latestVisit = null;
@@ -2233,7 +2231,8 @@ function mergeCustomerRecordFields_(records) {
 
 function applyCustomerRecordToRow_(sheet, rowNum, headers, record) {
   const values = buildCustomerRowValues_(headers, record);
-  sheet.getRange(rowNum, 1, rowNum, values.length).setValues([values]);
+  // getRange(row, col, numRows, numColumns) — 第3引数は行数（終了行番号ではない）
+  sheet.getRange(rowNum, 1, 1, headers.length).setValues([values]);
   const phoneCol = headers.indexOf('電話番号') + 1;
   if (phoneCol > 0 && record['電話番号']) {
     setPhoneCellValue_(sheet, rowNum, phoneCol, record['電話番号']);
@@ -2301,6 +2300,34 @@ function mergeAllDuplicateCustomers_() {
 }
 
 /**
+ * LINE User ID に一致する顧客マスタ行をすべて返す（無効行を含む）。
+ */
+function findCustomerRowsByUserId_(lineUserId) {
+  const normalizedUserId = normalizeCustomerUserId_(lineUserId);
+  if (!normalizedUserId) return [];
+
+  const sheet = getCustomerSheet_();
+  const headers = getCustomerSheetHeaders_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const data = sheet.getRange(2, 1, lastRow, headers.length).getValues();
+  const userIdCol = headers.indexOf('LINE User ID');
+  const statusCol = headers.indexOf('ステータス');
+  const rows = [];
+
+  for (let i = 0; i < data.length; i++) {
+    if (!customerUserIdMatches_(data[i][userIdCol], normalizedUserId)) continue;
+    rows.push({
+      rowNum: i + 2,
+      record: rowToCustomerRecord_(data[i], headers),
+      status: String(data[i][statusCol] || '').trim() || '有効',
+    });
+  }
+  return rows;
+}
+
+/**
  * LINE User ID で顧客マスタを検索する。
  * @param {string} lineUserId
  * @returns {Object|null} 顧客レコードのオブジェクト、未登録の場合は null
@@ -2358,42 +2385,55 @@ function registerCustomer(lineUserId, customerName, gender, ageGroup) {
   validateCustomerGender_(gender);
   validateCustomerAgeGroup_(ageGroup);
 
+  const normalizedUserId = normalizeCustomerUserId_(lineUserId);
   const normalizedName = normalizeCustomerName_(customerName);
 
-  const existing = findCustomerByUserId_(lineUserId);
-  if (existing) {
-    Logger.log(`顧客登録スキップ: ${lineUserId} はすでに登録済みです。`);
-    return existing;
+  const existingActive = findCustomerByUserId_(normalizedUserId);
+  if (existingActive) {
+    Logger.log(`顧客登録スキップ: ${normalizedUserId} はすでに登録済みです。`);
+    return existingActive;
   }
 
   const sheet = getCustomerSheet_();
+  const headers = getCustomerSheetHeaders_(sheet);
   const now = new Date();
+  const matchingRows = findCustomerRowsByUserId_(normalizedUserId);
+  const inactiveRow = matchingRows.find(r => r.status === '無効');
+
   const record = {
-    'LINE User ID': lineUserId,
+    'LINE User ID': normalizedUserId,
     '顧客名': normalizedName,
     '性別': gender,
     '年代': ageGroup,
-    '電話番号': '',
-    '生年月日': '',
-    '住所': '',
-    '登録日時': now,
-    '最終来店日': '',
-    'メモ': '',
+    '電話番号': inactiveRow ? (inactiveRow.record['電話番号'] || '') : '',
+    '生年月日': inactiveRow ? (inactiveRow.record['生年月日'] || '') : '',
+    '住所': inactiveRow ? (inactiveRow.record['住所'] || '') : '',
+    '登録日時': inactiveRow ? (inactiveRow.record['登録日時'] || now) : now,
+    '最終来店日': inactiveRow ? (inactiveRow.record['最終来店日'] || '') : '',
+    'メモ': inactiveRow ? (inactiveRow.record['メモ'] || '') : '',
     'ステータス': '有効'
   };
-  appendCustomerRow_(sheet, record);
-  mergeDuplicateCustomerRowsByUserId_(lineUserId);
-  Logger.log(`顧客登録完了: ${normalizedName} (${lineUserId})`);
 
+  if (inactiveRow) {
+    applyCustomerRecordToRow_(sheet, inactiveRow.rowNum, headers, record);
+    Logger.log(`顧客再登録（再有効化）: ${normalizedName} (${normalizedUserId})`);
+  } else {
+    appendCustomerRow_(sheet, record);
+    Logger.log(`顧客登録完了: ${normalizedName} (${normalizedUserId})`);
+  }
+
+  mergeDuplicateCustomerRowsByUserId_(normalizedUserId);
+
+  const regDate = record['登録日時'];
   return {
-    'LINE User ID': lineUserId,
+    'LINE User ID': normalizedUserId,
     '顧客名': normalizedName,
     '性別': gender,
     '年代': ageGroup,
-    '電話番号': '',
-    '生年月日': '',
-    '住所': '',
-    '登録日時': now.toISOString(),
+    '電話番号': record['電話番号'] || '',
+    '生年月日': record['生年月日'] ? formatBirthDateForDisplay_(record['生年月日']) : '',
+    '住所': record['住所'] || '',
+    '登録日時': regDate instanceof Date ? regDate.toISOString() : String(regDate || ''),
     'ステータス': '有効'
   };
 }
