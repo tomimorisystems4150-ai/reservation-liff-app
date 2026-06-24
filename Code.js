@@ -273,6 +273,8 @@ function handleICSDownload_(e) {
 
 function doPost(e) {
   try {
+    ensureTriggersConfigured_();
+
     const postData = JSON.parse(e.postData.contents);
 
     if (postData.events) {
@@ -482,6 +484,7 @@ var CONFIG_CACHE_MAX_BYTES_ = 90000;
 var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
 var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
 var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
+var TRIGGERS_CONFIG_VERSION_ = '7';
 
 var PUBLIC_CONFIG_KEYS_ = [
   'shopName', 'serviceMenus', 'businessHours', 'holidays', 'nonOperatingHours',
@@ -793,6 +796,7 @@ function saveConfigs(configs) {
 
     Logger.log('設定を保存しました。');
     invalidateScriptCaches_();
+    ensureTriggersConfigured_();
     return { success: true, message: 'OK' };
 
   } catch (e) {
@@ -3308,8 +3312,8 @@ function runNightlyBatch() {
 }
 
 /**
- * システムトリガーを設定する（初期セットアップ時または設定リセット時に実行）。
- * GASエディタから手動実行するか、設定画面のボタンから呼び出す。
+ * システムトリガーを設定する（初期セットアップ時またはトリガー定義更新時に実行）。
+ * 店舗が GAS エディタを触る必要はない。`ensureTriggersConfigured_()` から自動呼び出しされる。
  */
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
@@ -3343,7 +3347,25 @@ function setupTriggers() {
     .timeBased().everyMinutes(5).create();
 
   Logger.log('トリガーを設定しました（全7種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/日次アーカイブ/keepWarm）。');
+  PropertiesService.getScriptProperties().setProperty('triggersConfigVersion', TRIGGERS_CONFIG_VERSION_);
   return { success: true };
+}
+
+/**
+ * トリガー未設定または定義更新時に setupTriggers を1回だけ実行する。
+ * doPost（LIFF 初回利用）・saveConfigs から呼ばれる。失敗しても API 本体は継続する。
+ */
+function ensureTriggersConfigured_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('triggersConfigVersion') === TRIGGERS_CONFIG_VERSION_) {
+      return { success: true, skipped: true };
+    }
+    return setupTriggers();
+  } catch (e) {
+    Logger.log('ensureTriggersConfigured_ 失敗（リクエストは継続）: ' + e.message);
+    return { success: false, message: e.message };
+  }
 }
 
 /**

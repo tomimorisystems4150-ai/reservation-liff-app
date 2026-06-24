@@ -731,6 +731,15 @@ function runLogicTests_() {
     assertEqual_(again['ステータス'], '有効', 'ステータス');
   }));
 
+  // TC-L-003h: トリガー自動設定（冪等）
+  results.push(runTest_('TC-L-003h: ensureTriggersConfigured_ - 冪等実行', () => {
+    const first = ensureTriggersConfigured_();
+    assert_(first.success !== false, '1回目が失敗: ' + (first.message || ''));
+    const second = ensureTriggersConfigured_();
+    assert_(second.success !== false, '2回目が失敗');
+    assert_(second.skipped === true, '2回目は skipped であるべき');
+  }));
+
   // TC-L-004: 予約ID生成の一意性
   results.push(runTest_('TC-L-004: generateBookingId - 一意性', () => {
     const ids = new Set();
