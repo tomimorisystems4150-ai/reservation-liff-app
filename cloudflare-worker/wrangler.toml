@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 # Then replace the id below with the output
 [[kv_namespaces]]
 binding = "ONBOARDING_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "1785da19a9d944748be759b48fcaa81c"
 
 # Environment variables (set secrets via: wrangler secret put VARIABLE_NAME)
 # GOOGLE_CLIENT_ID      - OAuth 2.0 client ID from Google Cloud Console
@@ -17,3 +17,20 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 # WORKER_URL            - This worker's public URL (e.g. https://reservation-onboarding.xxx.workers.dev)
 # GITHUB_REPO           - GitHub repo (e.g. tomimorisystems4150-ai/reservation-liff-app)
 # GITHUB_BRANCH         - Branch to fetch scripts from (e.g. main)
+# CUSTOMER_REGISTRY_SS_ID - 開発者管理の顧客台帳スプレッドシートID（SAに編集権限を付与）
+# ADMIN_ALLOWED_EMAILS  - 管理コンソール許可 Gmail（カンマ区切り可）。未設定時: tomimori.systems4150@gmail.com
+# ADMIN_REQUIRE_ACCESS  - "true" で Cloudflare Access ログイン必須（Access 設定後に有効化）
+#
+# --- Cloudflare Access 設定（Zero Trust ダッシュボード）---
+# 1. Zero Trust → Settings → Custom team domain を有効化
+# 2. Access → Applications → Add application → Self-hosted
+#    - Application name: Deploy Support Console
+#    - Subdomain: reservation-onboarding / Domain: *.workers.dev
+#    - Path: /admin  （または /admin*）
+# 3. Add a policy → Allow → Include → Emails → tomimori.systems4150@gmail.com
+# 4. Identity providers → Google を追加（One-time PIN も可）
+# 5. Worker を wrangler deploy 後、ADMIN_REQUIRE_ACCESS=true を設定:
+#    npx wrangler secret put ADMIN_REQUIRE_ACCESS
+#    （入力: true）
+# 6. ブックマーク URL: https://reservation-onboarding.reservation-onboarding.workers.dev/admin
+#    （?key= は不要。初回は /admin/login で管理パスワード入力）

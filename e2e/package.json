@@ -1,0 +1,21 @@
+{
+  "name": "reservation-liff-e2e",
+  "version": "1.0.0",
+  "description": "LINE予約システム E2Eテスト（Playwright）",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --ignore-glob=**/admin-screenshots.spec.js",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:api": "playwright test tests/api.spec.js",
+    "test:booking": "playwright test tests/booking.spec.js",
+    "auth-setup": "node auth-setup.js",
+    "screenshots": "playwright test --project=admin-screenshots",
+    "screenshots:report": "playwright show-report",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -1,0 +1,243 @@
+================================================================================
+Cloudflare Access 設定手順
+デプロイ支援コンソール（/admin）の第1層認証
+================================================================================
+
+作成日: 2026-06-18
+対象 Worker: reservation-onboarding
+対象 URL  : https://reservation-onboarding.reservation-onboarding.workers.dev/admin
+許可 Gmail: tomimori.systems4150@gmail.com
+
+本手順は「第1層: Cloudflare Access（Google ログイン）」の設定です。
+Worker 側の「第2層: HttpOnly Cookie セッション」は別途 wrangler deploy が必要です。
+
+================================================================================
+0. 前提・用語
+================================================================================
+
+【二段構えの構成】
+
+  第1層 Cloudflare Access
+    → 指定 Gmail のみ /admin へ到達可能
+    → URL に秘密鍵（?key=）は不要
+
+  第2層 Worker セッション Cookie
+    → /admin/login で管理パスワード（ADMIN_SECRET_KEY）を1回入力
+    → 以降 Cookie で API 認証
+
+【必要なもの】
+
+  - Cloudflare アカウント（Worker をデプロイ済みのアカウント）
+  - 許可する Google アカウント: tomimori.systems4150@gmail.com
+  - wrangler CLI（Account ID 確認用）
+
+【ダッシュボード URL】
+
+  Zero Trust ホーム:
+    https://one.dash.cloudflare.com/
+
+  Access アプリ一覧（ログイン後）:
+    https://one.dash.cloudflare.com/
+    → 左メニュー「Access」→「Applications」
+
+  Identity Providers（Google 連携）:
+    https://one.dash.cloudflare.com/
+    → Settings → Authentication → Login methods
+
+================================================================================
+1. Account ID の確認
+================================================================================
+
+PowerShell:
+
+  cd "c:\Users\user\reservation-liff-app\cloudflare-worker"
+  npx wrangler whoami
+
+表示される Account ID を控えておく（API 設定時に使用）。
+
+================================================================================
+2. Zero Trust の有効化（初回のみ）
+================================================================================
+
+1. https://one.dash.cloudflare.com/ を開く
+2. 初回は Zero Trust チーム名の設定を求められる
+3. 「Custom team domain」を有効化（例: yourteam.cloudflareaccess.com）
+   ※ 無料プランでも利用可能。Access ポリシー適用に必要
+
+================================================================================
+3. Google Identity Provider の追加
+================================================================================
+
+1. Zero Trust → Settings → Authentication
+2. 「Login methods」→「Add new」→ Google
+3. Google Cloud Console で OAuth クライアントを作成（Zero Trust 案内に従う）
+4. 保存後、Google ログインが Identity Provider として使えることを確認
+
+※ One-time PIN も併用可能だが、本システムは Gmail 固定のため Google 推奨
+
+================================================================================
+4. Access Application の作成
+================================================================================
+
+1. Zero Trust → Access → Applications →「Add an application」
+2. 「Self-hosted」を選択
+
+【Application 設定】
+
+  Application name :
+    Deploy Support Console
+
+  Session Duration :
+    24 hours（任意。短くする場合は 8 hours 等）
+
+  Application domain:
+    Subdomain : reservation-onboarding
+    Domain    : reservation-onboarding.workers.dev
+    （workers.dev ドメインを選択）
+
+  Path:
+    /admin
+    ※ 末尾スラッシュなし。/admin/login, /admin/api/* も含めたい場合は
+      「Path」に /admin と入力（サブパスは通常マッチ）
+
+3. 「Next」→ Policies へ
+
+================================================================================
+5. Access Policy（Allow）の作成
+================================================================================
+
+1. Policy name : Allow admin Gmail only
+2. Action      : Allow
+3. Configure rules → Include:
+     Selector : Emails
+     Value    : tomimori.systems4150@gmail.com
+4. 他の Include 条件は追加しない（デフォルト deny）
+5. Save application
+
+【確認】
+
+  Policy 評価順: Allow が1件あれば OK
+  複数 Gmail を許可する場合は Emails にカンマ区切りで追加
+
+================================================================================
+6. Worker 側シークレットの設定
+================================================================================
+
+Access 設定が完了したら、Worker に以下を設定する。
+
+■ 必須（Access 有効化後）
+
+  npx wrangler secret put ADMIN_REQUIRE_ACCESS
+  入力: true
+
+■ 任意（許可メールの明示。未設定時はコード内デフォルトを使用）
+
+  npx wrangler secret put ADMIN_ALLOWED_EMAILS
+  入力: tomimori.systems4150@gmail.com
+
+■ Worker コードのデプロイ（第2層 Cookie ログインを有効化）
+
+  cd "c:\Users\user\reservation-liff-app\cloudflare-worker"
+  npx wrangler deploy
+
+================================================================================
+7. 動作確認チェックリスト
+================================================================================
+
+□ 未ログインで /admin を開く
+    → Cloudflare Access の Google ログイン画面が表示される
+
+□ tomimori.systems4150@gmail.com 以外の Google アカウント
+    → Access でブロックされる（403 等）
+
+□ 許可 Gmail でログイン後 /admin/login が表示される
+    → 管理パスワード（ADMIN_SECRET_KEY）を入力
+
+□ ログイン成功後 /admin が表示される
+    → URL に ?key= が無いこと
+
+□ ブラウザの開発者ツール → Network
+    → /admin/api/push-update の URL に key が含まれないこと
+    → Cookie: admin_session が付与されていること
+
+□ /admin/logout でログアウト → 再ログインが求められること
+
+================================================================================
+8. ブックマーク・運用情報の更新
+================================================================================
+
+【旧】（廃止予定）
+  https://reservation-onboarding.reservation-onboarding.workers.dev/admin?key=...
+
+【新】
+  https://reservation-onboarding.reservation-onboarding.workers.dev/admin
+
+運用管理情報.md の管理 URL も上記に更新すること。
+ADMIN_SECRET_KEY は引き続き /admin/login のパスワードとして使用（URL には載せない）。
+
+================================================================================
+9. トラブルシューティング
+================================================================================
+
+【症状】Access ログイン後も 403 Forbidden
+
+  原因: ADMIN_ALLOWED_EMAILS とログイン Gmail が不一致
+  対処: wrangler secret put ADMIN_ALLOWED_EMAILS で正しい Gmail を設定
+
+【症状】Access を通過するが /admin/login が無限ループ
+
+  原因: ADMIN_SECRET_KEY 未設定 / Cookie がブロック
+  対処:
+    - wrangler secret list で ADMIN_SECRET_KEY を確認
+    - ブラウザのサードパーティ Cookie ブロックを確認
+    - シークレットウィンドウで再試行
+
+【症状】/admin?key=旧キー でも入れない
+
+  意図: 第2層移行後は key のみでは不十分な場合あり
+  対処: Access ログイン → /admin/login でパスワード入力
+  旧 key URL は初回のみ Cookie 移行リダイレクトを試みるが Access 必須時は先に Access が必要
+
+【症状】API が 401 Unauthorized
+
+  原因: セッション Cookie 期限切れ（8時間）
+  対処: /admin/login で再ログイン
+
+【症状】Access 設定前に ADMIN_REQUIRE_ACCESS=true にした
+
+  対処: 先に Access Application を作成してから true にする
+        または一時的に secret を削除して Access 設定完了後に再設定
+
+================================================================================
+10. （参考）Cloudflare API で設定する場合
+================================================================================
+
+wrangler には Access 専用コマンドはない。API または Terraform を使用。
+
+API ドキュメント:
+  https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
+
+エンドポイント:
+  POST https://api.cloudflare.com/client/v4/accounts/{account_id}/access/apps
+
+必要な API トークン権限:
+  Account → Access: Apps and Policies → Edit
+
+Terraform:
+  cloudflare_zero_trust_access_application
+  cloudflare_zero_trust_access_policy
+
+初回設定はダッシュボードが最も確実。IaC 化は設定安定後を推奨。
+
+================================================================================
+11. 関連ドキュメント
+================================================================================
+
+  セキュリティ設計書.md          … 認証全体の設計
+  アーキテクチャ・データフロー図.md … 環境横断のフロー
+  cloudflare-worker/wrangler.toml … シークレット一覧コメント
+  運用管理情報.md                … 秘密情報・URL（gitignore）
+
+================================================================================
+EOF
+================================================================================

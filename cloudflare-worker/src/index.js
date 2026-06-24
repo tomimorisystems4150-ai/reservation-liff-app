@@ -7,7 +7,40 @@
  *   GET /start     - Google OAuth 認可フロー開始
  *   GET /callback  - OAuth コールバック・プロビジョニング実行
  *   GET /complete  - 完了ページ（URLと次の手順を表示）
+ *   GET /admin/login     - 管理ログイン（POST でパスワード → Cookie）
+ *   GET /admin/logout    - ログアウト
+ *   GET /admin           - デプロイ支援コンソール（Web GUI）
+ *   POST /admin/api/push-update  - コード配信 API
+ *   POST /admin/api/set-status   - 停止/再開 API
+ *   GET /admin/init-registry   - 顧客台帳シート初期化
+ *   GET /admin/set-status      - サービス停止/再開（ssId指定）
+ *   GET /admin/push-update     - コード配信（ssId / ssIds 指定可）
+ *   GET /admin/kv-cleanup      - 壊れたKVエントリ削除
+ *   GET /ics                   - LIFF 向け ICS 配信（Google アカウント非依存）
  */
+
+import {
+  REGISTRY_SHEET,
+  REGISTRY_HEADERS,
+  initCustomerRegistrySheet,
+  upsertRegistryCustomer,
+} from './customer-registry.js';
+import {
+  fetchAdminCustomers,
+  isSpreadsheetAvailable,
+  executePushUpdate,
+  executeSetStatus,
+  handleAdminApiPush,
+  handleAdminApiSetStatus,
+  renderAdminConsole,
+  resolveTestEnvContext,
+} from './admin-console.js';
+import {
+  handleAdminLogin,
+  handleAdminLogout,
+  adminAuthOrRedirect,
+  adminAuthOrJsonError,
+} from './admin-auth.js';
 
 const GOOGLE_AUTH_URL  = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -47,10 +80,18 @@ export default {
         case '/start':              return handleStart(request, env);
         case '/callback':           return handleCallback(request, env);
         case '/complete':           return handleComplete(url, env);
+        case '/admin/login':        return handleAdminLogin(request, env);
+        case '/admin/logout':       return handleAdminLogout(request, env);
         case '/admin':              return handleAdmin(request, env);
+        case '/admin/api/push-update': return handleAdminApiPushRoute(request, env);
+        case '/admin/api/set-status':  return handleAdminApiSetStatusRoute(request, env);
+        case '/admin/init-registry': return handleInitRegistry(request, env);
+        case '/admin/sync-registry': return handleSyncRegistry(request, env);
+        case '/admin/set-status':   return handleSetStatus(request, env);
         case '/admin/push-update':  return handlePushUpdate(request, env);
         case '/admin/kv-cleanup':   return handleKvCleanup(request, env);
         case '/privacy':            return handlePrivacy();
+        case '/ics':                return handleIcsServe(url);
         default:           return new Response('Not Found', { status: 404 });
       }
     } catch (err) {
@@ -61,52 +102,49 @@ export default {
 };
 
 // ============================================================
-// 開発者用管理ページ（導入台帳 — 顧客データなし）
+// デプロイ支援コンソール（Web GUI）
+// 認証: Cloudflare Access（Gmail）+ HttpOnly セッション Cookie
 // ============================================================
+function pushUpdateDeps(env) {
+  return {
+    getSaToken: getServiceAccountToken,
+    fetchRawFiles,
+    pushCodeToCustomer,
+    syncServiceSuspendedToCustomer,
+    kvGet: (key) => env.ONBOARDING_KV.get(key),
+    kvPut: (key, val, opts) => env.ONBOARDING_KV.put(key, val, opts),
+    kvList: () => env.ONBOARDING_KV.list({ prefix: 'store:' }),
+  };
+}
+
 async function handleAdmin(request, env) {
-  // 簡易パスワード保護
-  const url    = new URL(request.url);
-  const secret = url.searchParams.get('key');
-  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
-    return new Response('Unauthorized', { status: 401 });
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
+
+  const kvList = await env.ONBOARDING_KV.list({ prefix: 'store:' });
+  const kvMap = {};
+  for (const k of kvList.keys) {
+    const raw = await env.ONBOARDING_KV.get(k.name);
+    if (raw) kvMap[k.name.replace(/^store:/, '')] = JSON.parse(raw);
   }
 
-  // KVから全導入レコードを取得
-  const list = await env.ONBOARDING_KV.list({ prefix: 'store:' });
-  const records = await Promise.all(
-    list.keys.map(async k => {
-      const val = await env.ONBOARDING_KV.get(k.name);
-      return val ? JSON.parse(val) : null;
-    })
-  );
-  const valid = records.filter(Boolean).sort((a, b) =>
-    new Date(b.onboardedAt) - new Date(a.onboardedAt)
-  );
+  const adminData = await fetchAdminCustomers(env, kvMap, getServiceAccountToken);
+  const testEnv = await resolveTestEnvContext(env, adminData.customers, kvMap, getServiceAccountToken);
+  return new Response(renderAdminConsole(env, gate.auth, { ...adminData, testEnv }), {
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
 
-  const rows = valid.map(r => `
-    <tr>
-      <td>${escapeHtml(new Date(r.onboardedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }))}</td>
-      <td><a href="${escapeHtml(r.ssUrl)}" target="_blank">${escapeHtml(r.ssId)}</a></td>
-    </tr>
-  `).join('');
+async function handleAdminApiPushRoute(request, env) {
+  const gate = await adminAuthOrJsonError(request, env);
+  if (gate.response) return gate.response;
+  return handleAdminApiPush(request, env, pushUpdateDeps(env));
+}
 
-  const html = buildPage('導入台帳（開発者用）', `
-    <h2 style="margin-bottom:20px;">📋 導入台帳</h2>
-    <p style="color:#666; font-size:13px; margin-bottom:16px;">
-      ※ この画面にはスプレッドシートIDと導入日時のみ記録されています。顧客の予約・個人情報は含みません。
-    </p>
-    <table style="width:100%; border-collapse:collapse; font-size:14px;">
-      <thead>
-        <tr style="background:#f0f4f8;">
-          <th style="padding:10px; text-align:left; border-bottom:2px solid #dee2e6;">導入日時</th>
-          <th style="padding:10px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
-        </tr>
-      </thead>
-      <tbody>${rows || '<tr><td colspan="2" style="padding:20px; color:#999; text-align:center;">導入済み店舗はありません</td></tr>'}</tbody>
-    </table>
-    <p style="margin-top:20px; color:#999; font-size:12px;">合計: ${valid.length} 件</p>
-  `);
-  return htmlResponse(html);
+async function handleAdminApiSetStatusRoute(request, env) {
+  const gate = await adminAuthOrJsonError(request, env);
+  if (gate.response) return gate.response;
+  return handleAdminApiSetStatus(request, env, pushUpdateDeps(env));
 }
 
 // ============================================================
@@ -474,11 +512,32 @@ async function provision(accessToken, refreshToken, env, userEmail) {
   console.log('Step 6b: Updating KV record with scriptId and deploymentId...');
   onboardingRecord.scriptId    = scriptId;
   onboardingRecord.deploymentId = deploymentId;
+  if (userEmail) onboardingRecord.adminEmail = userEmail;
   await env.ONBOARDING_KV.put(
     `store:${ssId}`,
     JSON.stringify(onboardingRecord),
     { expirationTtl: 60 * 60 * 24 * 365 * 3 }
   );
+
+  // 顧客台帳スプレッドシートへ登録
+  if (env.CUSTOMER_REGISTRY_SS_ID) {
+    try {
+      await upsertRegistryCustomer(env, getServiceAccountToken, {
+        ssId,
+        adminEmail: userEmail || '',
+        deployUrl,
+        scriptId,
+        shopName: '',
+        paymentStatus: 'トライアル',
+        serviceStatus: '稼働中',
+      });
+    } catch (regErr) {
+      console.warn('顧客台帳登録に失敗（オンボーディングは継続）:', regErr.message);
+    }
+  }
+
+  // サービス停止フラグの初期値
+  await writeConfigValue(ssId, userAuth, 'serviceSuspended', 'false');
 
   console.log('Provisioning complete!', { ssId, scriptId, deployUrl });
   return { deployUrl, ssUrl, gasUrl };
@@ -595,7 +654,8 @@ async function writeConfigValue(spreadsheetId, authHeader, key, value) {
 // サービスアカウントのアクセストークンを取得
 // env.GOOGLE_SA_KEY にサービスアカウントのJSONキーを設定すること
 // ============================================================
-async function getServiceAccountToken(env) {
+async function getServiceAccountToken(env, scope) {
+  const saScope = scope || 'https://www.googleapis.com/auth/drive';
   if (!env.GOOGLE_SA_KEY) {
     throw new Error('GOOGLE_SA_KEY が設定されていません。Cloudflare Workers の Secrets に追加してください。');
   }
@@ -611,7 +671,7 @@ async function getServiceAccountToken(env) {
   const header  = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss:   sa.client_email,
-    scope: 'https://www.googleapis.com/auth/drive',
+    scope: saScope,
     aud:   'https://oauth2.googleapis.com/token',
     exp:   now + 3600,
     iat:   now,
@@ -680,91 +740,238 @@ async function refreshAccessToken(refreshToken, env) {
 }
 
 // ============================================================
-// 管理者: 全顧客の GAS プロジェクトに最新コードを配信
-// GET /admin/push-update?key=<ADMIN_SECRET_KEY>
+// Config: キーが無ければ行を追加してから値を書き込む
+// ============================================================
+async function ensureConfigValue(spreadsheetId, authHeader, key, value) {
+  const rangeRes = await fetch(
+    `${SHEETS_API}/${spreadsheetId}/values/Config!A:A`,
+    { headers: { Authorization: authHeader } }
+  );
+  const rangeData = await rangeRes.json();
+  if (rangeData.error) {
+    console.warn(`Config read warning (${key}):`, rangeData.error.message);
+    return;
+  }
+  const rows = rangeData.values || [];
+  const rowIndex = rows.findIndex(r => r[0] === key);
+  if (rowIndex === -1) {
+    const appendRes = await fetch(
+      `${SHEETS_API}/${spreadsheetId}/values/Config!A:B:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[key, value]] }),
+      }
+    );
+    const appendData = await appendRes.json();
+    if (appendData.error) console.warn(`Config append warning (${key}):`, appendData.error.message);
+    else console.log(`${key} appended to Config:`, value);
+  } else {
+    await writeConfigValue(spreadsheetId, authHeader, key, value);
+  }
+}
+
+async function syncServiceSuspendedToCustomer(ssId, serviceStatus, kvRecord, env) {
+  if (!kvRecord?.refreshToken) {
+    throw new Error('refreshToken 未保存のため Config 同期不可');
+  }
+  const tokens = await refreshAccessToken(kvRecord.refreshToken, env);
+  if (!tokens.access_token) {
+    throw new Error(`トークンリフレッシュ失敗: ${JSON.stringify(tokens.error || tokens)}`);
+  }
+  const auth = `Bearer ${tokens.access_token}`;
+  const suspended = serviceStatus === '停止';
+  await ensureConfigValue(ssId, auth, 'serviceSuspended', suspended ? 'true' : 'false');
+  if (tokens.refresh_token && tokens.refresh_token !== kvRecord.refreshToken) {
+    kvRecord.refreshToken = tokens.refresh_token;
+    await env.ONBOARDING_KV.put(`store:${ssId}`, JSON.stringify(kvRecord), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
+  }
+}
+
+async function pushCodeToCustomer(ssId, kvRecord, rawFiles, env) {
+  const { scriptId, deploymentId, refreshToken } = kvRecord;
+  if (!refreshToken || !scriptId || !deploymentId) {
+    return { ssId, status: 'skipped', reason: 'refreshToken/scriptId/deploymentId 未保存（再オンボーディングが必要）' };
+  }
+
+  const tokens = await refreshAccessToken(refreshToken, env);
+  if (!tokens.access_token) {
+    throw new Error(`トークンリフレッシュ失敗: ${JSON.stringify(tokens.error || tokens)}`);
+  }
+  const auth = `Bearer ${tokens.access_token}`;
+
+  if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+    kvRecord.refreshToken = tokens.refresh_token;
+    await env.ONBOARDING_KV.put(`store:${ssId}`, JSON.stringify(kvRecord), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
+  }
+
+  const files = substituteSpreadsheetId(rawFiles, ssId);
+  const content = await callApi(`${SCRIPT_API}/projects/${scriptId}/content`, 'PUT', auth, { files });
+  if (content.error) throw new Error(`content push 失敗: ${content.error.message}`);
+
+  const version = await callApi(`${SCRIPT_API}/projects/${scriptId}/versions`, 'POST', auth, {
+    description: `管理者プッシュ更新 ${new Date().toISOString()}`,
+  });
+  if (version.error) throw new Error(`version 作成失敗: ${version.error.message}`);
+
+  const updated = await callApi(
+    `${SCRIPT_API}/projects/${scriptId}/deployments/${deploymentId}`,
+    'PUT',
+    auth,
+    {
+      deploymentConfig: {
+        versionNumber:    version.versionNumber,
+        manifestFileName: 'appsscript',
+        description:      `管理者プッシュ更新 ${new Date().toISOString()}`,
+      },
+    }
+  );
+  if (updated.error) throw new Error(`deployment 更新失敗: ${updated.error.message}`);
+
+  return { ssId, status: 'success', versionNumber: version.versionNumber };
+}
+
+// ============================================================
+// 管理者: 顧客台帳シート初期化
+// GET /admin/init-registry?key=
+// ============================================================
+async function handleInitRegistry(request, env) {
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
+  try {
+    const result = await initCustomerRegistrySheet(env, getServiceAccountToken);
+    const html = buildPage('顧客台帳 初期化完了', `
+      <h2>✅ 顧客台帳シートを初期化しました</h2>
+      <p style="margin:16px 0;">シート名: <strong>${REGISTRY_SHEET}</strong></p>
+      <p><a href="${escapeHtml(result.sheetUrl)}" target="_blank">スプレッドシートを開く</a></p>
+      <p style="margin-top:16px; color:#666; font-size:13px;">列: ${REGISTRY_HEADERS.join(' / ')}</p>
+      <p style="margin-top:12px;"><a href="/admin/sync-registry">KVから既存顧客を台帳へ同期</a></p>
+    `);
+    return htmlResponse(html);
+  } catch (err) {
+    return renderError(escapeHtml(err.message));
+  }
+}
+
+// KVの導入記録を顧客台帳へ同期（既存顧客の移行用）
+async function handleSyncRegistry(request, env) {
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
+  if (!env.CUSTOMER_REGISTRY_SS_ID) {
+    return renderError('CUSTOMER_REGISTRY_SS_ID が未設定です。');
+  }
+
+  const list = await env.ONBOARDING_KV.list({ prefix: 'store:' });
+  const synced = [];
+  for (const kvKey of list.keys) {
+    const raw = await env.ONBOARDING_KV.get(kvKey.name);
+    if (!raw) continue;
+    const rec = JSON.parse(raw);
+    const ssId = rec.ssId || kvKey.name.replace(/^store:/, '');
+    try {
+      await upsertRegistryCustomer(env, getServiceAccountToken, {
+        ssId,
+        adminEmail: rec.adminEmail || '',
+        deployUrl: rec.deployUrl || '',
+        scriptId: rec.scriptId || '',
+        onboardedAt: rec.onboardedAt || new Date().toISOString(),
+        paymentStatus: 'トライアル',
+        serviceStatus: '稼働中',
+      });
+      synced.push(ssId);
+    } catch (e) {
+      synced.push(`${ssId} (error: ${e.message})`);
+    }
+  }
+
+  const html = buildPage('KV → 顧客台帳 同期', `
+    <h2>✅ ${synced.length} 件を同期しました</h2>
+    <ul style="margin-top:16px; font-family:monospace; font-size:12px;">
+      ${synced.map(s => `<li>${escapeHtml(s)}</li>`).join('') || '<li>対象なし</li>'}
+    </ul>
+    <p style="margin-top:20px;"><a href="/admin">← 顧客管理に戻る</a></p>
+  `);
+  return htmlResponse(html);
+}
+
+// ============================================================
+// 管理者: サービス停止 / 再開
+// GET /admin/set-status?ssId=&serviceStatus=停止|稼働中&paymentStatus=
+// ============================================================
+async function handleSetStatus(request, env) {
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
+
+  const url = new URL(request.url);
+  const ssId          = url.searchParams.get('ssId');
+  const serviceStatus = url.searchParams.get('serviceStatus');
+  const paymentStatus = url.searchParams.get('paymentStatus');
+
+  if (!ssId) return renderError('ssId パラメータが必要です。');
+  if (!serviceStatus && !paymentStatus) {
+    return renderError('serviceStatus または paymentStatus を指定してください。');
+  }
+
+  try {
+    const data = await executeSetStatus(env, pushUpdateDeps(env), {
+      ssId,
+      serviceStatus: serviceStatus || null,
+      paymentStatus: paymentStatus || null,
+    });
+
+    const html = buildPage('ステータス更新', `
+      <h2>✅ 顧客ステータスを更新しました</h2>
+      <p><strong>ssId:</strong> <code>${escapeHtml(ssId)}</code></p>
+      <p><strong>サービス状態:</strong> ${escapeHtml(data.updated.serviceStatus)}</p>
+      <p><strong>決済ステータス:</strong> ${escapeHtml(data.updated.paymentStatus)}</p>
+      <p><strong>GAS Config 同期:</strong> ${escapeHtml(data.configSync)}</p>
+      <p style="margin-top:20px;"><a href="/admin">← デプロイ支援コンソールに戻る</a></p>
+    `);
+    return htmlResponse(html);
+  } catch (err) {
+    return renderError(escapeHtml(err.message));
+  }
+}
+
+// ============================================================
+// 管理者: 指定顧客の GAS プロジェクトに最新コードを配信
+// GET /admin/push-update?ssId= | &ssIds=a,b | （省略時=稼働中全件）
 // ============================================================
 async function handlePushUpdate(request, env) {
-  const url    = new URL(request.url);
-  const secret = url.searchParams.get('key');
-  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
-    return new Response('Unauthorized', { status: 401 });
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
+
+  const url = new URL(request.url);
+  const ssIdParam  = url.searchParams.get('ssId');
+  const ssIdsParam = url.searchParams.get('ssIds');
+  let ssIds = null;
+  if (ssIdParam) ssIds = [ssIdParam.trim()];
+  else if (ssIdsParam) ssIds = ssIdsParam.split(',').map(s => s.trim()).filter(Boolean);
+
+  const includeStopped = url.searchParams.get('includeStopped') === '1';
+
+  let data;
+  try {
+    data = await executePushUpdate(env, pushUpdateDeps(env), { ssIds, includeStopped, allActive: !ssIds?.length });
+  } catch (err) {
+    return renderError(escapeHtml(err.message));
   }
 
-  // KVから全導入レコードを取得
-  const list    = await env.ONBOARDING_KV.list({ prefix: 'store:' });
-  const results = [];
+  const { targetDesc, results, successCount, skipCount, errorCount } = data;
 
-  // GitHub ファイルはループ外で1回だけ取得（subrequest 節約）
-  const rawFiles = await fetchRawFiles(env);
-
-  for (const kvKey of list.keys) {
-    const raw    = await env.ONBOARDING_KV.get(kvKey.name);
-    const record = raw ? JSON.parse(raw) : null;
-    if (!record) continue;
-
-    const { ssId, scriptId, deploymentId, refreshToken } = record;
-
-    // 古いレコード（refreshToken/scriptId未保存）はスキップ
-    if (!refreshToken || !scriptId || !deploymentId) {
-      results.push({ ssId, status: 'skipped', reason: 'refreshToken/scriptId/deploymentId 未保存（再オンボーディングが必要）' });
-      continue;
-    }
-
-    try {
-      // アクセストークンをリフレッシュ
-      const tokens = await refreshAccessToken(refreshToken, env);
-      if (!tokens.access_token) {
-        throw new Error(`トークンリフレッシュ失敗: ${JSON.stringify(tokens.error || tokens)}`);
-      }
-      const auth = `Bearer ${tokens.access_token}`;
-
-      // refresh_token がローテーションされた場合はKVを更新
-      if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
-        record.refreshToken = tokens.refresh_token;
-        await env.ONBOARDING_KV.put(kvKey.name, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
-      }
-
-      // 取得済みファイルに顧客のスプレッドシートIDを埋め込む（外部リクエストなし）
-      const files = substituteSpreadsheetId(rawFiles, ssId);
-
-      // GAS プロジェクトにコンテンツをプッシュ
-      const content = await callApi(`${SCRIPT_API}/projects/${scriptId}/content`, 'PUT', auth, { files });
-      if (content.error) throw new Error(`content push 失敗: ${content.error.message}`);
-
-      // 新バージョン作成
-      const version = await callApi(`${SCRIPT_API}/projects/${scriptId}/versions`, 'POST', auth, {
-        description: `管理者プッシュ更新 ${new Date().toISOString()}`,
-      });
-      if (version.error) throw new Error(`version 作成失敗: ${version.error.message}`);
-
-      // 既存デプロイを新バージョンに更新（URLは変わらない）
-      const updated = await callApi(
-        `${SCRIPT_API}/projects/${scriptId}/deployments/${deploymentId}`,
-        'PUT',
-        auth,
-        {
-          deploymentConfig: {
-            versionNumber:    version.versionNumber,
-            manifestFileName: 'appsscript',
-            description:      `管理者プッシュ更新 ${new Date().toISOString()}`,
-          },
-        }
-      );
-      if (updated.error) throw new Error(`deployment 更新失敗: ${updated.error.message}`);
-
-      results.push({ ssId, status: 'success', versionNumber: version.versionNumber });
-    } catch (err) {
-      console.error(`push-update error for ${ssId}:`, err.message);
-      results.push({ ssId, status: 'error', reason: err.message });
-    }
+  if (results.length === 0) {
+    const html = buildPage('コード更新配信結果', `
+      <h2>🚀 コード更新配信結果</h2>
+      <p>対象: ${escapeHtml(targetDesc)}</p>
+      <p style="color:#999; margin-top:16px;">配信対象の顧客がありません。</p>
+      <p style="margin-top:20px;"><a href="/admin">← デプロイ支援コンソールに戻る</a></p>
+    `);
+    return htmlResponse(html);
   }
-
-  const successCount = results.filter(r => r.status === 'success').length;
-  const skipCount    = results.filter(r => r.status === 'skipped').length;
-  const errorCount   = results.filter(r => r.status === 'error').length;
 
   const html = buildPage('コード更新配信結果', `
     <h2 style="margin-bottom:20px;">🚀 コード更新配信結果</h2>
+    <p style="margin-bottom:12px; color:#555;">対象: <strong>${escapeHtml(targetDesc)}</strong></p>
     <p style="margin-bottom:16px; color:#555;">
       成功: <strong style="color:#06c755;">${successCount}</strong> 件 ／
       スキップ: <strong style="color:#999;">${skipCount}</strong> 件 ／
@@ -773,7 +980,7 @@ async function handlePushUpdate(request, env) {
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <thead>
         <tr style="background:#f0f4f8;">
-          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">スプレッドシートID</th>
+          <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">ssId</th>
           <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">結果</th>
           <th style="padding:8px; text-align:left; border-bottom:2px solid #dee2e6;">詳細</th>
         </tr>
@@ -786,27 +993,25 @@ async function handlePushUpdate(request, env) {
               ${r.status === 'success' ? '✅ 成功' : r.status === 'skipped' ? '⏭️ スキップ' : '❌ エラー'}
             </td>
             <td style="padding:8px; border-bottom:1px solid #eee; color:#666;">
-              ${escapeHtml(r.reason || (r.status === 'success' ? `v${r.versionNumber} にデプロイ済み` : ''))}
+              ${escapeHtml(r.reason || (r.status === 'success' ? `v${r.versionNumber} にデプロイ済み${r.configSyncWarning ? '（停止フラグ同期警告: ' + r.configSyncWarning + '）' : ''}` : ''))}
             </td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <p style="margin-top:20px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
+    <p style="margin-top:20px;"><a href="/admin">← デプロイ支援コンソールに戻る</a></p>
+    <p style="margin-top:8px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
   `);
   return htmlResponse(html);
 }
 
 // ============================================================
-// GET /admin/kv-cleanup?key=<ADMIN_SECRET_KEY>
+// GET /admin/kv-cleanup
 // 壊れた KV エントリ（refreshToken 未保存 or GASプロジェクト削除済み）を削除する。
 // ============================================================
 async function handleKvCleanup(request, env) {
-  const url    = new URL(request.url);
-  const secret = url.searchParams.get('key');
-  if (!env.ADMIN_SECRET_KEY || secret !== env.ADMIN_SECRET_KEY) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+  const gate = await adminAuthOrRedirect(request, env);
+  if (gate.response) return gate.response;
 
   const list    = await env.ONBOARDING_KV.list({ prefix: 'store:' });
   const deleted = [];
@@ -823,6 +1028,12 @@ async function handleKvCleanup(request, env) {
     }
 
     const { ssId, scriptId, deploymentId, refreshToken } = record;
+
+    if (ssId && !(await isSpreadsheetAvailable(env, getServiceAccountToken, ssId))) {
+      await env.ONBOARDING_KV.delete(kvKey.name);
+      deleted.push({ ssId, key: kvKey.name, reason: 'スプレッドシートが存在しない（削除済み）' });
+      continue;
+    }
 
     // refreshToken / scriptId / deploymentId が揃っていないエントリは再オンボーディング不可 → 削除
     if (!refreshToken || !scriptId || !deploymentId) {
@@ -899,7 +1110,8 @@ async function handleKvCleanup(request, env) {
           </tr>`).join('')}
       </tbody>
     </table>
-    <p style="margin-top:20px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
+    <p style="margin-top:20px;"><a href="/admin">← デプロイ支援コンソールに戻る</a></p>
+    <p style="margin-top:8px; color:#999; font-size:12px;">実行日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</p>
   `);
   return htmlResponse(html);
 }
@@ -1158,6 +1370,41 @@ function htmlResponse(html, status = 200) {
   return new Response(html, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+/**
+ * LIFF（iOS Safari）向け ICS 配信。
+ * script.google.com は Safari の Google ログイン状態で Drive エラーになるため、
+ * workers.dev 上で text/calendar を inline 返却する。
+ * GET /ics?d=<base64(utf8 ICS)>
+ */
+function handleIcsServe(url) {
+  const encoded = url.searchParams.get('d');
+  if (!encoded) {
+    return new Response('ICS data missing', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+
+  let icsContent;
+  try {
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    icsContent = new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return new Response('Invalid ICS data', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+
+  if (!icsContent.includes('BEGIN:VCALENDAR')) {
+    return new Response('Invalid ICS format', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+
+  return new Response(icsContent, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': 'inline; filename="reservation.ics"',
+      'Cache-Control': 'no-store',
+    },
   });
 }
 
