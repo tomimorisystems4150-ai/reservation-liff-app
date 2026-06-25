@@ -5,7 +5,8 @@
  * ルート:
  *   GET /          - ランディングページ（導入開始ボタン）
  *   GET /start     - Google OAuth 認可フロー開始
- *   GET /callback  - OAuth コールバック・プロビジョニング実行
+ *   GET /callback   - OAuth コールバック・プロビジョニング実行
+ *   GET /continue-setup - STEP 0 完了後にプロビジョニング再開
  *   GET /complete  - 完了ページ（URLと次の手順を表示）
  *   GET /admin/login     - 管理ログイン（POST でパスワード → Cookie）
  *   GET /admin/logout    - ログアウト
@@ -16,7 +17,7 @@
  *   GET /admin/set-status      - サービス停止/再開（ssId指定）
  *   GET /admin/push-update     - コード配信（ssId / ssIds 指定可）
  *   GET /admin/kv-cleanup      - 壊れたKVエントリ削除
- *   GET /ics                   - LIFF 向け ICS 配信（Google アカウント非依存）
+ *   GET /docs/initial-setup-manual - 初期導入マニュアル（仮）
  */
 
 import {
@@ -47,6 +48,16 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_API        = 'https://www.googleapis.com/drive/v3';
 const SHEETS_API       = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SCRIPT_API       = 'https://script.googleapis.com/v1';
+const APPS_SCRIPT_USER_SETTINGS_URL = 'https://script.google.com/home/usersettings';
+const OPERATIONS_MANUAL_PATH = '/docs/initial-setup-manual';
+
+/** 環境変数未設定時は Worker 上の仮マニュアルページを返す */
+function getOperationsManualUrl(env) {
+  const configured = (env.OPERATIONS_MANUAL_URL || '').trim();
+  if (configured) return configured;
+  const base = (env.WORKER_URL || '').replace(/\/$/, '');
+  return base ? `${base}${OPERATIONS_MANUAL_PATH}` : '';
+}
 
 // GAS デプロイに必要な OAuth スコープ
 // Drive操作はサービスアカウントが行うため、ユーザーにはDriveスコープを要求しない
@@ -80,6 +91,7 @@ export default {
         case '/':                   return handleIndex(env);
         case '/start':              return handleStart(request, env);
         case '/callback':           return handleCallback(request, env);
+        case '/continue-setup':     return handleContinueSetup(request, env);
         case '/complete':           return handleComplete(url, env);
         case '/admin/login':        return handleAdminLogin(request, env);
         case '/admin/logout':       return handleAdminLogout(request, env);
@@ -92,11 +104,15 @@ export default {
         case '/admin/push-update':  return handlePushUpdate(request, env);
         case '/admin/kv-cleanup':   return handleKvCleanup(request, env);
         case '/privacy':            return handlePrivacy();
+        case '/docs/initial-setup-manual': return handleInitialSetupManual();
         case '/ics':                return handleIcsServe(url);
         default:           return new Response('Not Found', { status: 404 });
       }
     } catch (err) {
       console.error('Unhandled error:', err);
+      if (isAppsScriptApiDisabledMessage(err.message)) {
+        return renderProvisionError(err);
+      }
       return renderError(`予期しないエラーが発生しました。<br><code>${escapeHtml(err.message)}</code>`);
     }
   },
@@ -149,51 +165,197 @@ async function handleAdminApiSetStatusRoute(request, env) {
 }
 
 // ============================================================
+// Apps Script API（ユーザー設定）— 自動 ON 不可のため UX で案内
+// ============================================================
+function isAppsScriptApiDisabledMessage(message) {
+  const msg = String(message || '');
+  return msg.includes('has not enabled the Apps Script API');
+}
+
+function buildAppsScriptApiHelpHtml() {
+  return `
+    <p style="text-align:left;">自動セットアップの前に、<strong>導入に使う Google アカウント</strong>で次の設定が必要です（初回のみ・約1分）。</p>
+    <ol class="help-steps">
+      <li>下のボタンから Google の設定ページを開く</li>
+      <li><strong>「Google Apps Script API」</strong> のスイッチを<strong>オン</strong>にする</li>
+      <li>このページに戻り、導入を続ける</li>
+    </ol>
+    <p style="text-align:center;margin:20px 0;">
+      <a href="${APPS_SCRIPT_USER_SETTINGS_URL}" target="_blank" rel="noopener noreferrer" class="btn-outline-link">
+        Google Apps Script API の設定を開く
+      </a>
+    </p>
+    <p class="help-note">※ 設定をオンにした直後は、反映まで数分かかることがあります。</p>
+  `;
+}
+
+/** ユーザーの Apps Script API（usersettings）が ON か軽量プローブで確認 */
+async function checkAppsScriptApiEnabled(userAuth) {
+  const probe = await callApi(
+    `${SCRIPT_API}/projects`,
+    'POST',
+    userAuth,
+    { title: '__onboarding_api_probe__' }
+  );
+  if (probe.error) {
+    if (isAppsScriptApiDisabledMessage(probe.error.message)) return false;
+    console.warn('Apps Script API probe (non-disable):', probe.error.message);
+    return true;
+  }
+  if (probe.scriptId) {
+    try {
+      await callApi(`${SCRIPT_API}/projects/${probe.scriptId}`, 'DELETE', userAuth, null);
+    } catch (e) {
+      console.warn('Probe project cleanup skipped:', e.message);
+    }
+  }
+  return true;
+}
+
+async function saveResumeSession(env, session) {
+  const resumeId = crypto.randomUUID();
+  await env.ONBOARDING_KV.put(
+    `resume:${resumeId}`,
+    JSON.stringify(session),
+    { expirationTtl: 1800 }
+  );
+  return resumeId;
+}
+
+function renderAppsScriptApiSetupPage(resumeId, env, { stillDisabled = false } = {}) {
+  const continueUrl = `${env.WORKER_URL}/continue-setup?id=${encodeURIComponent(resumeId)}`;
+  const warn = stillDisabled
+    ? `<p class="step-zero-warn">まだ設定が反映されていない可能性があります。オンにしてから数分待ってから「続行」を押してください。</p>`
+    : '';
+  const html = buildPage('あと1ステップでセットアップできます', `
+    <div class="page-preflight">
+    <div class="preflight-banner">
+      <h1 class="preflight-title">Google の設定が1つ必要です</h1>
+      <p class="preflight-lead">Google ログインは完了しました。自動構築を続ける前に、下記の設定をお願いします。</p>
+    </div>
+    ${buildAppsScriptApiHelpHtml()}
+    ${warn}
+    <div class="cta-area" style="margin-top:28px;">
+      <a href="${escapeHtml(continueUrl)}" class="btn-start">設定したので続行する</a>
+      <p class="note"><a href="/" style="color:#888;">最初からやり直す</a></p>
+    </div>
+    </div>
+  `);
+  return htmlResponse(html);
+}
+
+function isJsonParseOrHtmlError(message) {
+  const msg = String(message || '');
+  return msg.includes('is not valid JSON')
+    || msg.includes('HTML エラーページ')
+    || msg.includes('応答の解析に失敗');
+}
+
+function renderProvisionError(err) {
+  const message = err?.message || String(err);
+  if (isAppsScriptApiDisabledMessage(message)) {
+    const html = buildPage('設定が必要です', `
+      <div class="error-box" style="text-align:left;">
+        <h2 style="text-align:center;">⚠️ セットアップを続けるには設定が必要です</h2>
+        ${buildAppsScriptApiHelpHtml()}
+        <p style="text-align:center;margin-top:20px;">
+          <a href="/" class="btn-start" style="display:inline-flex;">設定後、最初からやり直す</a>
+        </p>
+      </div>
+    `);
+    return htmlResponse(html, 500);
+  }
+  if (isJsonParseOrHtmlError(message)) {
+    return renderError(
+      `セットアップ中に通信エラーが発生しました。<br><br>` +
+      `Google API が正しく応答しませんでした。次を確認してください：<br>` +
+      `・OAuth クライアントの GCP プロジェクトで <strong>Apps Script API</strong> / <strong>Google Sheets API</strong> が有効<br>` +
+      `・<strong>Apps Script API をオンにした Googleアカウント</strong>でセットアップしている<br>` +
+      `・数分待ってから <a href="/">最初から</a> 再試行<br><br>` +
+      `<details style="text-align:left;font-size:12px;color:#888;"><summary>技術詳細</summary>` +
+      `<code>${escapeHtml(message)}</code></details>`
+    );
+  }
+  return renderError(
+    `セットアップ中にエラーが発生しました。<br><code>${escapeHtml(message)}</code><br><br>
+      もう一度 <a href="/">最初から</a> お試しください。`
+  );
+}
+
+// ============================================================
 // ランディングページ
 // ============================================================
 function handleIndex(env) {
   const html = buildPage('LINE予約システム 導入ガイド', `
+    <div class="page-landing">
     <div class="hero">
-      <div class="logo">📅</div>
       <h1>LINE予約システム</h1>
-      <p class="subtitle">3ステップで導入完了</p>
     </div>
 
     <div class="steps">
       <div class="step">
         <div class="step-num">1</div>
         <div class="step-body">
-          <strong>Googleアカウントでログイン</strong>
-          <span>スプレッドシートとスクリプトの作成権限を許可します</span>
+          <strong>Google Apps Script APIをオンにする</strong>
         </div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <div class="step-body">
-          <strong>自動セットアップ（約30秒）</strong>
-          <span>スプレッドシート・GASプロジェクト・デプロイを自動作成します</span>
+          <strong>Googleアカウントでログイン</strong>
         </div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-body">
-          <strong>LINE DevelopersにURLを設定</strong>
-          <span>発行されたURLを2箇所に貼り付けるだけで完了です</span>
+          <div class="step-title"><strong>自動セットアップ</strong><span class="step-note">※約3分</span></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>予約システム設定画面で初期設定・保存</strong>
         </div>
       </div>
     </div>
 
-    <div class="cta-area">
-      <a href="/start" class="btn-start">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-          <polyline points="10 17 15 12 10 7"/>
-          <line x1="15" y1="12" x2="3" y2="12"/>
-        </svg>
-        Googleアカウントで導入開始
-      </a>
-      <p class="note">※ Googleドライブにスプレッドシートとスクリプトが作成されます</p>
+    <div class="setup-notice">
+      <p><strong>セットアップ時の注意：</strong>Google Apps Script API をオンにした<strong>Googleアカウント</strong>でセットアップしてください。</p>
     </div>
+
+    <div class="cta-area">
+      <a href="${APPS_SCRIPT_USER_SETTINGS_URL}" target="_blank" rel="noopener noreferrer" class="btn-pill btn-settings">
+        Google Apps Script API をオンにする
+      </a>
+      <a href="/start" class="btn-pill btn-start btn-start-gated" id="btnStart" tabindex="-1" aria-disabled="true">
+        セットアップ開始
+      </a>
+      <label class="step-zero-check cta-check">
+        <input type="checkbox" id="step0Check">
+        <span>Google Apps Script API をオンにしました</span>
+      </label>
+    </div>
+    </div>
+    <script>
+      (function() {
+        const chk = document.getElementById('step0Check');
+        const btn = document.getElementById('btnStart');
+        function sync() {
+          const ok = chk.checked;
+          btn.classList.toggle('btn-start-ready', ok);
+          btn.setAttribute('aria-disabled', ok ? 'false' : 'true');
+          btn.tabIndex = ok ? 0 : -1;
+        }
+        chk.addEventListener('change', sync);
+        btn.addEventListener('click', function(e) {
+          if (!chk.checked) {
+            e.preventDefault();
+            alert('Google Apps Script API をオンにし、チェックを入れてから開始してください。');
+          }
+        });
+        sync();
+      })();
+    </script>
   `);
   return htmlResponse(html);
 }
@@ -241,61 +403,85 @@ async function handleCallback(request, env) {
   }
   await env.ONBOARDING_KV.delete(`state:${state}`);
 
-  // プログレス画面を先に返し、裏でプロビジョニングを実行
-  // → Workers の waitUntil を使って非同期実行
-  // ただし Worker は streaming response が限定的なので、同期的に進捗表示なしで実行する
-  const progressHtml = buildPage('セットアップ中...', `
-    <div style="text-align:center; padding: 60px 20px;">
-      <div class="spinner"></div>
-      <h2 style="margin-top:24px; color:#333;">セットアップ中です...</h2>
-      <p style="color:#666; margin-top:8px;">スプレッドシートとGASプロジェクトを自動作成しています。<br>このまましばらくお待ちください（約30秒）。</p>
-    </div>
-    <style>
-      .spinner { width:56px; height:56px; border:5px solid #e0e0e0; border-top-color:#06c755;
-                 border-radius:50%; animation:spin 1s linear infinite; margin:0 auto; }
-      @keyframes spin { to { transform:rotate(360deg); } }
-    </style>
-    <script>
-      // トークン交換とプロビジョニングは別リクエストで実行させるため、
-      // このページからAPI呼び出しを行う
-      (async () => {
-        try {
-          const res = await fetch('/provision', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: ${JSON.stringify(code)}, state: ${JSON.stringify(state)} })
-          });
-          const data = await res.json();
-          if (data.error) throw new Error(data.error);
-          const params = new URLSearchParams({
-            deployUrl: data.deployUrl,
-            ssUrl:     data.ssUrl,
-            gasUrl:    data.gasUrl,
-          });
-          location.href = '/complete?' + params;
-        } catch(e) {
-          document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#d32f2f;font-size:16px;">エラーが発生しました: ' + e.message + '<br><br><a href="/">最初からやり直す</a></div>';
-        }
-      })();
-    </script>
-  `);
-
-  // 実際はシンプルに同期実行してリダイレクトする方式に変更
-  // (Workers Streaming の制限を回避)
   let result;
   try {
     const tokens = await exchangeCodeForTokens(code, env);
     if (!tokens.access_token) {
       throw new Error(`トークン取得失敗: ${JSON.stringify(tokens.error || tokens)}`);
     }
-    // id_token（JWT）からメール取得 → 失敗時はuserinfo APIにフォールバック
     const userEmail = getEmailFromIdToken(tokens.id_token) || await getUserEmail(tokens.access_token);
     console.log('onboarding userEmail:', userEmail);
+
+    const userAuth = `Bearer ${tokens.access_token}`;
+    const apiReady = await checkAppsScriptApiEnabled(userAuth);
+    if (!apiReady) {
+      console.log('Apps Script API not enabled for user; showing setup page');
+      const resumeId = await saveResumeSession(env, {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        userEmail: userEmail || '',
+      });
+      return renderAppsScriptApiSetupPage(resumeId, env);
+    }
+
     result = await provision(tokens.access_token, tokens.refresh_token, env, userEmail);
   } catch (err) {
     console.error('Provision error:', err);
-    return renderError(`セットアップ中にエラーが発生しました。<br><code>${escapeHtml(err.message)}</code><br><br>
-      もう一度 <a href="/">最初から</a> お試しください。`);
+    return renderProvisionError(err);
+  }
+
+  const params = new URLSearchParams({
+    deployUrl: result.deployUrl,
+    ssUrl:     result.ssUrl,
+    gasUrl:    result.gasUrl,
+    triggersSetup: result.triggersSetup ? '1' : '0',
+  });
+  return Response.redirect(`${env.WORKER_URL}/complete?${params}`, 302);
+}
+
+// ============================================================
+// STEP 0 完了後 — 保存済み OAuth でプロビジョニング再開
+// ============================================================
+async function handleContinueSetup(request, env) {
+  const url = new URL(request.url);
+  const resumeId = url.searchParams.get('id');
+  if (!resumeId) {
+    return renderError('無効なリンクです。<a href="/">最初から</a> お試しください。');
+  }
+
+  const raw = await env.ONBOARDING_KV.get(`resume:${resumeId}`);
+  if (!raw) {
+    return renderError(
+      'セットアップの再開期限（30分）が切れました。<br><br><a href="/">最初から</a> お試しください。'
+    );
+  }
+
+  let session;
+  try {
+    session = JSON.parse(raw);
+  } catch {
+    return renderError('セッション情報が不正です。<a href="/">最初から</a> お試しください。');
+  }
+
+  const userAuth = `Bearer ${session.accessToken}`;
+  const apiReady = await checkAppsScriptApiEnabled(userAuth);
+  if (!apiReady) {
+    return renderAppsScriptApiSetupPage(resumeId, env, { stillDisabled: true });
+  }
+
+  await env.ONBOARDING_KV.delete(`resume:${resumeId}`);
+
+  let result;
+  try {
+    result = await provision(
+      session.accessToken,
+      session.refreshToken,
+      env,
+      session.userEmail || ''
+    );
+  } catch (err) {
+    console.error('Provision error (continue):', err);
+    return renderProvisionError(err);
   }
 
   const params = new URLSearchParams({
@@ -312,75 +498,63 @@ async function handleCallback(request, env) {
 // ============================================================
 function handleComplete(url, env) {
   const deployUrl = url.searchParams.get('deployUrl') || '';
-  const gasUrl    = url.searchParams.get('gasUrl')    || '';
-  const triggersSetup = url.searchParams.get('triggersSetup') !== '0';
+  const manualUrl = getOperationsManualUrl(env);
+  const manualLink = manualUrl
+    ? `<p class="manual-link">LINE設定・GoogleカレンダーIDの取得方法は<a href="${escapeHtml(manualUrl)}" target="_blank" rel="noopener noreferrer">初期導入マニュアル</a>を参照してください。</p>`
+    : '';
 
-  const triggersNotice = triggersSetup
-    ? `<p style="margin:12px 0 0; color:#2e7d32; font-size:14px;">✅ バックグラウンド用トリガー（7種）の自動設定を試行しました。</p>`
-    : `<p style="margin:12px 0 0; color:#e65100; font-size:14px;">⚠️ トリガーの自動設定はスキップされました。<strong>設定画面を開いて権限許可後、保存</strong>すると登録されます（§14.5）。</p>`;
+  const html = buildPage('自動セットアップ完了', `
+    <div class="page-complete page-landing">
+    <div class="hero">
+      <h1>LINE予約システム</h1>
+    </div>
 
-  // LIFF 予約画面（GitHub Pages）。GAS URL とは別物。
-  const repo     = env.GITHUB_REPO || 'tomimorisystems4150-ai/reservation-liff-app';
-  const [owner, name] = repo.split('/');
-  const liffBaseUrl = `https://${owner}.github.io/${name}/liff.html`;
-  const liffEndpointTemplate = `${liffBaseUrl}?gasApiUrl=${encodeURIComponent(deployUrl)}&liffId=【LIFF ID】`;
-
-  const html = buildPage('セットアップ完了！', `
-    <div class="success-banner">
-      <div class="success-icon">✅</div>
-      <h1>セットアップ完了！</h1>
-      <p>システムの自動構築が完了しました。</p>
-      ${triggersNotice}
+    <div class="steps">
+      <div class="step step-done">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Google Apps Script APIをオンにする</strong>
+        </div>
+      </div>
+      <div class="step step-done">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Googleアカウントでログイン</strong>
+        </div>
+      </div>
+      <div class="step step-done">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title"><strong>自動セットアップ</strong><span class="step-note">※約3分 · 完了</span></div>
+        </div>
+      </div>
+      <div class="step step-current">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>予約システム設定画面で初期設定・保存</strong>
+        </div>
+      </div>
     </div>
 
     <div class="url-card">
-      <div class="url-label">🌐 システムURL（大切に保管してください）</div>
+      <div class="url-label">システムURL（大切に保管してください）</div>
       <a class="url-value url-link" id="deployUrl" href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(deployUrl)}</a>
-      <button class="copy-btn" onclick="copyUrl(this)">コピー</button>
-      <p class="url-note">⚠️ このURLが予約システムの入口です。必ずブックマークしてください。</p>
-    </div>
-
-    <div class="next-steps">
-      <h2>📋 次の手順</h2>
-
-      <div style="background:#e8f5e9; border:2px solid #4caf50; border-radius:12px; padding:20px; margin-bottom:20px;">
-        <p style="font-size:15px; font-weight:700; margin:0 0 16px;">設定画面を開いて初期設定を行ってください</p>
-        <a href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer"
-           style="display:inline-block; background:#4caf50; color:#fff; font-size:16px; font-weight:700;
-                  padding:14px 36px; border-radius:8px; text-decoration:none; letter-spacing:0.5px;
-                  box-shadow:0 3px 8px rgba(76,175,80,0.4);">
-          設定画面を開く
-        </a>
-        <p style="margin:16px 0 0; color:#555; font-size:14px; line-height:1.6;">
-          1. 開いた画面で <strong>「権限を確認する」</strong> ボタンをクリック<br>
-          2. 小さなウィンドウで Google の権限確認画面が開きます → <strong>「許可」</strong> をクリック<br>
-          3. ウィンドウが閉じると自動で設定画面が表示されます
-        </p>
+      <div class="url-card-actions">
+        <button type="button" class="copy-btn" onclick="copyUrl(this)">コピー</button>
       </div>
-
-      <ol style="line-height:1.9; padding-left:20px;">
-        <li style="margin-bottom:14px;">
-          <strong>設定画面で初期設定を入力して保存</strong><br>
-          <span style="color:#555; font-size:14px;">店舗名・営業時間・サービスメニュー・担当者・LINEトークンなどを入力</span>
-        </li>
-        <li style="margin-bottom:14px;">
-          <strong>LINE Developers → Messaging API → Webhook URL にシステムURLを貼り付けて「検証」</strong><br>
-          <span style="color:#555; font-size:14px;">Webhook だけが GAS のシステムURL を使います</span>
-        </li>
-        <li style="margin-bottom:14px;">
-          <strong>LINE Developers → LIFF → エンドポイントURL</strong><br>
-          <span style="color:#555; font-size:14px;">⚠️ システムURL（GAS）ではなく、下記の予約画面URLを設定してください（【LIFF ID】は LIFF 作成後に置き換え）</span>
-          <code style="display:block; margin-top:8px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:11px; word-break:break-all; line-height:1.5;">${escapeHtml(liffEndpointTemplate)}</code>
-        </li>
-        <li>
-          <strong>リッチメニュー</strong>：上記と同じ URL（LIFF ID 入り）を「予約する」ボタンに設定
-        </li>
-      </ol>
+      <p class="url-note">このURLが予約システムの入口です。必ずブックマークしてください。</p>
     </div>
 
-    <p style="margin-top:16px; font-size:13px; color:#888;">
-      問題が発生した場合はシステム開発者にお問い合わせください。
-    </p>
+    <div class="setup-notice">
+      <p>「設定画面を開く」ボタンをクリック後「Review Permissions」ボタンをクリックし権限承認後に店舗の設定を行ってください。</p>
+    </div>
+
+    <div class="cta-area">
+      <a href="${escapeHtml(deployUrl)}" target="_blank" rel="noopener noreferrer" class="btn-pill btn-start btn-open-settings">
+        設定画面を開く
+      </a>
+      ${manualLink}
+    </div>
 
     <script>
       function copyUrl(btn) {
@@ -391,6 +565,7 @@ function handleComplete(url, env) {
         });
       }
     </script>
+    </div>
   `);
   return htmlResponse(html);
 }
@@ -399,7 +574,7 @@ function handleComplete(url, env) {
 // トークン交換
 // ============================================================
 async function exchangeCodeForTokens(code, env) {
-  const res = await fetch(GOOGLE_TOKEN_URL, {
+  return fetchJson(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -409,8 +584,7 @@ async function exchangeCodeForTokens(code, env) {
       redirect_uri:  `${env.WORKER_URL}/callback`,
       grant_type:    'authorization_code',
     }),
-  });
-  return res.json();
+  }, 'OAuth token exchange');
 }
 
 // ============================================================
@@ -461,6 +635,12 @@ async function provision(accessToken, refreshToken, env, userEmail) {
     await writeConfigValue(ssId, userAuth, 'adminEmail', userEmail);
   }
 
+  const manualUrl = getOperationsManualUrl(env);
+  if (manualUrl) {
+    console.log('Step 1f: Writing operationsManualUrl to Config sheet');
+    await ensureConfigValue(ssId, userAuth, 'operationsManualUrl', manualUrl);
+  }
+
   // Step 2: スタンドアロン GAS プロジェクト作成（ユーザーのOAuthトークン使用）
   console.log('Step 2: Creating GAS project...');
   const proj = await callApi(
@@ -475,15 +655,21 @@ async function provision(accessToken, refreshToken, env, userEmail) {
 
   // Step 3: GitHubからスクリプトファイルを取得してスプレッドシートIDを埋め込む
   console.log('Step 3: Fetching script files from GitHub...');
-  const files = await fetchAndPrepareFiles(ssId, env);
+  let files;
+  try {
+    files = await fetchAndPrepareFiles(ssId, env);
+  } catch (e) {
+    throw new Error(`Step 3 GitHub取得: ${e.message}`);
+  }
 
   // Step 4: GASプロジェクトにコンテンツをプッシュ
   console.log('Step 4: Pushing content to GAS project...');
+  const gasFiles = files.map(({ name, type, source }) => ({ name, type, source }));
   const content = await callApi(
     `${SCRIPT_API}/projects/${scriptId}/content`,
     'PUT',
     userAuth,
-    { files }
+    { files: gasFiles }
   );
   if (content.error) throw new Error(`スクリプトのアップロードに失敗: ${content.error.message}`);
 
@@ -563,37 +749,37 @@ async function copySheetsFromTemplate(destSsId, userAuth, env) {
   const templateId = env.TEMPLATE_SS_ID;
 
   // テンプレートのシート一覧を取得
-  const templateRes = await fetch(
+  const templateData = await fetchJson(
     `${SHEETS_API}/${templateId}?fields=sheets.properties`,
-    { headers: { Authorization: userAuth } }
+    { headers: { Authorization: userAuth } },
+    'テンプレートSS読み込み'
   );
-  const templateData = await templateRes.json();
   if (templateData.error) {
     throw new Error(`テンプレート読み込み失敗: ${templateData.error.message} — テンプレートSSが「リンクを知っている全員が編集可」に設定されているか確認してください`);
   }
   const templateSheets = templateData.sheets || [];
 
   // コピー先SSのデフォルトシートID（後で削除する）
-  const destRes = await fetch(
+  const destData = await fetchJson(
     `${SHEETS_API}/${destSsId}?fields=sheets.properties`,
-    { headers: { Authorization: userAuth } }
+    { headers: { Authorization: userAuth } },
+    'コピー先SS読み込み'
   );
-  const destData = await destRes.json();
   if (destData.error) throw new Error(`コピー先SS読み込み失敗: ${destData.error.message}`);
   const defaultSheetId = destData.sheets?.[0]?.properties?.sheetId;
 
   // テンプレートの各シートをコピー先SSにコピー
   const copiedSheets = [];
   for (const sheet of templateSheets) {
-    const res = await fetch(
+    const data = await fetchJson(
       `${SHEETS_API}/${templateId}/sheets/${sheet.properties.sheetId}:copyTo`,
       {
         method: 'POST',
         headers: { Authorization: userAuth, 'Content-Type': 'application/json' },
         body: JSON.stringify({ destinationSpreadsheetId: destSsId }),
-      }
+      },
+      `シートコピー (${sheet.properties.title})`
     );
-    const data = await res.json();
     if (data.error) throw new Error(`シートコピー失敗 (${sheet.properties.title}): ${data.error.message}`);
     copiedSheets.push({ newSheetId: data.sheetId, originalTitle: sheet.properties.title });
   }
@@ -609,15 +795,15 @@ async function copySheetsFromTemplate(destSsId, userAuth, env) {
     })),
   ];
 
-  const batchRes = await fetch(
+  const batchData = await fetchJson(
     `${SHEETS_API}/${destSsId}:batchUpdate`,
     {
       method: 'POST',
       headers: { Authorization: userAuth, 'Content-Type': 'application/json' },
       body: JSON.stringify({ requests }),
-    }
+    },
+    'シート整理 batchUpdate'
   );
-  const batchData = await batchRes.json();
   if (batchData.error) throw new Error(`シート整理失敗: ${batchData.error.message}`);
   console.log(`Copied ${copiedSheets.length} sheets from template.`);
 }
@@ -627,11 +813,11 @@ async function copySheetsFromTemplate(destSsId, userAuth, env) {
 // ============================================================
 async function writeConfigValue(spreadsheetId, authHeader, key, value) {
   // まずConfigシートのA列（キー列）を取得して該当キーの行番号を探す
-  const rangeRes = await fetch(
+  const rangeData = await fetchJson(
     `${SHEETS_API}/${spreadsheetId}/values/Config!A:A`,
-    { headers: { Authorization: authHeader } }
+    { headers: { Authorization: authHeader } },
+    `Config読込 (${key})`
   );
-  const rangeData = await rangeRes.json();
   if (rangeData.error) {
     console.warn(`Config sheet read warning (${key}):`, rangeData.error.message);
     return;
@@ -646,15 +832,15 @@ async function writeConfigValue(spreadsheetId, authHeader, key, value) {
 
   // B列（値列）の該当行に値を書き込む
   const targetRange = `Config!B${rowIndex + 1}`;
-  const updateRes = await fetch(
+  const updateData = await fetchJson(
     `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(targetRange)}?valueInputOption=RAW`,
     {
       method: 'PUT',
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ values: [[value]] }),
-    }
+    },
+    `Config書込 (${key})`
   );
-  const updateData = await updateRes.json();
   if (updateData.error) {
     console.warn(`Config sheet write warning (${key}):`, updateData.error.message);
   } else {
@@ -719,15 +905,14 @@ async function getServiceAccountToken(env, scope) {
   const jwt = `${signingInput}.${sig}`;
 
   // JWTをアクセストークンに交換
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const data = await fetchJson('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion:  jwt,
     }),
-  });
-  const data = await res.json();
+  }, 'サービスアカウント token');
   if (!data.access_token) {
     throw new Error(`サービスアカウントトークン取得失敗: ${JSON.stringify(data.error || data)}`);
   }
@@ -738,7 +923,7 @@ async function getServiceAccountToken(env, scope) {
 // refresh_token を使って新しい access_token を取得
 // ============================================================
 async function refreshAccessToken(refreshToken, env) {
-  const res = await fetch(GOOGLE_TOKEN_URL, {
+  return fetchJson(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -747,8 +932,7 @@ async function refreshAccessToken(refreshToken, env) {
       refresh_token: refreshToken,
       grant_type:    'refresh_token',
     }),
-  });
-  return res.json();
+  }, 'refresh token');
 }
 
 // ============================================================
@@ -1213,16 +1397,43 @@ async function fetchAndPrepareFiles(spreadsheetId, env) {
 // ============================================================
 // 汎用 API 呼び出しヘルパー
 // ============================================================
+async function readJsonResponse(res, context) {
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    if (!res.ok) {
+      throw new Error(`${context}: HTTP ${res.status}（応答ボディなし）`);
+    }
+    return {};
+  }
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<')) {
+    throw new Error(
+      `${context}: サーバーが HTML エラーページを返しました（HTTP ${res.status}）。` +
+      ' Google Cloud プロジェクトで Apps Script API / Sheets API が有効か、OAuth 設定を確認してください。'
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${context}: 応答の解析に失敗しました（HTTP ${res.status}）`);
+  }
+}
+
+async function fetchJson(url, options, context) {
+  const res = await fetch(url, options);
+  return readJsonResponse(res, context);
+}
+
 async function callApi(url, method, authHeader, body) {
-  const res = await fetch(url, {
+  const headers = { Authorization: authHeader };
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return fetchJson(url, {
     method,
-    headers: {
-      'Authorization': authHeader,
-      'Content-Type':  'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
+    headers,
+    body: body !== undefined && body !== null ? JSON.stringify(body) : undefined,
+  }, `${method} ${url}`);
 }
 
 /**
@@ -1277,7 +1488,7 @@ function buildPage(title, content) {
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 12px;
     }
     .card {
       background: #fff;
@@ -1287,14 +1498,21 @@ function buildPage(title, content) {
       max-width: 640px;
       width: 100%;
     }
+    .card:has(.page-landing),
+    .card:has(.page-complete),
+    .card:has(.page-preflight) { padding: 28px 24px 24px; max-width: 640px; }
     /* Hero */
     .hero { text-align: center; margin-bottom: 40px; }
     .logo { font-size: 56px; margin-bottom: 12px; }
     .hero h1 { font-size: 28px; font-weight: 700; color: #111; }
     .subtitle { color: #666; margin-top: 6px; font-size: 15px; }
+    .page-landing .hero { margin-bottom: 16px; }
+    .page-landing .hero h1 { font-size: 21px; }
     /* Steps */
     .steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 40px; }
     .step { display: flex; align-items: flex-start; gap: 16px; }
+    .page-landing .steps { gap: 8px; margin-bottom: 14px; }
+    .page-landing .step { gap: 10px; align-items: center; }
     .step-num {
       width: 36px; height: 36px; border-radius: 50%;
       background: #06c755; color: #fff;
@@ -1302,30 +1520,105 @@ function buildPage(title, content) {
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
-    .step-body { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
+    .step-body { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; min-width: 0; }
+    .step-title { line-height: 1.35; }
     .step-body strong { font-size: 15px; color: #111; }
-    .step-body span { font-size: 13px; color: #666; }
+    .page-landing .step-num { width: 26px; height: 26px; font-size: 13px; }
+    .page-landing .step-body { padding-top: 0; }
+    .page-landing .step-body strong { font-size: 13px; line-height: 1.35; font-weight: 600; }
+    .step-note {
+      display: inline; font-size: 11px; color: #888; font-weight: 400;
+      margin-left: 4px; white-space: nowrap;
+    }
+    .step-done { opacity: 0.55; }
+    .step-done.step-current { opacity: 1; }
+    .step-current .step-num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #06c755; }
     /* CTA */
-    .cta-area { text-align: center; }
-    .btn-start {
-      display: inline-flex; align-items: center; gap: 10px;
-      background: #06c755; color: #fff;
+    .setup-notice {
+      background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 10px;
+      padding: 14px 16px; margin-bottom: 24px; text-align: left;
+    }
+    .setup-notice p { font-size: 13px; color: #334155; line-height: 1.55; margin: 0; }
+    .setup-notice strong { color: #1e40af; font-weight: 700; }
+    .page-landing .setup-notice { padding: 8px 12px; margin-bottom: 12px; }
+    .page-landing .setup-notice p { font-size: 12px; line-height: 1.45; }
+    .cta-area { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .page-landing .cta-area { gap: 8px; }
+    .cta-check { justify-content: center; margin-top: 0; font-weight: 500; font-size: 13px; color: #555; }
+    .page-landing .cta-check { font-size: 12px; }
+    .page-landing .step-zero-check input { width: 16px; height: 16px; margin-top: 2px; }
+    .btn-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 100%; max-width: 360px; box-sizing: border-box;
       padding: 16px 32px; border-radius: 50px;
       font-size: 16px; font-weight: 700;
       text-decoration: none;
-      transition: background 0.2s, transform 0.1s;
+      transition: background 0.2s, transform 0.1s, opacity 0.2s;
+    }
+    .page-landing .btn-pill { padding: 11px 20px; font-size: 14px; max-width: 100%; }
+    .btn-settings {
+      background: #4285f4; color: #fff;
+    }
+    .btn-settings:hover { background: #3367d6; transform: translateY(-1px); }
+    .btn-start {
+      background: #06c755; color: #fff;
     }
     .btn-start:hover { background: #05a548; transform: translateY(-1px); }
+    .btn-start-gated { opacity: 0.45; pointer-events: none; cursor: not-allowed; }
+    .btn-start-gated.btn-start-ready { opacity: 1; pointer-events: auto; cursor: pointer; }
     .note { color: #999; font-size: 12px; margin-top: 12px; }
-    /* Success */
-    .success-banner { text-align: center; margin-bottom: 36px; }
+    /* STEP 0 */
+    .step-zero {
+      background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: 12px;
+      padding: 20px 22px; margin-bottom: 28px;
+    }
+    .step-zero-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .step-zero-badge {
+      background: #f59e0b; color: #fff; font-size: 11px; font-weight: 800;
+      padding: 3px 8px; border-radius: 6px; letter-spacing: 0.04em;
+    }
+    .step-zero-lead { font-size: 13px; color: #555; line-height: 1.55; margin-bottom: 12px; }
+    .step-zero-check {
+      display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
+      font-size: 14px; font-weight: 600; color: #333; margin-top: 8px;
+    }
+    .step-zero-check input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+    .step-zero-warn {
+      background: #fff5f5; border: 1px solid #fca5a5; border-radius: 8px;
+      padding: 12px 14px; font-size: 13px; color: #b91c1c; margin-top: 16px;
+    }
+    .help-steps {
+      text-align: left; padding-left: 20px; margin: 12px 0;
+      font-size: 14px; color: #333; line-height: 1.7;
+    }
+    .help-steps li { margin-bottom: 6px; }
+    .help-note { font-size: 12px; color: #888; text-align: center; margin-top: 8px; }
+    .btn-outline-link {
+      display: inline-block; background: #fff; border: 1.5px solid #06c755; color: #047857;
+      padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px;
+    }
+    .btn-outline-link:hover { background: #f0faf4; }
+    .preflight-banner { text-align: center; margin-bottom: 24px; }
+    .preflight-title { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 8px; }
+    .preflight-lead { color: #555; font-size: 14px; line-height: 1.5; }
+    /* Success / Complete */
+    .success-banner { text-align: center; margin-bottom: 24px; }
     .success-icon { font-size: 56px; margin-bottom: 12px; }
-    .success-banner h1 { font-size: 26px; font-weight: 700; color: #111; }
-    .success-banner p { color: #555; margin-top: 8px; }
+    .success-banner h1 { font-size: 24px; font-weight: 700; color: #111; }
+    .success-banner p { color: #555; margin-top: 8px; font-size: 14px; }
+    .page-complete .success-banner h1 { font-size: 22px; }
+    .triggers-notice { margin-top: 12px; font-size: 13px; line-height: 1.55; text-align: left; }
+    .triggers-notice-ok { color: #2e7d32; text-align: center; }
+    .triggers-notice-warn {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
+      padding: 12px 14px; color: #5d4037;
+    }
+    .triggers-notice-warn strong { display: block; margin-bottom: 6px; color: #e65100; }
+    .triggers-notice-warn p { margin: 0; }
     /* URL Cards */
     .url-card {
       background: #f0faf4; border: 1.5px solid #06c755;
-      border-radius: 12px; padding: 20px; margin-bottom: 16px; position: relative;
+      border-radius: 12px; padding: 16px; margin-bottom: 16px;
     }
     .url-card.secondary { background: #f8f9fa; border-color: #dee2e6; }
     .url-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; }
@@ -1339,16 +1632,42 @@ function buildPage(title, content) {
       color: #0066cc; text-decoration: underline; cursor: pointer;
     }
     .url-link:hover { color: #004a99; }
-    .url-note { font-size: 12px; color: #666; }
+    .url-note { font-size: 12px; color: #666; margin-top: 8px; }
+    .url-card-actions { margin-top: 8px; }
     .copy-btn {
-      background: #06c755; color: #fff; border: none; border-radius: 6px;
-      padding: 6px 14px; font-size: 13px; cursor: pointer; font-weight: 600;
-      transition: background 0.2s;
+      background: #06c755; color: #fff; border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 14px; cursor: pointer; font-weight: 600;
+      transition: background 0.2s; min-height: 44px;
     }
     .copy-btn:hover { background: #05a548; }
     /* Next Steps */
-    .next-steps { margin-top: 32px; }
-    .next-steps h2 { font-size: 18px; font-weight: 700; color: #111; margin-bottom: 16px; }
+    .next-steps { margin-top: 24px; }
+    .next-steps h2 { font-size: 17px; font-weight: 700; color: #111; margin-bottom: 14px; }
+    .cta-settings-box {
+      background: #e8f5e9; border: 2px solid #4caf50; border-radius: 12px;
+      padding: 16px; margin-bottom: 18px;
+    }
+    .cta-settings-lead { font-size: 13px; color: #555; line-height: 1.55; margin: 0 0 14px; }
+    .manual-link { margin-top: 0; font-size: 12px; color: #555; line-height: 1.55; text-align: center; }
+    .manual-link a { color: #0066cc; font-weight: 600; }
+    .btn-open-settings { color: #fff; max-width: 100%; }
+    .btn-open-settings:hover { color: #fff; }
+    .page-complete .url-card { margin-bottom: 12px; }
+    .page-complete .setup-notice { margin-bottom: 12px; }
+    .auth-steps {
+      margin: 14px 0 0; padding-left: 20px; font-size: 13px; color: #555; line-height: 1.65;
+    }
+    .steps-after {
+      padding-left: 20px; display: flex; flex-direction: column; gap: 14px;
+      font-size: 14px; color: #333; line-height: 1.55;
+    }
+    .steps-after li strong { display: block; color: #111; margin-bottom: 4px; }
+    .steps-after li span { display: block; color: #555; font-size: 13px; }
+    .liff-url-sample {
+      display: block; margin-top: 8px; padding: 10px; background: #f8f9fa;
+      border-radius: 8px; font-size: 11px; word-break: break-all; line-height: 1.5;
+    }
+    .complete-footer { margin-top: 16px; font-size: 12px; color: #888; text-align: center; }
     .next-steps ol { padding-left: 20px; display: flex; flex-direction: column; gap: 16px; }
     .next-steps li { font-size: 14px; color: #333; line-height: 1.6; }
     .next-steps li strong { display: block; color: #111; margin-bottom: 2px; }
@@ -1365,7 +1684,22 @@ function buildPage(title, content) {
       padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;
     }
     @media (max-width: 480px) {
-      .card { padding: 32px 20px; }
+      body { padding: 8px; align-items: flex-start; padding-top: 10px; }
+      .card { padding: 24px 16px; border-radius: 12px; }
+      .card:has(.page-landing),
+      .card:has(.page-complete),
+      .card:has(.page-preflight) { padding: 18px 14px 16px; max-width: 100%; }
+      .page-landing .hero h1 { font-size: 18px; }
+      .page-landing .step-body strong { font-size: 12px; }
+      .page-landing .btn-pill { padding: 12px 16px; font-size: 13px; min-height: 44px; }
+      .page-landing .setup-notice p { font-size: 11px; }
+      .page-complete .success-banner h1 { font-size: 19px; }
+      .triggers-notice { font-size: 12px; }
+      .url-value { font-size: 11px; padding: 8px 10px; }
+      .copy-btn, .btn-open-settings { display: block; width: 100%; text-align: center; box-sizing: border-box; }
+      .cta-settings-box { padding: 14px 12px; }
+      .auth-steps, .steps-after { padding-left: 18px; }
+      .preflight-title { font-size: 18px; }
     }
   </style>
 </head>
@@ -1375,6 +1709,35 @@ function buildPage(title, content) {
   </div>
 </body>
 </html>`;
+}
+
+function handleInitialSetupManual() {
+  const html = buildPage('初期導入マニュアル（準備中）', `
+    <div style="max-width:700px;margin:0 auto;padding:2rem;line-height:1.8;color:#333;">
+      <h1 style="font-size:1.5rem;border-bottom:2px solid #06c755;padding-bottom:.5rem;margin-bottom:1.5rem;">初期導入マニュアル（準備中）</h1>
+      <p>このページは <strong>仮のマニュアルURL</strong> です。正式版の初期導入マニュアルは現在作成中です。</p>
+
+      <h2 style="font-size:1.1rem;margin-top:2rem;">このマニュアルで案内予定の内容</h2>
+      <ul style="padding-left:1.25rem;">
+        <li>GoogleカレンダーID（予約カレンダー・店舗ブロックカレンダー）の取得方法</li>
+        <li>LINE Developers でのチャネル設定
+          <ul style="margin-top:8px;">
+            <li>チャネルID</li>
+            <li>チャネルシークレット</li>
+            <li>チャネルアクセストークン（長期）</li>
+            <li>LIFF ID</li>
+            <li>Webhook URL の設定</li>
+            <li>LIFF エンドポイントURL の設定</li>
+          </ul>
+        </li>
+      </ul>
+
+      <p style="margin-top:1.5rem;font-size:.9rem;color:#666;">正式版が公開されたら、システム管理者がマニュアルURLを差し替えます。</p>
+      <p style="margin-top:2rem;font-size:.85rem;color:#999;">最終更新日：2026年6月19日（仮）</p>
+      <p style="margin-top:1rem;"><a href="/" style="color:#06c755;">← トップページに戻る</a></p>
+    </div>
+  `);
+  return htmlResponse(html);
 }
 
 function handlePrivacy() {

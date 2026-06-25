@@ -34,9 +34,7 @@ function getConfigSheet_() {
 
 /**
  * GAS ランタイム権限が未承認のときに返すページ。
- * HtmlService ではなく ContentService を使う（iframe サンドボックスを回避）。
- * getAuthorizationUrl() の URL は createOAuthDialog 用のため、
- * 新しいタブではなくポップアップウィンドウで開く必要がある。
+ * HtmlService で HTML として返す（ContentService だと Web アプリ iframe 内でソースがそのまま表示されることがある）。
  */
 function buildAuthRequiredPage_(authUrl) {
   const safeUrl = authUrl || ScriptApp.getService().getUrl();
@@ -90,7 +88,9 @@ function buildAuthRequiredPage_(authUrl) {
   </script>
 </body>
 </html>`;
-  return ContentService.createTextOutput(html).setMimeType(ContentService.MimeType.HTML);
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('初回セットアップ')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function escapeHtml_(text) {
@@ -197,6 +197,7 @@ function doGet(e) {
   template.allConfigsAsJson = JSON.stringify(configs);
   template.gasDeployUrl = ScriptApp.getService().getUrl();
   template.liffPagesBase = 'https://tomimorisystems4150-ai.github.io/reservation-liff-app';
+  template.operationsManualUrl = String(configs.operationsManualUrl || DEFAULT_OPERATIONS_MANUAL_URL_).trim();
   return template.evaluate().setTitle('システム設定');
 }
 
@@ -487,6 +488,7 @@ var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
 var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
 var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
 var TRIGGERS_CONFIG_VERSION_ = '7';
+var DEFAULT_OPERATIONS_MANUAL_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/docs/initial-setup-manual';
 
 var PUBLIC_CONFIG_KEYS_ = [
   'shopName', 'serviceMenus', 'businessHours', 'holidays', 'nonOperatingHours',

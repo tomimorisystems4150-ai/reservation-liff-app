@@ -66,6 +66,11 @@
     /* Info box */
     .info-box { background: #eaf4fd; border-left: 3px solid #3498db; padding: 9px 12px; border-radius: 0 7px 7px 0; font-size: 0.8em; color: #2471a3; margin-top: 8px; line-height: 1.5; }
     .info-box.warn { background: #fef9ec; border-color: #f39c12; color: #9a6110; }
+    .manual-link {
+      background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 14px; font-size: 0.8em; color: #334155; line-height: 1.5;
+    }
+    .manual-link a { color: #0066cc; font-weight: bold; }
 
     /* Dynamic list items (menu / staff) */
     .dynamic-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
@@ -97,7 +102,7 @@
 <header class="header">
   <div>
     <h1>予約システム設定</h1>
-    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.4（当日予約案内文対応）</div>
+    <div style="font-size:0.72em;opacity:0.65;margin-top:2px;">UI v3.5（LINE設定項目整理・マニュアルリンク）</div>
   </div>
   <a class="header-link" id="linkKanri" href="#" target="_top">予約管理へ</a>
 </header>
@@ -164,6 +169,7 @@
       <span class="section-icon">📆</span>
       <span class="section-title">Googleカレンダー設定</span>
     </div>
+    <div id="calendarManualLink" class="manual-link" style="display:none;"></div>
     <div class="form-group">
       <label class="form-label">予約カレンダーID *</label>
       <input type="text" id="reservationCalendarId" class="form-control" placeholder="xxxx@group.calendar.google.com">
@@ -269,7 +275,7 @@
         予約完了時にICSファイルを配布します。端末カレンダーに追加するだけで、1時間前に自動通知されます。
       </div>
       <div id="hint-line" class="info-box" style="display:none;">
-        GASが自動で <strong>前日18:00</strong> と <strong>当日60分前</strong> にLINE Push通知を送信します。オンボーディング時にバックグラウンド用トリガー（7種）が自動登録されます。未登録の場合はこの画面を開いて保存してください。
+        GASが自動で <strong>前日18:00</strong> と <strong>当日60分前</strong> にLINE Push通知を送信します。バックグラウンド処理（7種）は、設定画面の<strong>初回保存</strong>で自動登録されます。
       </div>
     </div>
   </div>
@@ -280,18 +286,19 @@
       <span class="section-icon">💬</span>
       <span class="section-title">LINE連携設定</span>
     </div>
+    <div id="lineManualLink" class="manual-link" style="display:none;"></div>
     <div class="form-group">
-      <label class="form-label">チャネルアクセストークン *</label>
-      <input type="text" id="lineChannelAccessToken" class="form-control" placeholder="LINE Developers › Messaging API">
+      <label class="form-label">チャネルID *</label>
+      <input type="text" id="lineLoginChannelId" class="form-control" placeholder="LINE Developers › チャネル基本設定 › チャネルID">
+      <div class="form-hint">LINE Developers › 該当チャネル › チャネル基本設定 › チャネルID に表示される数値を入力してください。</div>
     </div>
     <div class="form-group">
       <label class="form-label">チャネルシークレット *</label>
-      <input type="text" id="lineChannelSecret" class="form-control">
+      <input type="text" id="lineChannelSecret" class="form-control" placeholder="LINE Developers › Messaging API › チャネルシークレット">
     </div>
     <div class="form-group">
-      <label class="form-label">LINE Login チャネルID *</label>
-      <input type="text" id="lineLoginChannelId" class="form-control" placeholder="LINE Developers › LINEログイン › チャネル基本設定 › チャネルID">
-      <div class="form-hint">LINE Developers › LINEログイン › チャネル基本設定 › チャネルID に表示される数値を入力してください。</div>
+      <label class="form-label">チャネルアクセストークン（長期） *</label>
+      <input type="text" id="lineChannelAccessToken" class="form-control" placeholder="LINE Developers › Messaging API › チャネルアクセストークン（長期）">
     </div>
     <div class="form-group">
       <label class="form-label">LIFF ID *</label>
@@ -332,10 +339,14 @@
   var _configsForPage = (typeof allConfigsAsJson !== 'undefined' && allConfigsAsJson)
     ? String(allConfigsAsJson)
     : JSON.stringify(getConfigs());
+  var _operationsManualUrl = (typeof operationsManualUrl !== 'undefined' && operationsManualUrl)
+    ? String(operationsManualUrl).trim()
+    : '';
 ?>
   const configs = <?!= _configsForPage ?>;
   const GAS_DEPLOY_URL = <?!= JSON.stringify(_gasDeployUrl) ?>;
   const LIFF_PAGES_BASE = <?!= JSON.stringify(_liffPagesBase) ?>;
+  const OPERATIONS_MANUAL_URL = <?!= JSON.stringify(_operationsManualUrl) ?>;
   const staffBlockMap = configs.staff_block_calendar_id_map || {};
   let serviceMenus = configs.serviceMenus || [];
   let holidays = Array.isArray(configs.holidays) ? configs.holidays.map(Number).filter(n => !isNaN(n)) : [];
@@ -490,7 +501,7 @@
       if (liffId && GAS_DEPLOY_URL && LIFF_PAGES_BASE) {
         liffEl.value = `${LIFF_PAGES_BASE}/liff.html?gasApiUrl=${encodeURIComponent(GAS_DEPLOY_URL)}&liffId=${encodeURIComponent(liffId)}`;
       } else {
-        liffEl.value = liffId ? '（GAS URL を取得できませんでした）' : 'LIFFチャネルIDを入力すると表示されます';
+        liffEl.value = liffId ? '（GAS URL を取得できませんでした）' : 'LIFF IDを入力すると表示されます';
       }
     }
   }
@@ -767,9 +778,31 @@
     if (type !== '') setTimeout(() => el.classList.remove('show'), 3500);
   }
 
+  // ===== Manual links =====
+  function renderManualLinks() {
+    if (!OPERATIONS_MANUAL_URL) return;
+    function fill(elId, before, after) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.style.display = '';
+      el.textContent = '';
+      el.appendChild(document.createTextNode(before));
+      const a = document.createElement('a');
+      a.href = OPERATIONS_MANUAL_URL;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = '初期導入マニュアル';
+      el.appendChild(a);
+      el.appendChild(document.createTextNode(after));
+    }
+    fill('calendarManualLink', '予約カレンダーID・店舗ブロックカレンダーIDの取得方法は ', ' を参照してください。');
+    fill('lineManualLink', 'LINE連携に必要な情報の取得方法は ', ' を参照してください。');
+  }
+
   // ===== Init =====
   window.onload = function() {
     populateForm();
+    renderManualLinks();
 
     document.querySelectorAll('input[name="staffFeature"]').forEach(r => {
       r.addEventListener('change', function() {

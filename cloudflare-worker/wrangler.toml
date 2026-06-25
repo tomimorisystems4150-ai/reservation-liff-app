@@ -17,6 +17,7 @@ id = "1785da19a9d944748be759b48fcaa81c"
 # WORKER_URL            - This worker's public URL (e.g. https://reservation-onboarding.xxx.workers.dev)
 # GITHUB_REPO           - GitHub repo (e.g. tomimorisystems4150-ai/reservation-liff-app)
 # GITHUB_BRANCH         - Branch to fetch scripts from (e.g. main)
+# OPERATIONS_MANUAL_URL - 初期導入マニュアルURL（任意。未設定時は ${WORKER_URL}/docs/initial-setup-manual の仮ページ）
 # CUSTOMER_REGISTRY_SS_ID - 開発者管理の顧客台帳スプレッドシートID（SAに編集権限を付与）
 # ADMIN_ALLOWED_EMAILS  - 管理コンソール許可 Gmail（カンマ区切り可）。未設定時: tomimori.systems4150@gmail.com
 # ADMIN_REQUIRE_ACCESS  - "true" で Cloudflare Access ログイン必須（Access 設定後に有効化）
