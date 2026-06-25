@@ -54,6 +54,7 @@ const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/script.projects',
   'https://www.googleapis.com/auth/script.deployments',
+  'https://www.googleapis.com/auth/script.scriptapp',
   'email',
   'profile',
 ].join(' ');
@@ -301,6 +302,7 @@ async function handleCallback(request, env) {
     deployUrl: result.deployUrl,
     ssUrl:     result.ssUrl,
     gasUrl:    result.gasUrl,
+    triggersSetup: result.triggersSetup ? '1' : '0',
   });
   return Response.redirect(`${env.WORKER_URL}/complete?${params}`, 302);
 }
@@ -311,6 +313,11 @@ async function handleCallback(request, env) {
 function handleComplete(url, env) {
   const deployUrl = url.searchParams.get('deployUrl') || '';
   const gasUrl    = url.searchParams.get('gasUrl')    || '';
+  const triggersSetup = url.searchParams.get('triggersSetup') !== '0';
+
+  const triggersNotice = triggersSetup
+    ? `<p style="margin:12px 0 0; color:#2e7d32; font-size:14px;">✅ バックグラウンド用トリガー（7種）の自動設定を試行しました。</p>`
+    : `<p style="margin:12px 0 0; color:#e65100; font-size:14px;">⚠️ トリガーの自動設定はスキップされました。<strong>設定画面を開いて権限許可後、保存</strong>すると登録されます（§14.5）。</p>`;
 
   // LIFF 予約画面（GitHub Pages）。GAS URL とは別物。
   const repo     = env.GITHUB_REPO || 'tomimorisystems4150-ai/reservation-liff-app';
@@ -323,6 +330,7 @@ function handleComplete(url, env) {
       <div class="success-icon">✅</div>
       <h1>セットアップ完了！</h1>
       <p>システムの自動構築が完了しました。</p>
+      ${triggersNotice}
     </div>
 
     <div class="url-card">
@@ -539,8 +547,12 @@ async function provision(accessToken, refreshToken, env, userEmail) {
   // サービス停止フラグの初期値
   await writeConfigValue(ssId, userAuth, 'serviceSuspended', 'false');
 
-  console.log('Provisioning complete!', { ssId, scriptId, deployUrl });
-  return { deployUrl, ssUrl, gasUrl };
+  // Step 10: GAS 時間主導トリガー自動設定（§14.4）
+  console.log('Step 10: Setting up GAS time-driven triggers...');
+  const triggersResult = await setupGasTriggers(scriptId, userAuth);
+
+  console.log('Provisioning complete!', { ssId, scriptId, deployUrl, triggersSetup: triggersResult.ok });
+  return { deployUrl, ssUrl, gasUrl, triggersSetup: triggersResult.ok, triggersMessage: triggersResult.message || '' };
 }
 
 // ============================================================
@@ -828,7 +840,15 @@ async function pushCodeToCustomer(ssId, kvRecord, rawFiles, env) {
   );
   if (updated.error) throw new Error(`deployment 更新失敗: ${updated.error.message}`);
 
-  return { ssId, status: 'success', versionNumber: version.versionNumber };
+  const triggersResult = await setupGasTriggers(scriptId, auth);
+
+  return {
+    ssId,
+    status: 'success',
+    versionNumber: version.versionNumber,
+    triggersSetup: triggersResult.ok,
+    triggersMessage: triggersResult.message || '',
+  };
 }
 
 // ============================================================
@@ -1203,6 +1223,39 @@ async function callApi(url, method, authHeader, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
+}
+
+/**
+ * Apps Script API で GAS 関数をリモート実行する（オンボーディング Step 10 等）。
+ */
+async function runGasFunction(scriptId, authHeader, functionName, parameters = []) {
+  const result = await callApi(
+    `${SCRIPT_API}/scripts/${scriptId}:run`,
+    'POST',
+    authHeader,
+    { function: functionName, parameters, devMode: false }
+  );
+  if (result.error) {
+    const detail = result.error.details?.[0]?.errorMessage || result.error.message;
+    throw new Error(detail || JSON.stringify(result.error));
+  }
+  if (result.response?.error) {
+    throw new Error(JSON.stringify(result.response.error));
+  }
+  return result.response?.result;
+}
+
+/**
+ * setupTriggers() をリモート実行。失敗しても provision / push は中断しない。
+ */
+async function setupGasTriggers(scriptId, authHeader) {
+  try {
+    await runGasFunction(scriptId, authHeader, 'setupTriggers', []);
+    return { ok: true };
+  } catch (e) {
+    console.warn('setupGasTriggers failed:', e.message);
+    return { ok: false, message: e.message };
+  }
 }
 
 // ============================================================

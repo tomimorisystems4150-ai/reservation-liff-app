@@ -736,7 +736,11 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
         + 'エラー <strong>' + data.errorCount + '</strong>';
       logBody.innerHTML = (data.results || []).map(r => {
         const label = r.status === 'success' ? '✅ 成功' : (r.status === 'skipped' ? '⏭ スキップ' : '❌ エラー');
-        const detail = r.reason || (r.status === 'success' ? 'v' + r.versionNumber + ' にデプロイ' + (r.configSyncWarning ? '（警告: ' + r.configSyncWarning + '）' : '') : '');
+        const detail = r.reason || (r.status === 'success'
+          ? 'v' + r.versionNumber + ' にデプロイ'
+            + (r.triggersSetup === false ? '（トリガー: 要フォールバック）' : '（トリガー7種設定済）')
+            + (r.configSyncWarning ? '（警告: ' + r.configSyncWarning + '）' : '')
+          : '');
         return '<tr><td class="ss-id">' + esc(r.ssId) + '</td><td>' + label + '</td><td class="reason">' + esc(detail) + '</td></tr>';
       }).join('') || '<tr><td colspan="3">結果なし</td></tr>';
       logPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

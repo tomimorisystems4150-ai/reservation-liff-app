@@ -142,6 +142,8 @@ function doGet(e) {
     return buildAuthRequiredPage_(authInfo.getAuthorizationUrl());
   }
 
+  ensureTriggersConfigured_();
+
   let configs;
   try {
     configs = getConfigs();
