@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview 予約管理システムのバックエンドロジック
  */
 
@@ -487,7 +487,7 @@ var CONFIG_CACHE_MAX_BYTES_ = 90000;
 var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
 var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
 var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
-var TRIGGERS_CONFIG_VERSION_ = '7';
+var TRIGGERS_CONFIG_VERSION_ = '8';
 var DEFAULT_OPERATIONS_MANUAL_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/docs/initial-setup-manual';
 
 var PUBLIC_CONFIG_KEYS_ = [
@@ -1689,6 +1689,10 @@ function getBlockCalendarIds_(configs, staffEmail, isStaffNominated) {
  * @param {string[]} calendarIds - 同期するカレンダーIDの配列
  */
 function syncBlockCalendars(calendarIds) {
+  // 時間主導トリガーから呼ばれた場合、第1引数はイベントオブジェクトになる
+  if (!Array.isArray(calendarIds)) {
+    calendarIds = null;
+  }
   if (!calendarIds || calendarIds.length === 0) {
     calendarIds = getAllBlockCalendarIds_(getConfigs());
   }
@@ -3316,11 +3320,36 @@ function runNightlyBatch() {
 }
 
 /**
+ * 営業終了時刻（HH:mm）を分に変換する。
+ */
+function parseBusinessTimeToMinutes_(timeStr) {
+  const m = String(timeStr || '19:00').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return 19 * 60;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+/**
+ * 終業後処理トリガー・カレンダー予定の時刻（営業終了 + 15分）。
+ * @returns {{ hour: number, minute: number, scheduleKey: string }}
+ */
+function getEndOfDaySchedule_(configs) {
+  const businessHours = (configs && configs.businessHours) || { start: '10:00', end: '19:00' };
+  const triggerMin = (parseBusinessTimeToMinutes_(businessHours.end) + 15) % (24 * 60);
+  const hour = Math.floor(triggerMin / 60);
+  const minute = triggerMin % 60;
+  const scheduleKey = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return { hour, minute, scheduleKey };
+}
+
+/**
  * システムトリガーを設定する（初期セットアップ時またはトリガー定義更新時に実行）。
  * 店舗が GAS エディタを触る必要はない。`ensureTriggersConfigured_()` から自動呼び出しされる。
  */
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+
+  const configs = getConfigs();
+  const endOfDay = getEndOfDaySchedule_(configs);
 
   // 夜間バッチ（毎日 深夜2時）
   ScriptApp.newTrigger('runNightlyBatch')
@@ -3330,9 +3359,9 @@ function setupTriggers() {
   ScriptApp.newTrigger('syncBlockCalendars')
     .timeBased().everyHours(1).create();
 
-  // 終業後未確定予定の作成（毎日 21時）
+  // 終業後未確定予定（営業終了 + 15分）
   ScriptApp.newTrigger('createEndOfDayUnconfirmedEvent')
-    .timeBased().everyDays(1).atHour(21).create();
+    .timeBased().everyDays(1).atHour(endOfDay.hour).nearMinute(endOfDay.minute).create();
 
   // 前日LINEリマインド（毎日 18時）
   ScriptApp.newTrigger('sendDayBeforeReminders')
@@ -3350,9 +3379,11 @@ function setupTriggers() {
   ScriptApp.newTrigger('keepWarm_')
     .timeBased().everyMinutes(5).create();
 
-  Logger.log('トリガーを設定しました（全7種：夜間バッチ/ブロック同期/終業後予定/前日リマインド/当日リマインド/日次アーカイブ/keepWarm）。');
-  PropertiesService.getScriptProperties().setProperty('triggersConfigVersion', TRIGGERS_CONFIG_VERSION_);
-  return { success: true };
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('triggersConfigVersion', TRIGGERS_CONFIG_VERSION_);
+  props.setProperty('endOfDayTriggerSchedule', endOfDay.scheduleKey);
+  Logger.log(`トリガーを設定しました（全7種。終業後処理: ${endOfDay.scheduleKey} = 営業終了+15分）。`);
+  return { success: true, endOfDaySchedule: endOfDay.scheduleKey };
 }
 
 /**
@@ -3362,7 +3393,11 @@ function setupTriggers() {
 function ensureTriggersConfigured_() {
   try {
     const props = PropertiesService.getScriptProperties();
-    if (props.getProperty('triggersConfigVersion') === TRIGGERS_CONFIG_VERSION_) {
+    const configs = getConfigs();
+    const endOfDay = getEndOfDaySchedule_(configs);
+    const versionOk = props.getProperty('triggersConfigVersion') === TRIGGERS_CONFIG_VERSION_;
+    const scheduleOk = props.getProperty('endOfDayTriggerSchedule') === endOfDay.scheduleKey;
+    if (versionOk && scheduleOk) {
       return { success: true, skipped: true };
     }
     return setupTriggers();
@@ -3398,7 +3433,8 @@ function createEndOfDayUnconfirmedEvent() {
 
   const calendar  = CalendarApp.getCalendarById(configs.reservationCalendarId);
   const kanriUrl  = `${ScriptApp.getService().getUrl()}?page=kanri`;
-  const evtStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0);
+  const endOfDay  = getEndOfDaySchedule_(configs);
+  const evtStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endOfDay.hour, endOfDay.minute, 0);
   const evtEnd    = new Date(evtStart.getTime() + 30 * 60000);
 
   calendar.createEvent(
