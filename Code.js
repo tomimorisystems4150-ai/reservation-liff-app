@@ -1262,6 +1262,8 @@ function rescheduleBookingByUser(lineUserId, bookingId, newStartDateTime) {
       configs
     );
 
+    clearLineReminderProps_(bookingId, booking.startTime);
+
     const startTimeCol = headers.indexOf('予約日時');
     const endTimeCol = headers.indexOf('終了日時');
     const eventIdCol = headers.indexOf('イベントID');
@@ -2947,6 +2949,10 @@ function confirmBookingStatus(bookingId, newStatus) {
     updateCustomerLastVisit_(lineUserId, startTime);
   }
 
+  if (status === 'キャンセル' || status === '無断キャンセル') {
+    clearLineReminderProps_(bookingId, startTime);
+  }
+
   Logger.log(`ステータス更新: ${bookingId} → ${status}`);
 }
 
@@ -3505,6 +3511,46 @@ function buildLineReminderMessage_(kind, startTime, menuName, staffName) {
 }
 
 /**
+ * LINE リマインド送信済みフラグのキー生成（予約開始日時ごとに管理）。
+ */
+function formatReminderStartKey_(startTime) {
+  const t = startTime instanceof Date ? startTime : new Date(startTime);
+  return Utilities.formatDate(t, 'Asia/Tokyo', 'yyyyMMddHHmm');
+}
+
+function formatReminderDayKey_(startTime) {
+  const t = startTime instanceof Date ? startTime : new Date(startTime);
+  return Utilities.formatDate(t, 'Asia/Tokyo', 'yyyyMMdd');
+}
+
+function getHourReminderPropKey_(bookingId, startTime) {
+  return `reminder_hour_${bookingId}_${formatReminderStartKey_(startTime)}`;
+}
+
+function getDayReminderPropKey_(bookingId, startTime) {
+  return `reminder_day_${bookingId}_${formatReminderDayKey_(startTime)}`;
+}
+
+/** v8 以前の予約IDのみキー（移行用に削除） */
+function deleteLegacyReminderPropKeys_(props, bookingId) {
+  props.deleteProperty(`reminder_hour_${bookingId}`);
+  props.deleteProperty(`reminder_day_${bookingId}`);
+}
+
+/**
+ * キャンセル・日時変更時にリマインド送信済みフラグを削除する。
+ */
+function clearLineReminderProps_(bookingId, startTime) {
+  if (!bookingId) return;
+  const props = PropertiesService.getScriptProperties();
+  if (startTime) {
+    props.deleteProperty(getHourReminderPropKey_(bookingId, startTime));
+    props.deleteProperty(getDayReminderPropKey_(bookingId, startTime));
+  }
+  deleteLegacyReminderPropKeys_(props, bookingId);
+}
+
+/**
  * 前日リマインド（毎日18時トリガー）。
  * reminderMode が "LINE" の場合のみ、翌日予約の顧客にプッシュ通知を送る。
  * PropertiesService でキーを保存し二重送信を防止する。
@@ -3539,8 +3585,11 @@ function sendDayBeforeReminders() {
       if (startTime < tmrStart || startTime >= tmrEnd) continue;
 
       const bookingId  = row[bkIdCol];
-      const propKey    = `reminder_day_${bookingId}`;
-      if (props.getProperty(propKey)) continue;
+      const propKey    = getDayReminderPropKey_(bookingId, startTime);
+      if (props.getProperty(propKey)) {
+        Logger.log(`sendDayBeforeReminders: 既送信のためスキップ ${bookingId} (${formatReminderDayKey_(startTime)})`);
+        continue;
+      }
 
       const lineUserId = row[userIdCol];
       if (!lineUserId) continue;
@@ -3550,6 +3599,7 @@ function sendDayBeforeReminders() {
       try {
         sendLineMessage_(lineUserId, [{ type: 'text', text }]);
         props.setProperty(propKey, new Date().toISOString());
+        deleteLegacyReminderPropKeys_(props, bookingId);
       } catch (e) {
         logError_('sendDayBeforeReminders', e);
       }
@@ -3593,8 +3643,11 @@ function sendHourBeforeReminders() {
       if (startTime < windowStart || startTime > windowEnd) continue;
 
       const bookingId = row[bkIdCol];
-      const propKey   = `reminder_hour_${bookingId}`;
-      if (props.getProperty(propKey)) continue;
+      const propKey   = getHourReminderPropKey_(bookingId, startTime);
+      if (props.getProperty(propKey)) {
+        Logger.log(`sendHourBeforeReminders: 既送信のためスキップ ${bookingId} (${formatReminderStartKey_(startTime)})`);
+        continue;
+      }
 
       const lineUserId = row[userIdCol];
       if (!lineUserId) continue;
@@ -3604,6 +3657,7 @@ function sendHourBeforeReminders() {
       try {
         sendLineMessage_(lineUserId, [{ type: 'text', text }]);
         props.setProperty(propKey, new Date().toISOString());
+        deleteLegacyReminderPropKeys_(props, bookingId);
       } catch (e) {
         logError_('sendHourBeforeReminders', e);
       }
