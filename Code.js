@@ -290,7 +290,8 @@ function doPost(e) {
     if (postData.action) {
       Logger.log('受信アクション: [' + postData.action + '] / postData keys: ' + Object.keys(postData).join(', '));
 
-      if (postData.action !== 'runTests' && postData.action !== 'runErrorLogTests') {
+      if (postData.action !== 'runTests' && postData.action !== 'runErrorLogTests'
+          && postData.action !== 'probeErrorReportConnection') {
         if (isServiceSuspendedFromSheet_()) {
           return createServiceSuspendedResponse_();
         }
@@ -340,6 +341,11 @@ function doPost(e) {
             throw new Error('tests.js がデプロイされていません。コード配信時に「テストスイート含む」を有効にしてください。');
           }
           response = runErrorLogTests();
+          break;
+        }
+
+        case 'probeErrorReportConnection': {
+          response = probeErrorReportConnection();
           break;
         }
 
@@ -3879,6 +3885,15 @@ function probeErrorReportConnection_() {
       responseBody: ''
     };
   }
+}
+
+/**
+ * GAS エディタ「実行」用ラッパー（末尾 _ なし — 関数一覧で選びやすい）。
+ * doPost action: probeErrorReportConnection からも呼べる。
+ * @returns {{ok: boolean, enabled: boolean, httpCode: number, message: string, responseBody: string}}
+ */
+function probeErrorReportConnection() {
+  return probeErrorReportConnection_();
 }
 
 /** シート記録成功後に Worker へベストエフォートで通知する */
