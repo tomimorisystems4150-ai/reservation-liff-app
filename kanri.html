@@ -422,12 +422,7 @@ function loadEndOfDay() {
 function formatEodDatetime(isoString) {
   const d = new Date(isoString);
   const days = ['日', '月', '火', '水', '木', '金', '土'];
-  const now = new Date();
-  const isToday = d.getFullYear() === now.getFullYear()
-    && d.getMonth() === now.getMonth()
-    && d.getDate() === now.getDate();
   const time = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' 〜';
-  if (isToday) return { dateLabel: '', timeLabel: time };
   return {
     dateLabel: (d.getMonth() + 1) + '月' + d.getDate() + '日(' + days[d.getDay()] + ')',
     timeLabel: time,
@@ -451,7 +446,7 @@ function eodBookingCard(b) {
   return `<div class="card eod-card" id="eod-${bookingId}">
     <input type="checkbox" class="eod-check" value="${bookingId}" aria-label="予約を選択">
     <div class="eod-card-body">
-      ${dt.dateLabel ? '<div class="eod-date-label">' + dt.dateLabel + '</div>' : ''}
+      <div class="eod-date-label">${dt.dateLabel}</div>
       <div class="card-header">
         <div class="card-datetime">${dt.timeLabel}</div>
         <span class="badge badge-${b.status}">${escapeHtml(b.status)}</span>
