@@ -423,6 +423,13 @@ function doPost(e) {
 
   } catch (error) {
     Logger.log('APIエラー: %s', error.message);
+    let action = 'unknown';
+    try {
+      if (e && e.postData && e.postData.contents) {
+        action = JSON.parse(e.postData.contents).action || 'unknown';
+      }
+    } catch (parseErr) { /* ignore */ }
+    logErrorIfSystem_('doPost:' + action, error);
     if (isLineAuthErrorMessage_(error.message)) {
       return createLineAuthFailedResponse_(error.message);
     }
@@ -637,13 +644,17 @@ function validateRequiredSheetHeaders_(sheetKeys) {
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet || sheet.getLastRow() < 1) {
       if (key === 'blockSync' || key === 'timetable') return;
-      throw new Error('必須シート「' + sheetName + '」が見つかりません。');
+      const err = new Error('必須シート「' + sheetName + '」が見つかりません。');
+      logError_('validateRequiredSheetHeaders_', err);
+      throw err;
     }
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
       .map(function(h) { return String(h || '').trim(); });
     required.forEach(function(col) {
       if (headers.indexOf(col) < 0) {
-        throw new Error('シート「' + sheetName + '」に列「' + col + '」がありません。列の追加・削除を確認してください。');
+        const err = new Error('シート「' + sheetName + '」に列「' + col + '」がありません。列の追加・削除を確認してください。');
+        logError_('validateRequiredSheetHeaders_', err);
+        throw err;
       }
     });
   });
@@ -896,17 +907,27 @@ function createBooking(bookingData) {
     reservationSheet.appendRow([
       newBookingId, '予約', lineUserId, userName, menuName, startTime, endTime, '', staffName || '', staffEmail || ''
     ]);
+    const rowNum = reservationSheet.getLastRow();
+    const eventIdCol = headers.indexOf('イベントID') + 1;
 
-    const calendar = CalendarApp.getCalendarById(configs.reservationCalendarId);
-    if (!calendar) throw new Error('予約カレンダーが見つかりません。');
-    
-    const eventTitle = staffName ? `【${userName}様／担当：${staffName}】${menuName}` : `【${userName}様】${menuName}`;
-    const event = calendar.createEvent(eventTitle, startTime, endTime);
-    
-    reservationSheet.getRange(reservationSheet.getLastRow(), headers.indexOf('イベントID') + 1).setValue(event.getId());
+    let eventTitle;
+    try {
+      const calendar = CalendarApp.getCalendarById(configs.reservationCalendarId);
+      if (!calendar) throw new Error('予約カレンダーが見つかりません。');
+      eventTitle = staffName ? `【${userName}様／担当：${staffName}】${menuName}` : `【${userName}様】${menuName}`;
+      const event = calendar.createEvent(eventTitle, startTime, endTime);
+      reservationSheet.getRange(rowNum, eventIdCol).setValue(event.getId());
+    } catch (e) {
+      logError_('createBooking:calendarCreate', wrapErrorMessage_(e, '予約ID ' + newBookingId));
+      throw e;
+    }
 
-    // 満席タイムテーブルの動的更新（既存行はインクリメント、なければ新規追記）
-    rebuildTimetableFromReservations_(configs);
+    try {
+      rebuildTimetableFromReservations_(configs);
+    } catch (e) {
+      logError_('createBooking:timetableRebuild', wrapErrorMessage_(e, '予約ID ' + newBookingId));
+      throw e;
+    }
 
     return {
       bookingId: newBookingId,
@@ -918,6 +939,7 @@ function createBooking(bookingData) {
 
   } catch (e) {
     Logger.log(`予約作成エラー: ${e.message}`);
+    logErrorIfSystem_('createBooking', e);
     throw e;
   } finally {
     lock.releaseLock();
@@ -1145,6 +1167,9 @@ function cancelBookingByUser(lineUserId, bookingId) {
       shopName: configs.shopName,
       reminderMode: configs.reminderMode || 'ICS',
     };
+  } catch (e) {
+    logErrorIfSystem_('cancelBookingByUser', e);
+    throw e;
   } finally {
     lock.releaseLock();
   }
@@ -1293,6 +1318,9 @@ function rescheduleBookingByUser(lineUserId, bookingId, newStartDateTime) {
       shopName: configs.shopName,
       reminderMode: configs.reminderMode || 'ICS',
     };
+  } catch (e) {
+    logErrorIfSystem_('rescheduleBookingByUser', e);
+    throw e;
   } finally {
     lock.releaseLock();
   }
@@ -1691,6 +1719,7 @@ function getBlockCalendarIds_(configs, staffEmail, isStaffNominated) {
  * @param {string[]} calendarIds - 同期するカレンダーIDの配列
  */
 function syncBlockCalendars(calendarIds) {
+  try {
   // 時間主導トリガーから呼ばれた場合、第1引数はイベントオブジェクトになる
   if (!Array.isArray(calendarIds)) {
     calendarIds = null;
@@ -1703,7 +1732,7 @@ function syncBlockCalendars(calendarIds) {
   const props = PropertiesService.getScriptProperties();
   const syncSheet = getSpreadsheet_().getSheetByName('ブロック予定同期');
   if (!syncSheet) {
-    Logger.log('「ブロック予定同期」シートが見つかりません。同期をスキップします。');
+    logError_('syncBlockCalendars', new Error('「ブロック予定同期」シートが見つかりません。同期をスキップします。'));
     return;
   }
 
@@ -1738,9 +1767,12 @@ function syncBlockCalendars(calendarIds) {
         }
       }
     } catch (e) {
-      Logger.log(`ブロックカレンダー同期エラー (${calendarId}): ${e.message}`);
+      logError_('syncBlockCalendars', wrapErrorMessage_(e, 'calendarId=' + calendarId));
     }
   });
+  } catch (e) {
+    logError_('syncBlockCalendars', e);
+  }
 }
 
 /**
@@ -2105,37 +2137,48 @@ function createBulkBookings(bookingDataList) {
       const { lineUserId, userName, menuName, duration, startDateTime, staffEmail, staffName } = bookingData;
       const startTime = new Date(startDateTime);
       const endTime = new Date(startTime.getTime() + duration * 60000);
-
       const newBookingId = generateBookingId();
-      reservationSheet.appendRow([
-        newBookingId, '予約', lineUserId, userName, menuName,
-        startTime, endTime, '', staffName || '', staffEmail || ''
-      ]);
 
-      const eventTitle = staffName && staffEmail !== 'any'
-        ? `【${userName}様／担当：${staffName}】${menuName}`
-        : `【${userName}様】${menuName}`;
-      const event = calendar.createEvent(eventTitle, startTime, endTime);
-      reservationSheet.getRange(
-        reservationSheet.getLastRow(),
-        headers.indexOf('イベントID') + 1
-      ).setValue(event.getId());
+      try {
+        reservationSheet.appendRow([
+          newBookingId, '予約', lineUserId, userName, menuName,
+          startTime, endTime, '', staffName || '', staffEmail || ''
+        ]);
 
-      results.push({
-        bookingId: newBookingId,
-        eventTitle: eventTitle,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        shopName: configs.shopName
-      });
+        const eventTitle = staffName && staffEmail !== 'any'
+          ? `【${userName}様／担当：${staffName}】${menuName}`
+          : `【${userName}様】${menuName}`;
+        const event = calendar.createEvent(eventTitle, startTime, endTime);
+        reservationSheet.getRange(
+          reservationSheet.getLastRow(),
+          headers.indexOf('イベントID') + 1
+        ).setValue(event.getId());
+
+        results.push({
+          bookingId: newBookingId,
+          eventTitle: eventTitle,
+          startTime: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+          shopName: configs.shopName
+        });
+      } catch (e) {
+        logError_('createBulkBookings:partial', wrapErrorMessage_(e, '予約ID ' + newBookingId));
+        throw e;
+      }
     }
 
-    rebuildTimetableFromReservations_(configs);
+    try {
+      rebuildTimetableFromReservations_(configs);
+    } catch (e) {
+      logError_('createBulkBookings:timetableRebuild', e);
+      throw e;
+    }
 
     return results;
 
   } catch (e) {
     Logger.log(`一括予約エラー: ${e.message}`);
+    logErrorIfSystem_('createBulkBookings', e);
     throw e;
   } finally {
     lock.releaseLock();
@@ -2901,6 +2944,7 @@ function applyCalendarEventStatusChange_(configs, eventId, status) {
  * @param {string} newStatus - '来店' | '無断キャンセル' | 'キャンセル'
  */
 function confirmBookingStatus(bookingId, newStatus) {
+  try {
   const status = String(newStatus || '').trim();
   const configs = getConfigs();
   const sheet   = getReservationSheet(configs);
@@ -2954,6 +2998,10 @@ function confirmBookingStatus(bookingId, newStatus) {
   }
 
   Logger.log(`ステータス更新: ${bookingId} → ${status}`);
+  } catch (e) {
+    logErrorIfSystem_('confirmBookingStatus', wrapErrorMessage_(e, 'bookingId=' + bookingId));
+    throw e;
+  }
 }
 
 /**
@@ -2964,7 +3012,7 @@ function confirmBookingStatus(bookingId, newStatus) {
 function batchConfirmStatuses(bookingIds, status) {
   bookingIds.forEach(id => {
     try { confirmBookingStatus(id, status); }
-    catch (e) { Logger.log(`バッチ確定エラー (${id}): ${e.message}`); }
+    catch (e) { /* confirmBookingStatus 内で logErrorIfSystem_ 済み */ }
   });
 }
 
@@ -3280,6 +3328,7 @@ function updateCustomerInfo(lineUserId, changes) {
  * 毎日深夜2時にトリガーで自動実行する。
  */
 function runNightlyBatch() {
+  try {
   const configs  = getConfigs();
   const timeUnit = parseInt(configs.bookingTimeUnit || 30, 10);
   const sheet    = getReservationSheet(configs);
@@ -3323,6 +3372,9 @@ function runNightlyBatch() {
   }
 
   Logger.log(`夜間バッチ完了: ${slotMap.size}スロットを再計算`);
+  } catch (e) {
+    logError_('runNightlyBatch', e);
+  }
 }
 
 /**
@@ -3418,6 +3470,7 @@ function ensureTriggersConfigured_() {
  * 予定の説明欄には管理画面URL（?page=kanri）を埋め込む。
  */
 function createEndOfDayUnconfirmedEvent() {
+  try {
   const configs    = getConfigs();
   const now        = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -3449,6 +3502,9 @@ function createEndOfDayUnconfirmedEvent() {
     { description: `本日の未確定予約が${unconfirmedCount}件あります。\n管理画面から確認・確定してください:\n${kanriUrl}` }
   );
   Logger.log(`終業後未確定予定を作成: ${unconfirmedCount}件`);
+  } catch (e) {
+    logError_('createEndOfDayUnconfirmedEvent', e);
+  }
 }
 
 // =================================================================
@@ -3671,6 +3727,47 @@ function sendHourBeforeReminders() {
 // エラーログ機能
 // ----------------------------------------------------------------
 
+/** LIFF/API の想定内エラー（枠満杯・権限不足等）。エラーログシートには記録しない。 */
+function isExpectedUserError_(error) {
+  const msg = error instanceof Error ? error.message : String(error || '');
+  const patterns = [
+    '申し訳ありません',
+    'タッチの差で',
+    '当日予約',
+    '枠が埋ま',
+    '枠はすでに埋ま',
+    '予約が見つかりません',
+    '操作する権限がありません',
+    '変更・キャンセルできません',
+    '開始済みまたは過去',
+    '一括予約の上限',
+    '一括予約の LINE User ID',
+    'LINE認証',
+    '無効なアクション',
+    '不正なリクエスト形式',
+    '予約情報がありません',
+    '予約情報リストがありません',
+    '日付または所要時間',
+    'LINE User ID と顧客名',
+    '予約IDまたは新しい日時',
+    '保存権限がありません',
+    '現在、予約サービスは一時停止中',
+  ];
+  return patterns.some(function(p) { return msg.indexOf(p) >= 0; });
+}
+
+/** システム障害のみエラーログシートへ記録する。 */
+function logErrorIfSystem_(functionName, error) {
+  if (isExpectedUserError_(error)) return;
+  if (error instanceof Error && error.loggedToSheet_) return;
+  logError_(functionName, error);
+}
+
+function wrapErrorMessage_(error, prefix) {
+  const base = error instanceof Error ? error.message : String(error);
+  return new Error(prefix + ': ' + base);
+}
+
 /**
  * GAS 内エラーを「エラーログ」シートに記録する共通ヘルパー。
  * 最大500件を保持し、超過分は古い順に削除する。
@@ -3689,6 +3786,7 @@ function logError_(functionName, error) {
     sheet.appendRow([new Date(), functionName, errMsg, stack]);
     const lastRow = sheet.getLastRow();
     if (lastRow > 501) sheet.deleteRows(2, lastRow - 501);
+    if (error instanceof Error) error.loggedToSheet_ = true;
   } catch (logErr) {
     Logger.log('logError_失敗: ' + logErr.message);
   }

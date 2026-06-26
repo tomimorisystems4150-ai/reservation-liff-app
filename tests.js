@@ -873,6 +873,14 @@ function runBatchTests_() {
     assert_(found, 'エラーログに記録されていない');
   }));
 
+  // TC-BG-003b: logErrorIfSystem_ - 想定内ユーザー向けエラーは記録しない
+  results.push(runTest_('TC-BG-003b: logErrorIfSystem_ - 想定内エラーは記録しない', () => {
+    logErrorIfSystem_('testUserError_skip', new Error('申し訳ありません。タッチの差で 10:00 の枠が埋まってしまいました。'));
+    const logs = getErrorLogs();
+    const found = logs.some(log => log.functionName === 'testUserError_skip');
+    assert_(!found, '想定内エラーがエラーログに記録された');
+  }));
+
   // TC-BG-004: cleanPastTimetable_（過去エントリ削除）
   results.push(runTest_('TC-BG-004: cleanPastTimetable_ - 過去エントリ削除', () => {
     const sheet = getSpreadsheet_().getSheetByName('満席タイムテーブル');
