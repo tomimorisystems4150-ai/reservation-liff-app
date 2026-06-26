@@ -3840,6 +3840,29 @@ function cleanPastTimetable_(today) {
 }
 
 /**
+ * 新規アーカイブSS作成時に残る空の「シート1」を整理する。
+ */
+function normalizeArchiveSpreadsheetSheets_(ss) {
+  if (!ss) return;
+  const reservationSheet = ss.getSheetByName('予約');
+  const sheets = ss.getSheets();
+  if (sheets.length === 1 && !reservationSheet) {
+    const only = sheets[0];
+    const name = only.getName();
+    if (name === 'シート1' || name === 'Sheet1') {
+      only.setName('予約');
+      return;
+    }
+  }
+  if (sheets.length < 2 || !reservationSheet) return;
+  const first = sheets[0];
+  const firstName = first.getName();
+  if ((firstName === 'シート1' || firstName === 'Sheet1') && first.getLastRow() === 0) {
+    ss.deleteSheet(first);
+  }
+}
+
+/**
  * アーカイブ用スプレッドシートを取得または新規作成する。
  * 総行数が 50,000行を超えた場合は新ファイルを作成し Config を自動更新する。
  */
@@ -3855,6 +3878,8 @@ function getOrCreateArchiveSpreadsheet_(configs) {
       if (totalRows > MAX_ROWS) {
         Logger.log(`アーカイブファイルが${totalRows}行を超えました。新ファイルを作成します。`);
         ss = null;
+      } else {
+        normalizeArchiveSpreadsheetSheets_(ss);
       }
     } catch (e) {
       ss = null;
@@ -3864,6 +3889,7 @@ function getOrCreateArchiveSpreadsheet_(configs) {
   if (!ss) {
     const label = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM');
     ss = SpreadsheetApp.create(`予約アーカイブ_${configs.shopName || 'システム'}_${label}`);
+    ss.getSheets()[0].setName('予約');
     updateConfigValue_('archiveSpreadsheetId', ss.getId());
     Logger.log(`新規アーカイブファイルを作成しました。ID: ${ss.getId()}`);
   }
