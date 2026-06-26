@@ -3805,26 +3805,19 @@ function isErrorReportEnabled_() {
   return true;
 }
 
-function hmacSha256Base64Url_(message, secret) {
-  var key = String(secret || '').trim();
-  var sigBytes = Utilities.computeHmacSha256Signature(message, key);
-  // GAS の byte 配列は符号付き (-128〜127) のため、0xFF マスクしてから Base64 化する
-  var binary = sigBytes.map(function(b) {
-    return String.fromCharCode((b + 256) % 256);
-  }).join('');
-  var base64 = Utilities.base64Encode(binary);
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function buildErrorReportWireBody_(eventPayload) {
+  return JSON.stringify({
+    reportKey: String(_ERROR_REPORT_SECRET || '').trim(),
+    event: eventPayload
+  });
 }
 
-/** Worker へエラー報告 POST（署名はクエリ ?ts=&sig= に載せる — UrlFetch のヘッダー制限回避） */
-function postErrorReportToWorker_(body, timestamp, signature) {
-  var url = ERROR_REPORT_WORKER_URL_
-    + '?ts=' + encodeURIComponent(timestamp)
-    + '&sig=' + encodeURIComponent(signature);
-  return UrlFetchApp.fetch(url, {
+/** Worker へエラー報告 POST（reportKey を JSON ボディに含める） */
+function postErrorReportToWorker_(wireBody) {
+  return UrlFetchApp.fetch(ERROR_REPORT_WORKER_URL_, {
     method: 'post',
     contentType: 'application/json',
-    payload: body,
+    payload: wireBody,
     muteHttpExceptions: true
   });
 }
@@ -3846,6 +3839,7 @@ function getErrorReportDisabledReason_() {
 function probeErrorReportConnection_() {
   var base = {
     secretInjected: _ERROR_REPORT_SECRET !== 'PLACEHOLDER_ERROR_REPORT_SECRET',
+    secretLength: String(_ERROR_REPORT_SECRET || '').trim().length,
     ssId: _PROVISIONED_SS_ID
   };
   var disabledReason = getErrorReportDisabledReason_();
@@ -3871,11 +3865,8 @@ function probeErrorReportConnection_() {
     stack: testErr.stack || '',
     timestamp: new Date().toISOString()
   };
-  var body = JSON.stringify(payload);
-  var timestamp = Math.floor(Date.now() / 1000).toString();
-  var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
   try {
-    var res = postErrorReportToWorker_(body, timestamp, signature);
+    var res = postErrorReportToWorker_(buildErrorReportWireBody_(payload));
     var code = res.getResponseCode();
     var text = res.getContentText().substring(0, 500);
     return Object.assign({
@@ -3904,7 +3895,7 @@ function probeErrorReportConnection_() {
 function probeErrorReportConnection() {
   var result = probeErrorReportConnection_();
   Logger.log('=== probeErrorReportConnection 結果 ===');
-  Logger.log('secretInjected: ' + result.secretInjected);
+  Logger.log('secretInjected: ' + result.secretInjected + ' / secretLength: ' + result.secretLength);
   Logger.log('ssId: ' + result.ssId);
   Logger.log('ok: ' + result.ok + ' / enabled: ' + result.enabled + ' / httpCode: ' + result.httpCode);
   Logger.log('message: ' + result.message);
@@ -3916,7 +3907,7 @@ function probeErrorReportConnection() {
   } else if (!result.secretInjected) {
     Logger.log('→ wrangler secret put ERROR_REPORT_SECRET 後、デプロイ支援コンソールでコード配信を再実行してください');
   } else if (result.httpCode === 401) {
-    Logger.log('→ Worker の ERROR_REPORT_SECRET と GAS 埋め込み値が不一致です。secret 更新後にコード配信し直してください');
+    Logger.log('→ 認証失敗: responseBody を確認し、Worker の ERROR_REPORT_SECRET と GAS の _ERROR_REPORT_SECRET が完全一致するよう secret 設定→コード配信し直してください');
   } else if (result.httpCode === 404) {
     Logger.log('→ Worker に /api/report-error が未デプロイです。cloudflare-worker で wrangler deploy してください');
   }
@@ -3951,10 +3942,7 @@ function notifyDeveloperError_(functionName, error) {
       stack: stack.length > 2048 ? stack.substring(0, 2048) : stack,
       timestamp: new Date().toISOString()
     };
-    var body = JSON.stringify(payload);
-    var timestamp = Math.floor(Date.now() / 1000).toString();
-    var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
-    var res = postErrorReportToWorker_(body, timestamp, signature);
+    var res = postErrorReportToWorker_(buildErrorReportWireBody_(payload));
     if (res.getResponseCode() >= 400) {
       Logger.log('notifyDeveloperError_ HTTP ' + res.getResponseCode() + ': ' + res.getContentText().substring(0, 200));
     }

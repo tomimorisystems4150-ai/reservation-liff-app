@@ -2,7 +2,6 @@
  * 開発者向けシステムエラーログ集約（GAS push → KV → /admin 表示）
  */
 
-import { hmacVerify } from './admin-auth.js';
 import { jsonResponse } from './admin-console.js';
 
 export const ERROR_LOG_GLOBAL_KEY = 'errorLog:global';
@@ -11,17 +10,23 @@ export const ERROR_DEDUP_PREFIX = 'errorDedup:';
 export const ERROR_LOG_MAX_ENTRIES = 200;
 export const ERROR_DEDUP_TTL_SEC = 900;
 export const ERROR_STACK_MAX_LEN = 2048;
-export const ERROR_SIG_MAX_AGE_SEC = 300;
 
 export function buildErrorFingerprintInput(ssId, functionName, message) {
   const msg = String(message || '').slice(0, 200);
   return `${ssId}|${functionName}|${msg}`;
 }
 
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 async function sha256HexAsync(input) {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest('SHA-256', data);
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function truncate(str, max) {
@@ -63,30 +68,20 @@ export async function loadErrorLogState(kv) {
   };
 }
 
-async function verifyReportSignature(request, bodyText, env) {
+/** GAS から POST される { reportKey, event } を検証する */
+function verifyReportKey(parsed, env) {
   const secret = (env.ERROR_REPORT_SECRET || '').trim();
   if (!secret) return { ok: false, message: 'ERROR_REPORT_SECRET 未設定' };
 
-  const url = new URL(request.url);
-  // GAS UrlFetch はカスタムヘッダーが届かないことがあるため ?ts=&sig= も受け付ける
-  const timestamp = (url.searchParams.get('ts') || request.headers.get('X-Error-Timestamp') || '').trim();
-  const signature = (url.searchParams.get('sig') || request.headers.get('X-Error-Signature') || '').trim();
-  if (!timestamp || !signature) {
-    return { ok: false, message: '署名パラメーターが不足しています（?ts=&sig= または X-Error-* ヘッダー）' };
+  const key = String(parsed?.reportKey || '').trim();
+  if (!key) {
+    return { ok: false, message: 'reportKey が不足しています' };
   }
-
-  const ts = Number(timestamp);
-  if (!Number.isFinite(ts)) {
-    return { ok: false, message: 'タイムスタンプが不正です' };
+  if (!timingSafeEqual(key, secret)) {
+    return { ok: false, message: 'reportKey が不正です（Worker secret と GAS 埋め込み値を確認）' };
   }
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > ERROR_SIG_MAX_AGE_SEC) {
-    return { ok: false, message: 'タイムスタンプが期限切れです' };
-  }
-
-  const message = `${timestamp}.${bodyText}`;
-  if (!(await hmacVerify(secret, message, signature))) {
-    return { ok: false, message: '署名が不正です' };
+  if (!parsed?.event || typeof parsed.event !== 'object') {
+    return { ok: false, message: 'event オブジェクトが必要です' };
   }
   return { ok: true };
 }
@@ -176,21 +171,20 @@ export async function handleReportError(request, env) {
     return jsonResponse({ success: false, message: 'POST のみ対応' }, 405);
   }
 
-  const bodyText = await request.text();
-  let payload;
+  let parsed;
   try {
-    payload = JSON.parse(bodyText);
+    parsed = JSON.parse(await request.text());
   } catch {
     return jsonResponse({ success: false, message: 'JSON ボディが必要です' }, 400);
   }
 
-  const sig = await verifyReportSignature(request, bodyText, env);
-  if (!sig.ok) {
-    return jsonResponse({ success: false, message: sig.message }, 401);
+  const auth = verifyReportKey(parsed, env);
+  if (!auth.ok) {
+    return jsonResponse({ success: false, message: auth.message }, 401);
   }
 
   try {
-    const result = await reportErrorEvent(env, payload);
+    const result = await reportErrorEvent(env, parsed.event);
     return jsonResponse({ success: true, ...result });
   } catch (err) {
     return jsonResponse({ success: false, message: err.message }, 400);
