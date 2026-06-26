@@ -23,6 +23,7 @@
   ],
   "urlFetchWhitelist": [
     "https://api.line.me/",
-    "https://notify-api.line.me/"
+    "https://notify-api.line.me/",
+    "https://reservation-onboarding.reservation-onboarding.workers.dev/"
   ]
 }

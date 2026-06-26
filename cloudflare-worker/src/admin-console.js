@@ -367,7 +367,7 @@ export async function handleAdminApiSetStatus(request, env, deps) {
   }
 }
 
-export function renderAdminConsole(env, adminUser, { customers, registryError, kvOrphanCount = 0, registryConfigured = false, testEnv = null }) {
+export function renderAdminConsole(env, adminUser, { customers, registryError, kvOrphanCount = 0, registryConfigured = false, testEnv = null, errorLogState = null }) {
   const registryUrl = env.CUSTOMER_REGISTRY_SS_ID
     ? `https://docs.google.com/spreadsheets/d/${env.CUSTOMER_REGISTRY_SS_ID}/edit`
     : '';
@@ -375,6 +375,13 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
   const branch = env.GITHUB_BRANCH || 'main';
   const customersJson = JSON.stringify(customers);
   const adminEmailLabel = adminUser?.email ? escapeHtml(adminUser.email) : '';
+  const errorEvents = errorLogState?.events || [];
+  const errorUnread = errorLogState?.unread || { total: 0, bySsId: {} };
+  const errorUnreadJson = JSON.stringify(errorUnread.bySsId || {});
+  const deployUrlBySsId = {};
+  customers.forEach(c => { if (c.deployUrl) deployUrlBySsId[c.ssId] = c.deployUrl; });
+  const deployUrlBySsIdJson = JSON.stringify(deployUrlBySsId);
+  const errorPanelHtml = renderErrorLogPanelHtml(errorEvents.slice(0, 20), errorUnread.total);
   const test = testEnv || {
     ssId: TEST_SS_ID,
     adminEmail: '',
@@ -468,6 +475,20 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     .spinner { width: 18px; height: 18px; border: 2px solid #ddd; border-top-color: #3498db; border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .selected-count { font-size: 0.82em; color: #666; margin-left: auto; }
+    .error-panel { margin-bottom: 16px; }
+    .error-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .error-panel-head h2 { margin-bottom: 0; padding-bottom: 0; border-bottom: none; flex: 1; }
+    .badge-error-unread { display: inline-block; background: #e74c3c; color: #fff; font-size: 0.75em; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+    .badge-error-shop { display: inline-block; background: #fdebd0; color: #9a6110; font-size: 0.72em; font-weight: 700; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+    .error-empty { text-align: center; padding: 20px; color: #999; font-size: 0.88em; }
+    .error-msg-cell { max-width: 220px; word-break: break-word; }
+    .error-modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
+    .error-modal-backdrop.show { display: flex; }
+    .error-modal { background: #fff; border-radius: 12px; max-width: 640px; width: 100%; max-height: 85vh; overflow: auto; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .error-modal h3 { font-size: 1em; margin-bottom: 12px; }
+    .error-modal pre { background: #1e2533; color: #a8d8a8; padding: 12px; border-radius: 8px; font-size: 0.75em; overflow: auto; white-space: pre-wrap; word-break: break-all; max-height: 240px; }
+    .error-modal-meta { font-size: 0.82em; color: #555; margin-bottom: 10px; line-height: 1.6; }
+    .error-modal-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -484,6 +505,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
   </header>
 
   <div class="wrap">
+    ${errorPanelHtml}
     <div class="grid">
       <aside>
         <div class="panel" style="margin-bottom:16px;">
@@ -652,9 +674,24 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     </div>
   </div>
 
+  <div class="error-modal-backdrop" id="errorModalBackdrop" role="dialog" aria-modal="true">
+    <div class="error-modal">
+      <h3 id="errorModalTitle">エラー詳細</h3>
+      <div class="error-modal-meta" id="errorModalMeta"></div>
+      <pre id="errorModalStack"></pre>
+      <div class="error-modal-actions">
+        <a id="errorModalKanri" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;display:none;">予約管理画面</a>
+        <button type="button" class="btn btn-outline btn-sm" id="errorModalClose">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const CUSTOMERS = ${customersJson};
     const TEST_SS_ID = ${JSON.stringify(TEST_SS_ID)};
+    const ERROR_UNREAD = ${errorUnreadJson};
+    const DEPLOY_URL_BY_SSID = ${deployUrlBySsIdJson};
+    let ERROR_EVENTS = ${JSON.stringify(errorEvents.slice(0, 50))};
 
     const tbody = document.getElementById('customerBody');
     const logPanel = document.getElementById('logPanel');
@@ -681,12 +718,17 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     }
 
     function renderSsIdCell(c) {
+      const unread = ERROR_UNREAD[c.ssId] || 0;
+      const unreadBadge = unread > 0
+        ? '<span class="badge-error-shop" title="未読エラー">' + unread + '</span>'
+        : '';
       const short = esc(c.ssId.slice(0, 12) + '…');
       if (c.ssId === TEST_SS_ID) {
-        return '<span class="badge-test-env" style="font-size:0.65em;margin-right:4px;">TEST</span>'
+        return unreadBadge
+          + '<span class="badge-test-env" style="font-size:0.65em;margin-right:4px;">TEST</span>'
           + '<a href="https://docs.google.com/spreadsheets/d/' + esc(c.ssId) + '/edit" target="_blank" rel="noopener noreferrer">' + short + '</a>';
       }
-      return short;
+      return unreadBadge + short;
     }
 
     function renderTable() {
@@ -826,6 +868,118 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     document.getElementById('btnStopSelected').addEventListener('click', () => setStatusForSelected('停止'));
     document.getElementById('btnResumeSelected').addEventListener('click', () => setStatusForSelected('稼働中'));
 
+    function formatErrorTs(iso) {
+      try {
+        return new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+      } catch (e) {
+        return String(iso || '');
+      }
+    }
+
+    function truncateErrorMsg(msg, len) {
+      const s = String(msg || '');
+      return s.length <= len ? s : s.slice(0, len) + '…';
+    }
+
+    function renderErrorTable() {
+      const body = document.getElementById('errorLogBody');
+      if (!body) return;
+      if (!ERROR_EVENTS.length) {
+        body.innerHTML = '<tr><td colspan="6" class="error-empty">直近のシステムエラーはありません</td></tr>';
+        return;
+      }
+      body.innerHTML = ERROR_EVENTS.slice(0, 20).map((e, i) => {
+        const repeat = (e.repeatCount || 1) > 1
+          ? ' <span class="badge badge-warn">×' + e.repeatCount + '</span>' : '';
+        return '<tr>'
+          + '<td>' + esc(formatErrorTs(e.timestamp)) + '</td>'
+          + '<td>' + esc(e.shopName || '—') + '</td>'
+          + '<td class="ss-id">' + esc(e.ssId ? e.ssId.slice(0, 12) + '…' : '—') + '</td>'
+          + '<td>' + esc(e.functionName || '') + '</td>'
+          + '<td class="error-msg-cell">' + esc(truncateErrorMsg(e.message, 80)) + repeat + '</td>'
+          + '<td><button type="button" class="btn btn-outline btn-sm btn-error-detail" data-error-idx="' + i + '">詳細</button></td>'
+          + '</tr>';
+      }).join('');
+      body.querySelectorAll('.btn-error-detail').forEach(btn => {
+        btn.addEventListener('click', () => openErrorModal(Number(btn.dataset.errorIdx)));
+      });
+    }
+
+    function openErrorModal(idx) {
+      const e = ERROR_EVENTS[idx];
+      if (!e) return;
+      document.getElementById('errorModalTitle').textContent = e.functionName || 'エラー詳細';
+      const repeat = (e.repeatCount || 1) > 1 ? '（同一エラー ' + e.repeatCount + ' 回目）' : '';
+      document.getElementById('errorModalMeta').innerHTML =
+        '<div><strong>日時:</strong> ' + esc(formatErrorTs(e.timestamp)) + repeat + '</div>'
+        + '<div><strong>店舗:</strong> ' + esc(e.shopName || '—') + '</div>'
+        + '<div><strong>ssId:</strong> <code>' + esc(e.ssId) + '</code></div>'
+        + '<div><strong>メッセージ:</strong> ' + esc(e.message) + '</div>';
+      document.getElementById('errorModalStack').textContent = e.stack || '（スタックトレースなし）';
+      const kanri = document.getElementById('errorModalKanri');
+      const deployUrl = DEPLOY_URL_BY_SSID[e.ssId];
+      if (deployUrl) {
+        kanri.href = deployUrl + (deployUrl.indexOf('?') >= 0 ? '&' : '?') + 'page=kanri';
+        kanri.style.display = 'inline-block';
+      } else {
+        kanri.style.display = 'none';
+      }
+      document.getElementById('errorModalBackdrop').classList.add('show');
+    }
+
+    function closeErrorModal() {
+      document.getElementById('errorModalBackdrop').classList.remove('show');
+    }
+
+    document.getElementById('errorModalClose').addEventListener('click', closeErrorModal);
+    document.getElementById('errorModalBackdrop').addEventListener('click', (ev) => {
+      if (ev.target.id === 'errorModalBackdrop') closeErrorModal();
+    });
+
+    async function reloadErrorLogs() {
+      const res = await fetch('/admin/api/error-logs?limit=50', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || '取得失敗');
+      ERROR_EVENTS = data.events || [];
+      Object.keys(ERROR_UNREAD).forEach(k => delete ERROR_UNREAD[k]);
+      Object.assign(ERROR_UNREAD, data.unread?.bySsId || {});
+      renderErrorTable();
+      renderTable();
+      const badge = document.querySelector('.error-panel-head .badge-error-unread');
+      const total = data.unread?.total || 0;
+      if (total > 0) {
+        if (badge) badge.textContent = total + ' 件未読';
+        else {
+          const h2 = document.querySelector('.error-panel-head h2');
+          if (h2) h2.insertAdjacentHTML('beforeend', ' <span class="badge-error-unread">' + total + ' 件未読</span>');
+        }
+      } else if (badge) badge.remove();
+    }
+
+    async function ackAllErrors() {
+      const res = await fetch('/admin/api/error-logs/ack', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || '既読化失敗');
+      Object.keys(ERROR_UNREAD).forEach(k => delete ERROR_UNREAD[k]);
+      document.querySelector('.error-panel-head .badge-error-unread')?.remove();
+      renderTable();
+    }
+
+    const btnReloadErrors = document.getElementById('btnReloadErrors');
+    if (btnReloadErrors) {
+      btnReloadErrors.addEventListener('click', () => reloadErrorLogs().catch(e => alert('エラー: ' + e.message)));
+    }
+    const btnAckErrors = document.getElementById('btnAckErrors');
+    if (btnAckErrors) {
+      btnAckErrors.addEventListener('click', () => ackAllErrors().catch(e => alert('エラー: ' + e.message)));
+    }
+
+    renderErrorTable();
     renderTable();
 
     // コマンドコピーボタン
@@ -857,6 +1011,61 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
   </script>
 </body>
 </html>`;
+}
+
+function formatErrorTimestamp(iso) {
+  try {
+    return new Date(iso).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+  } catch {
+    return String(iso || '');
+  }
+}
+
+function truncateErrorMessage(msg, maxLen) {
+  const s = String(msg || '');
+  return s.length <= maxLen ? s : `${s.slice(0, maxLen)}…`;
+}
+
+function renderErrorLogPanelHtml(events, unreadTotal) {
+  const unreadBadge = unreadTotal > 0
+    ? `<span class="badge-error-unread">${unreadTotal} 件未読</span>`
+    : '';
+  const ackBtn = events.length > 0
+    ? '<button type="button" class="btn btn-outline btn-sm" id="btnAckErrors">すべて既読</button>'
+    : '';
+  const rows = events.length === 0
+    ? '<tr><td colspan="6" class="error-empty">直近のシステムエラーはありません</td></tr>'
+    : events.map((e, i) => {
+      const repeat = (e.repeatCount || 1) > 1
+        ? ` <span class="badge badge-warn">×${e.repeatCount}</span>`
+        : '';
+      return `<tr>
+        <td>${escapeHtml(formatErrorTimestamp(e.timestamp))}</td>
+        <td>${escapeHtml(e.shopName || '—')}</td>
+        <td class="ss-id">${escapeHtml(e.ssId ? `${e.ssId.slice(0, 12)}…` : '—')}</td>
+        <td>${escapeHtml(e.functionName || '')}</td>
+        <td class="error-msg-cell">${escapeHtml(truncateErrorMessage(e.message, 80))}${repeat}</td>
+        <td><button type="button" class="btn btn-outline btn-sm btn-error-detail" data-error-idx="${i}">詳細</button></td>
+      </tr>`;
+    }).join('');
+
+  return `<div class="panel error-panel">
+    <div class="error-panel-head">
+      <h2>直近のシステムエラー ${unreadBadge}</h2>
+      <button type="button" class="btn btn-outline btn-sm" id="btnReloadErrors">再読み込み</button>
+      ${ackBtn}
+    </div>
+    <div class="table-wrap" style="max-height:260px;">
+      <table>
+        <thead>
+          <tr>
+            <th>日時</th><th>店舗名</th><th>ssId</th><th>関数</th><th>メッセージ</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="errorLogBody">${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 function escapeHtml(str) {

@@ -46,7 +46,7 @@ function verifyAccessEmail(request, env) {
   return { ok: true, email };
 }
 
-async function hmacSign(secret, message) {
+export async function hmacSign(secret, message) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
@@ -62,7 +62,7 @@ async function hmacSign(secret, message) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function hmacVerify(secret, message, signature) {
+export async function hmacVerify(secret, message, signature) {
   const expected = await hmacSign(secret, message);
   if (expected.length !== signature.length) return false;
   let diff = 0;

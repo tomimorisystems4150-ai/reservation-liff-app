@@ -920,8 +920,18 @@ function runErrorLogTests() {
   Logger.log('========================================');
 
   cleanupTestData_();
+  const errorReportProps = PropertiesService.getScriptProperties();
+  errorReportProps.setProperty('errorReportDisabled', 'true');
   const startTime = new Date();
-  const results = runErrorLogIntegrationTests_();
+  let results;
+  try {
+    results = runErrorLogIntegrationTests_();
+  } finally {
+    errorReportProps.deleteProperty('errorReportDisabled');
+    if (typeof setErrorReportNotifyHookForTests_ === 'function') {
+      setErrorReportNotifyHookForTests_(null);
+    }
+  }
   const endTime = new Date();
 
   const passed = results.filter(r => r.passed).length;
@@ -1107,6 +1117,54 @@ function runErrorLogIntegrationTests_() {
     const countBefore = _errorLogRowCount_();
     logErrorIfSystem_('TC_EL_user_skip', new Error('申し訳ありません。タッチの差で 10:00 の枠が埋まってしまいました。'));
     assertNewErrorNotLogged_(countBefore, 'TC_EL_user_skip');
+  }));
+
+  results.push(runTest_('TC-EL-011: isErrorReportEnabled_ - secret / disabled フラグ', () => {
+    const props = PropertiesService.getScriptProperties();
+    const hadDisabled = props.getProperty('errorReportDisabled');
+    props.deleteProperty('errorReportDisabled');
+    try {
+      if (_ERROR_REPORT_SECRET === 'PLACEHOLDER_ERROR_REPORT_SECRET') {
+        assert_(!isErrorReportEnabledForTests_(), 'プレースホルダ secret 時は無効');
+      } else {
+        assert_(isErrorReportEnabledForTests_(), 'secret 注入済みでは有効');
+        props.setProperty('errorReportDisabled', 'true');
+        assert_(!isErrorReportEnabledForTests_(), 'errorReportDisabled=true で無効');
+      }
+    } finally {
+      if (hadDisabled) props.setProperty('errorReportDisabled', hadDisabled);
+      else props.deleteProperty('errorReportDisabled');
+    }
+  }));
+
+  results.push(runTest_('TC-EL-012: logError_ - notify フックが呼ばれる', () => {
+    let invoked = false;
+    setErrorReportNotifyHookForTests_(function(fn, err) {
+      invoked = true;
+      assert_(fn === 'TC-EL-012-notify', 'functionName が一致しない');
+      assert_(err instanceof Error, 'Error オブジェクトが渡される');
+    });
+    try {
+      const countBefore = _errorLogRowCount_();
+      logError_('TC-EL-012-notify', new Error('notify hook test'));
+      assert_(invoked, 'notify フックが呼ばれなかった');
+      assertNewErrorLogged_(countBefore, 'TC-EL-012-notify', 'notify hook test');
+    } finally {
+      setErrorReportNotifyHookForTests_(null);
+    }
+  }));
+
+  results.push(runTest_('TC-EL-013: logError_ - notify 失敗でもシート記録は成功', () => {
+    setErrorReportNotifyHookForTests_(function() {
+      throw new Error('simulated notify failure');
+    });
+    try {
+      const countBefore = _errorLogRowCount_();
+      logError_('TC-EL-013-notify-fail', new Error('sheet must succeed'));
+      assertNewErrorLogged_(countBefore, 'TC-EL-013-notify-fail', 'sheet must succeed');
+    } finally {
+      setErrorReportNotifyHookForTests_(null);
+    }
   }));
 
   _cleanupErrorLogsAddedSince_(errorLogStartRow);

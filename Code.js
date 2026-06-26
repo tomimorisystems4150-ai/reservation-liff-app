@@ -8,6 +8,8 @@
 // オンボーディング時にプロビジョニングスクリプトが実スプレッドシートIDに置換する。
 // 開発環境（バインドスクリプト）ではプレースホルダーのままとなり getActiveSpreadsheet() を使用する。
 const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';
+// コード配信時に Worker が ERROR_REPORT_SECRET を埋め込む（未配信時は通知しない）
+const _ERROR_REPORT_SECRET = 'PLACEHOLDER_ERROR_REPORT_SECRET';
 
 // グローバルスコープでの SpreadsheetApp 呼び出しは GAS の認証フローと競合するため、
 // 遅延初期化パターンを使用する。各リクエスト内で最初のアクセス時のみ初期化される。
@@ -3778,11 +3780,87 @@ function wrapErrorMessage_(error, prefix) {
   return new Error(prefix + ': ' + base);
 }
 
+var ERROR_REPORT_WORKER_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/api/report-error';
+var ERROR_REPORT_DISABLED_KEY_ = 'errorReportDisabled';
+var _errorReportNotifyHook_ = null;
+
+/** tests.js 専用: 実 HTTP の代わりにフックを呼ぶ */
+function setErrorReportNotifyHookForTests_(hook) {
+  _errorReportNotifyHook_ = hook;
+}
+
+function isErrorReportEnabledForTests_() {
+  return isErrorReportEnabled_();
+}
+
+function isErrorReportEnabled_() {
+  if (_ERROR_REPORT_SECRET === 'PLACEHOLDER_ERROR_REPORT_SECRET') return false;
+  if (PropertiesService.getScriptProperties().getProperty(ERROR_REPORT_DISABLED_KEY_) === 'true') return false;
+  return true;
+}
+
+function hmacSha256Base64Url_(message, secret) {
+  var sigBytes = Utilities.computeHmacSha256Signature(message, secret);
+  var base64 = Utilities.base64Encode(sigBytes);
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** シート記録成功後に Worker へベストエフォートで通知する */
+function notifyDeveloperError_(functionName, error) {
+  if (_errorReportNotifyHook_) {
+    try {
+      _errorReportNotifyHook_(functionName, error);
+    } catch (hookErr) {
+      Logger.log('notifyDeveloperError_ hook失敗: ' + hookErr.message);
+    }
+    return;
+  }
+  if (!isErrorReportEnabled_()) return;
+  try {
+    var errMsg = error instanceof Error ? error.message : String(error);
+    var stack = (error instanceof Error && error.stack) ? error.stack : '';
+    var shopName = '';
+    try {
+      shopName = getConfigValue_('shopName') || '';
+    } catch (cfgErr) {
+      Logger.log('notifyDeveloperError_ shopName取得スキップ: ' + cfgErr.message);
+    }
+    var payload = {
+      ssId: _PROVISIONED_SS_ID,
+      shopName: shopName,
+      functionName: functionName,
+      message: errMsg,
+      stack: stack.length > 2048 ? stack.substring(0, 2048) : stack,
+      timestamp: new Date().toISOString()
+    };
+    var body = JSON.stringify(payload);
+    var timestamp = Math.floor(Date.now() / 1000).toString();
+    var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
+    var res = UrlFetchApp.fetch(ERROR_REPORT_WORKER_URL_, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: body,
+      headers: {
+        'X-Error-Timestamp': timestamp,
+        'X-Error-Signature': signature
+      },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 400) {
+      Logger.log('notifyDeveloperError_ HTTP ' + res.getResponseCode() + ': ' + res.getContentText().substring(0, 200));
+    }
+  } catch (notifyErr) {
+    Logger.log('notifyDeveloperError_失敗: ' + notifyErr.message);
+  }
+}
+
 /**
  * GAS 内エラーを「エラーログ」シートに記録する共通ヘルパー。
  * 最大500件を保持し、超過分は古い順に削除する。
+ * シート記録成功時は notifyDeveloperError_ で Worker にもベストエフォート通知する。
  */
 function logError_(functionName, error) {
+  var logged = false;
   try {
     let sheet = getSpreadsheet_().getSheetByName('エラーログ');
     if (!sheet) {
@@ -3797,8 +3875,12 @@ function logError_(functionName, error) {
     const lastRow = sheet.getLastRow();
     if (lastRow > 501) sheet.deleteRows(2, lastRow - 501);
     if (error instanceof Error) error.loggedToSheet_ = true;
+    logged = true;
   } catch (logErr) {
     Logger.log('logError_失敗: ' + logErr.message);
+  }
+  if (logged) {
+    notifyDeveloperError_(functionName, error);
   }
 }
 

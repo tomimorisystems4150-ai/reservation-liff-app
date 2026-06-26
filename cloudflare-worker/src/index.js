@@ -16,7 +16,8 @@
  *   GET /admin/init-registry   - 顧客台帳シート初期化
  *   GET /admin/set-status      - サービス停止/再開（ssId指定）
  *   GET /admin/push-update     - コード配信（ssId / ssIds 指定可）
- *   GET /admin/kv-cleanup      - 壊れたKVエントリ削除
+ *   POST /admin/api/error-logs/ack - エラーログ既読 API
+ *   POST /api/report-error     - GAS からのシステムエラー報告（HMAC）
  *   GET /docs/initial-setup-manual - 初期導入マニュアル（仮）
  */
 
@@ -42,6 +43,12 @@ import {
   adminAuthOrRedirect,
   adminAuthOrJsonError,
 } from './admin-auth.js';
+import {
+  handleReportError,
+  handleAdminApiErrorLogs,
+  handleAdminApiErrorLogsAck,
+  loadErrorLogState,
+} from './error-log.js';
 
 const GOOGLE_AUTH_URL  = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -101,6 +108,9 @@ export default {
         case '/admin':              return handleAdmin(request, env);
         case '/admin/api/push-update': return handleAdminApiPushRoute(request, env);
         case '/admin/api/set-status':  return handleAdminApiSetStatusRoute(request, env);
+        case '/admin/api/error-logs':  return handleAdminApiErrorLogsRoute(request, env);
+        case '/admin/api/error-logs/ack': return handleAdminApiErrorLogsAckRoute(request, env);
+        case '/api/report-error':      return handleReportError(request, env);
         case '/admin/init-registry': return handleInitRegistry(request, env);
         case '/admin/sync-registry': return handleSyncRegistry(request, env);
         case '/admin/set-status':   return handleSetStatus(request, env);
@@ -150,7 +160,8 @@ async function handleAdmin(request, env) {
 
   const adminData = await fetchAdminCustomers(env, kvMap, getServiceAccountToken);
   const testEnv = await resolveTestEnvContext(env, adminData.customers, kvMap, getServiceAccountToken);
-  return new Response(renderAdminConsole(env, gate.auth, { ...adminData, testEnv }), {
+  const errorLogState = await loadErrorLogState(env.ONBOARDING_KV);
+  return new Response(renderAdminConsole(env, gate.auth, { ...adminData, testEnv, errorLogState }), {
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
@@ -165,6 +176,18 @@ async function handleAdminApiSetStatusRoute(request, env) {
   const gate = await adminAuthOrJsonError(request, env);
   if (gate.response) return gate.response;
   return handleAdminApiSetStatus(request, env, pushUpdateDeps(env));
+}
+
+async function handleAdminApiErrorLogsRoute(request, env) {
+  const gate = await adminAuthOrJsonError(request, env);
+  if (gate.response) return gate.response;
+  return handleAdminApiErrorLogs(request, env);
+}
+
+async function handleAdminApiErrorLogsAckRoute(request, env) {
+  const gate = await adminAuthOrJsonError(request, env);
+  if (gate.response) return gate.response;
+  return handleAdminApiErrorLogsAck(request, env);
 }
 
 // ============================================================
@@ -1004,7 +1027,7 @@ async function pushCodeToCustomer(ssId, kvRecord, rawFiles, env) {
     await env.ONBOARDING_KV.put(`store:${ssId}`, JSON.stringify(kvRecord), { expirationTtl: 60 * 60 * 24 * 365 * 3 });
   }
 
-  const files = substituteSpreadsheetId(rawFiles, ssId);
+  const files = substituteProvisionedValues(rawFiles, ssId, env);
   const content = await callApi(`${SCRIPT_API}/projects/${scriptId}/content`, 'PUT', auth, { files });
   if (content.error) throw new Error(`content push 失敗: ${content.error.message}`);
 
@@ -1382,23 +1405,32 @@ async function fetchRawFiles(env, options) {
 // 取得済みファイル配列に顧客固有のスプレッドシートIDを埋め込む（外部リクエストなし）
 // 定数宣言行のみ置換する（比較式内の 'PLACEHOLDER_SPREADSHEET_ID' リテラルは触らない）
 // ============================================================
-function substituteSpreadsheetId(rawFiles, spreadsheetId) {
+function substituteProvisionedValues(rawFiles, spreadsheetId, env) {
   const ssIdPattern = /const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';/;
   const ssIdReplacement = `const _PROVISIONED_SS_ID = '${spreadsheetId}';`;
+  const secretPattern = /const _ERROR_REPORT_SECRET = 'PLACEHOLDER_ERROR_REPORT_SECRET';/;
+  const secretRaw = env.ERROR_REPORT_SECRET || 'PLACEHOLDER_ERROR_REPORT_SECRET';
+  const secretEscaped = String(secretRaw).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const secretReplacement = `const _ERROR_REPORT_SECRET = '${secretEscaped}';`;
   return rawFiles.map(({ name, type, file, source }) => ({
     name,
     type,
     source: file === 'Code.js'
-      ? source.replace(ssIdPattern, ssIdReplacement)
+      ? source.replace(ssIdPattern, ssIdReplacement).replace(secretPattern, secretReplacement)
       : source,
   }));
+}
+
+/** @deprecated substituteProvisionedValues を使用 */
+function substituteSpreadsheetId(rawFiles, spreadsheetId) {
+  return substituteProvisionedValues(rawFiles, spreadsheetId, {});
 }
 
 // オンボーディング時など単一顧客向けにまとめて呼ぶラッパー
 // ============================================================
 async function fetchAndPrepareFiles(spreadsheetId, env) {
   const rawFiles = await fetchRawFiles(env);
-  return substituteSpreadsheetId(rawFiles, spreadsheetId);
+  return substituteProvisionedValues(rawFiles, spreadsheetId, env);
 }
 
 // ============================================================
