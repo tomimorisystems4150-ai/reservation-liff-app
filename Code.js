@@ -3801,8 +3801,84 @@ function isErrorReportEnabled_() {
 
 function hmacSha256Base64Url_(message, secret) {
   var sigBytes = Utilities.computeHmacSha256Signature(message, secret);
-  var base64 = Utilities.base64Encode(sigBytes);
+  // GAS の byte 配列は符号付き (-128〜127) のため、0xFF マスクしてから Base64 化する
+  var binary = sigBytes.map(function(b) {
+    return String.fromCharCode((b + 256) % 256);
+  }).join('');
+  var base64 = Utilities.base64Encode(binary);
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function getErrorReportDisabledReason_() {
+  if (_ERROR_REPORT_SECRET === 'PLACEHOLDER_ERROR_REPORT_SECRET') {
+    return 'ERROR_REPORT_SECRET 未注入（wrangler secret 設定後にコード配信が必要）';
+  }
+  if (PropertiesService.getScriptProperties().getProperty(ERROR_REPORT_DISABLED_KEY_) === 'true') {
+    return 'errorReportDisabled フラグ ON';
+  }
+  return null;
+}
+
+/**
+ * 開発者向け: Worker エラー報告の疎通確認（GAS エディタから手動実行）。
+ * @returns {{ok: boolean, enabled: boolean, httpCode: number, message: string, responseBody: string}}
+ */
+function probeErrorReportConnection_() {
+  var disabledReason = getErrorReportDisabledReason_();
+  if (disabledReason) {
+    return {
+      ok: false,
+      enabled: false,
+      httpCode: 0,
+      message: disabledReason,
+      responseBody: ''
+    };
+  }
+  var testErr = new Error('probeErrorReportConnection_ 疎通確認 ' + new Date().toISOString());
+  var shopName = '';
+  try {
+    shopName = getConfigValue_('shopName') || '';
+  } catch (e) { /* ignore */ }
+  var payload = {
+    ssId: _PROVISIONED_SS_ID,
+    shopName: shopName,
+    functionName: 'probeErrorReportConnection_',
+    message: testErr.message,
+    stack: testErr.stack || '',
+    timestamp: new Date().toISOString()
+  };
+  var body = JSON.stringify(payload);
+  var timestamp = Math.floor(Date.now() / 1000).toString();
+  var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
+  try {
+    var res = UrlFetchApp.fetch(ERROR_REPORT_WORKER_URL_, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: body,
+      headers: {
+        'X-Error-Timestamp': timestamp,
+        'X-Error-Signature': signature
+      },
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    var text = res.getContentText().substring(0, 500);
+    return {
+      ok: code >= 200 && code < 300,
+      enabled: true,
+      httpCode: code,
+      message: code >= 200 && code < 300 ? 'Worker への報告に成功しました' : 'Worker がエラーを返しました',
+      responseBody: text
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      enabled: true,
+      httpCode: 0,
+      message: 'UrlFetch 失敗: ' + e.message,
+      responseBody: ''
+    };
+  }
 }
 
 /** シート記録成功後に Worker へベストエフォートで通知する */
