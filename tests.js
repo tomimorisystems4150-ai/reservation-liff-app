@@ -35,6 +35,7 @@ function runAllGASTests() {
   results.push(...runSecurityTests_());
   results.push(...runLogicTests_());
   results.push(...runBatchTests_());
+  results.push(...runErrorLogIntegrationTests_());
   results.push(...runPerformanceTests_());
   const endTime = new Date();
 
@@ -905,6 +906,217 @@ function runBatchTests_() {
 }
 
 // =================================================================
+// エラーログ統合テスト（logError_ 拡張箇所）
+// =================================================================
+
+/**
+ * logError_ 拡張箇所の統合テストのみ実行（テストデータ作成・復旧・ログ検証込み）。
+ * GAS エディタまたは doPost action: runErrorLogTests から呼び出す。
+ * @returns {{summary: Object, results: Object[]}}
+ */
+function runErrorLogTests() {
+  Logger.log('========================================');
+  Logger.log('  エラーログ統合テスト 開始');
+  Logger.log('========================================');
+
+  cleanupTestData_();
+  const startTime = new Date();
+  const results = runErrorLogIntegrationTests_();
+  const endTime = new Date();
+
+  const passed = results.filter(r => r.passed).length;
+  const failed = results.filter(r => !r.passed);
+  const elapsed = Math.round((endTime - startTime) / 1000);
+  const summary = {
+    total: results.length,
+    passed: passed,
+    failed: failed.length,
+    elapsedSec: elapsed,
+    executedAt: startTime.toISOString(),
+  };
+
+  Logger.log('----------------------------------------');
+  Logger.log(`エラーログ統合テスト: ${passed} / ${results.length} 件 合格（${elapsed}秒）`);
+  if (failed.length > 0) {
+    failed.forEach(r => Logger.log(`  ✗ ${r.name}: ${r.error}`));
+  }
+  Logger.log('========================================');
+
+  saveTestResults_(summary, results);
+  cleanupTestData_();
+
+  return { summary, results };
+}
+
+function runErrorLogIntegrationTests_() {
+  Logger.log('\n--- エラーログ統合テスト ---');
+  const errorLogStartRow = _errorLogRowCount_();
+  const results = [];
+
+  results.push(runTest_('TC-EL-001: syncBlockCalendars - シート欠落', () => {
+    _withSheetRenamed_('ブロック予定同期', '_TC_EL_blockSync', () => {
+      const countBefore = _errorLogRowCount_();
+      syncBlockCalendars();
+      assertNewErrorLogged_(countBefore, 'syncBlockCalendars', 'ブロック予定同期');
+    });
+  }));
+
+  results.push(runTest_('TC-EL-002: validateRequiredSheetHeaders_ - 列欠落', () => {
+    _withColumnRenamed_('予約', '予約ID', '_TC_EL_予約ID', () => {
+      const countBefore = _errorLogRowCount_();
+      try {
+        validateRequiredSheetHeaders_(['reservation']);
+      } catch (e) { /* 期待どおり */ }
+      assertNewErrorLogged_(countBefore, 'validateRequiredSheetHeaders_', '予約ID');
+    });
+  }));
+
+  results.push(runTest_('TC-EL-003: createEndOfDayUnconfirmedEvent - 無効カレンダー', () => {
+    const today = new Date();
+    today.setHours(14, 0, 0, 0);
+    const seeded = _seedTestBookingRow_({ startTime: today, status: '予約' });
+    _withConfigBackup_('reservationCalendarId', '__TC_EL_invalid_calendar__', () => {
+      const countBefore = _errorLogRowCount_();
+      createEndOfDayUnconfirmedEvent();
+      assertNewErrorLogged_(countBefore, 'createEndOfDayUnconfirmedEvent');
+    });
+    _deleteBookingRow_(seeded.rowNum);
+  }));
+
+  results.push(runTest_('TC-EL-004: sendDayBeforeReminders - LINE API 失敗', () => {
+    const configs = getConfigs();
+    if (configs.reminderMode !== 'LINE') {
+      Logger.log('    (reminderMode!=LINE のためスキップ)');
+      return;
+    }
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
+    const end = new Date(tomorrow.getTime() + 60 * 60000);
+    const seeded = _seedTestBookingRow_({
+      startTime: tomorrow,
+      endTime: end,
+      lineUserId: 'test_el_day_' + Date.now(),
+    });
+    _withConfigBackup_('lineChannelAccessToken', '__TC_EL_invalid_token__', () => {
+      const countBefore = _errorLogRowCount_();
+      sendDayBeforeReminders();
+      assertNewErrorLogged_(countBefore, 'sendDayBeforeReminders');
+    });
+    _deleteBookingRow_(seeded.rowNum);
+  }));
+
+  results.push(runTest_('TC-EL-005: sendHourBeforeReminders - LINE API 失敗', () => {
+    const configs = getConfigs();
+    if (configs.reminderMode !== 'LINE') {
+      Logger.log('    (reminderMode!=LINE のためスキップ)');
+      return;
+    }
+    const start = new Date(Date.now() + 65 * 60000);
+    start.setSeconds(0, 0);
+    const end = new Date(start.getTime() + 60 * 60000);
+    const seeded = _seedTestBookingRow_({
+      startTime: start,
+      endTime: end,
+      lineUserId: 'test_el_hour_' + Date.now(),
+    });
+    _withConfigBackup_('lineChannelAccessToken', '__TC_EL_invalid_token__', () => {
+      const countBefore = _errorLogRowCount_();
+      sendHourBeforeReminders();
+      assertNewErrorLogged_(countBefore, 'sendHourBeforeReminders');
+    });
+    _deleteBookingRow_(seeded.rowNum);
+  }));
+
+  results.push(runTest_('TC-EL-006: runDailyArchive - 無効アーカイブ先', () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(10, 0, 0, 0);
+    const end = new Date(yesterday.getTime() + 60 * 60000);
+    const seeded = _seedTestBookingRow_({ startTime: yesterday, endTime: end, status: '来店' });
+    _withConfigBackup_('archiveSpreadsheetId', '__TC_EL_invalid_archive__', () => {
+      const countBefore = _errorLogRowCount_();
+      runDailyArchive();
+      assertNewErrorLogged_(countBefore, 'runDailyArchive');
+    });
+    _deleteBookingRow_(seeded.rowNum);
+  }));
+
+  results.push(runTest_('TC-EL-007: createBooking:calendarCreate - 無効カレンダー', () => {
+    _withConfigBackup_('reservationCalendarId', '__TC_EL_invalid_calendar__', () => {
+      const countBefore = _errorLogRowCount_();
+      const slot = _getTestSlot(21);
+      const res = _callDoPost({
+        action: 'createBooking',
+        bookingData: {
+          lineUserId: 'test_el_cal_' + Date.now(),
+          userName: TEST_CUSTOMER_NAME,
+          menuName: _getFirstMenuName(),
+          duration: 30,
+          startDateTime: slot,
+          staffEmail: 'any',
+          staffName: '',
+        },
+      });
+      assert_(!res.success, '無効カレンダーで予約が成功してしまった: ' + (res.message || ''));
+      assertNewErrorLogged_(countBefore, 'createBooking:calendarCreate');
+    });
+  }));
+
+  results.push(runTest_('TC-EL-008: confirmBookingStatus - カレンダー不整合', () => {
+    const seeded = _seedTestBookingRow_({
+      startTime: _getTodayAt_(14, 0),
+      status: '予約',
+      eventId: '__TC_EL_invalid_event__',
+    });
+    const countBefore = _errorLogRowCount_();
+    try {
+      confirmBookingStatus(seeded.bookingId, 'キャンセル');
+      throw new Error('confirmBookingStatus がエラーにならなかった');
+    } catch (e) {
+      if (e.message === 'confirmBookingStatus がエラーにならなかった') throw e;
+    }
+    assertNewErrorLogged_(countBefore, 'confirmBookingStatus', seeded.bookingId);
+    _deleteBookingRow_(seeded.rowNum);
+  }));
+
+  results.push(runTest_('TC-EL-009: createBooking - 想定内エラーは記録しない', () => {
+    const configs = getConfigs();
+    if (!configs.isStaffFeatureEnabled || !configs.staffs || !configs.staffs.length) {
+      Logger.log('    (担当者機能OFFのためスキップ)');
+      return;
+    }
+    const slot = _getTestSlot(28);
+    const staff = configs.staffs[0];
+    const base = {
+      lineUserId: 'test_el_full_' + Date.now(),
+      userName: TEST_CUSTOMER_NAME,
+      menuName: _getFirstMenuName(),
+      duration: 30,
+      startDateTime: slot,
+      staffEmail: staff.email,
+      staffName: staff.name,
+    };
+    const res1 = _callDoPost({ action: 'createBooking', bookingData: base });
+    assert_(res1.success, '1件目の予約が失敗: ' + (res1.message || ''));
+    const countBefore = _errorLogRowCount_();
+    const res2 = _callDoPost({ action: 'createBooking', bookingData: base });
+    assert_(!res2.success, '満席スロットへの2件目が成功してしまった');
+    assertNewErrorNotLogged_(countBefore, 'createBooking');
+    assertNewErrorNotLogged_(countBefore, 'createBooking:calendarCreate');
+  }));
+
+  results.push(runTest_('TC-EL-010: logErrorIfSystem_ - 想定内エラーは記録しない', () => {
+    const countBefore = _errorLogRowCount_();
+    logErrorIfSystem_('TC_EL_user_skip', new Error('申し訳ありません。タッチの差で 10:00 の枠が埋まってしまいました。'));
+    assertNewErrorNotLogged_(countBefore, 'TC_EL_user_skip');
+  }));
+
+  _cleanupErrorLogsAddedSince_(errorLogStartRow);
+  return results;
+}
+
+// =================================================================
 // 性能テスト
 // =================================================================
 
@@ -1200,4 +1412,145 @@ function _getFirstMenuName() {
     return configs.serviceMenus[0].name;
   }
   return 'テストメニュー';
+}
+
+// --- エラーログ統合テスト用ヘルパー ---
+
+function _errorLogRowCount_() {
+  const sheet = getSpreadsheet_().getSheetByName('エラーログ');
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  return sheet.getLastRow() - 1;
+}
+
+function _getNewErrorLogsSince_(countBefore) {
+  const sheet = getSpreadsheet_().getSheetByName('エラーログ');
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getDataRange().getValues().slice(1 + countBefore).map(function(row) {
+    return { functionName: String(row[1] || ''), message: String(row[2] || '') };
+  });
+}
+
+function assertNewErrorLogged_(countBefore, functionName, messagePart) {
+  const newLogs = _getNewErrorLogsSince_(countBefore);
+  const found = newLogs.some(function(log) {
+    if (log.functionName !== functionName) return false;
+    if (messagePart && log.message.indexOf(messagePart) < 0) return false;
+    return true;
+  });
+  assert_(found, 'エラーログに ' + functionName + (messagePart ? ' / ' + messagePart : '') + ' が記録されていない');
+}
+
+function assertNewErrorNotLogged_(countBefore, functionName) {
+  const newLogs = _getNewErrorLogsSince_(countBefore);
+  const found = newLogs.some(function(log) {
+    return log.functionName === functionName;
+  });
+  assert_(!found, functionName + ' がエラーログに記録された');
+}
+
+function _cleanupErrorLogsAddedSince_(countBefore) {
+  const sheet = getSpreadsheet_().getSheetByName('エラーログ');
+  if (!sheet || sheet.getLastRow() <= 1) return;
+  const total = sheet.getLastRow() - 1;
+  const toDelete = total - countBefore;
+  if (toDelete > 0) {
+    sheet.deleteRows(2 + countBefore, toDelete);
+  }
+}
+
+function _getConfigValueFromSheet_(key) {
+  const sheet = getSpreadsheet_().getSheetByName('Config');
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === key) return data[i][1];
+  }
+  return null;
+}
+
+function _withConfigBackup_(key, tempValue, fn) {
+  const original = _getConfigValueFromSheet_(key);
+  updateConfigValue_(key, tempValue);
+  try {
+    fn();
+  } finally {
+    updateConfigValue_(key, original !== null && original !== undefined ? original : '');
+  }
+}
+
+function _withSheetRenamed_(currentName, tempName, fn) {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName(currentName);
+  if (!sheet) throw new Error('シート「' + currentName + '」が見つかりません');
+  sheet.setName(tempName);
+  try {
+    fn();
+  } finally {
+    const renamed = ss.getSheetByName(tempName);
+    if (renamed) renamed.setName(currentName);
+  }
+}
+
+function _withColumnRenamed_(sheetName, colName, tempColName, fn) {
+  const sheet = getSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet) throw new Error('シート「' + sheetName + '」が見つかりません');
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const colIdx = headers.indexOf(colName);
+  if (colIdx < 0) throw new Error('列「' + colName + '」が見つかりません');
+  sheet.getRange(1, colIdx + 1).setValue(tempColName);
+  try {
+    fn();
+  } finally {
+    sheet.getRange(1, colIdx + 1).setValue(colName);
+  }
+}
+
+function _getTodayAt_(hour, minute) {
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function _seedTestBookingRow_(options) {
+  const configs = getConfigs();
+  const sheet = getReservationSheet(configs);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row = new Array(headers.length).fill('');
+  const bookingId = options.bookingId || ('BK_TEST_EL_' + Date.now());
+  const lineUserId = options.lineUserId || ('test_el_' + Date.now());
+  const startTime = options.startTime instanceof Date ? options.startTime : new Date(options.startTime);
+  const endTime = options.endTime || new Date(startTime.getTime() + (options.durationMin || 60) * 60000);
+
+  function setCol(name, val) {
+    const idx = headers.indexOf(name);
+    if (idx >= 0) row[idx] = val;
+  }
+  setCol('予約ID', bookingId);
+  setCol('ステータス', options.status || '予約');
+  setCol('LINE User ID', lineUserId);
+  setCol('顧客名', options.customerName || '__テストEL__');
+  setCol('メニュー名', options.menuName || _getFirstMenuName());
+  setCol('予約日時', startTime);
+  setCol('終了日時', endTime);
+  setCol('イベントID', options.eventId || '');
+  setCol('担当者名', options.staffName || '');
+  setCol('担当者Email', options.staffEmail || 'any');
+
+  sheet.appendRow(row);
+  return {
+    bookingId: bookingId,
+    rowNum: sheet.getLastRow(),
+    lineUserId: lineUserId,
+    startTime: startTime,
+    endTime: endTime,
+  };
+}
+
+function _deleteBookingRow_(rowNum) {
+  if (!rowNum || rowNum < 2) return;
+  const configs = getConfigs();
+  const sheet = getReservationSheet(configs);
+  if (rowNum <= sheet.getLastRow()) {
+    sheet.deleteRow(rowNum);
+  }
 }

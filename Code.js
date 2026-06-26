@@ -288,7 +288,7 @@ function doPost(e) {
     if (postData.action) {
       Logger.log('受信アクション: [' + postData.action + '] / postData keys: ' + Object.keys(postData).join(', '));
 
-      if (postData.action !== 'runTests') {
+      if (postData.action !== 'runTests' && postData.action !== 'runErrorLogTests') {
         if (isServiceSuspendedFromSheet_()) {
           return createServiceSuspendedResponse_();
         }
@@ -330,6 +330,14 @@ function doPost(e) {
           // 自動テスト実行（CI/CD連携用）
           // テスト結果をJSONで返しつつ「テスト結果」シートに証跡を保存する
           response = runAllGASTests();
+          break;
+        }
+
+        case 'runErrorLogTests': {
+          if (typeof runErrorLogTests !== 'function') {
+            throw new Error('tests.js がデプロイされていません。コード配信時に「テストスイート含む」を有効にしてください。');
+          }
+          response = runErrorLogTests();
           break;
         }
 

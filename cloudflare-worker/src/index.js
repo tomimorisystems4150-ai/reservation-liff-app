@@ -80,6 +80,9 @@ const SCRIPT_FILES_META = [
   { name: 'appsscript',     type: 'JSON',      file: 'appsscript.json' },
 ];
 
+/** テスト店舗向け（コード配信「テストスイート含む」ON 時のみ同梱） */
+const TEST_SCRIPT_FILE_META = { name: 'tests', type: 'SERVER_JS', file: 'tests.js' };
+
 // ============================================================
 // メインルーター
 // ============================================================
@@ -1357,13 +1360,17 @@ async function getUserEmail(accessToken) {
 // GitHubからスクリプトファイルを取得する（プレースホルダーはそのまま）
 // push-update では全顧客共通なのでループ外で1回だけ呼ぶ。
 // ============================================================
-async function fetchRawFiles(env) {
+async function fetchRawFiles(env, options) {
+  const includeTests = !!(options && options.includeTests);
+  const meta = includeTests
+    ? SCRIPT_FILES_META.concat([TEST_SCRIPT_FILE_META])
+    : SCRIPT_FILES_META;
   const repo   = env.GITHUB_REPO;
   const branch = env.GITHUB_BRANCH || 'main';
   const base   = `https://raw.githubusercontent.com/${repo}/${branch}`;
 
   return Promise.all(
-    SCRIPT_FILES_META.map(async ({ name, type, file }) => {
+    meta.map(async ({ name, type, file }) => {
       const res = await fetch(`${base}/${file}`);
       if (!res.ok) throw new Error(`GitHubからのファイル取得失敗: ${file} (${res.status})`);
       const source = await res.text();

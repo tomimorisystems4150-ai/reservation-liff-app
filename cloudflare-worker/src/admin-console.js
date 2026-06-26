@@ -78,8 +78,8 @@ export async function fetchAdminCustomers(env, kvMap, getSaToken) {
         shopName: '',
         adminEmail: rec.adminEmail || '',
         onboardedAt: rec.onboardedAt || '',
-        paymentStatus: '—',
-        serviceStatus: '—',
+        paymentStatus: '台帳未設定',
+        serviceStatus: '台帳未設定',
         deployUrl: '',
         scriptId: rec.scriptId || '',
         paymentMemo: '（顧客台帳未設定）',
@@ -93,11 +93,10 @@ export async function fetchAdminCustomers(env, kvMap, getSaToken) {
     const pushReady = !!(kv && kv.refreshToken && kv.scriptId && kv.deploymentId);
     return {
       ssId: r.ssId,
-      shopName: r.shopName || '',
-      adminEmail: r.adminEmail || '',
+      adminEmail: r.adminEmail || kv?.adminEmail || '',
       onboardedAt: r.onboardedAt || '',
-      paymentStatus: r.paymentStatus || '—',
-      serviceStatus: r.serviceStatus || '—',
+      paymentStatus: r.paymentStatus || (registryConfigured ? '—' : '台帳未設定'),
+      serviceStatus: r.serviceStatus || (registryConfigured ? '—' : '台帳未設定'),
       deployUrl,
       scriptId: r.scriptId || kv?.scriptId || '',
       paymentMemo: r.paymentMemo || '',
@@ -105,6 +104,12 @@ export async function fetchAdminCustomers(env, kvMap, getSaToken) {
       pushReason: pushReady ? '' : 'refreshToken/scriptId/deploymentId 未保存（再オンボーディングが必要）',
     };
   });
+
+  for (const c of customers) {
+    if (c.adminEmail) continue;
+    const fromConfig = await readSpreadsheetConfigValue(env, getSaToken, c.ssId, 'adminEmail');
+    if (fromConfig) c.adminEmail = fromConfig;
+  }
 
   return { customers, registryError, kvOrphanCount, registryConfigured };
 }
@@ -156,7 +161,11 @@ export async function resolveTestEnvContext(env, customers, kvMap, getSaToken) {
   const customer = customers.find(c => c.ssId === TEST_SS_ID);
   const kv = kvMap[TEST_SS_ID];
   const deployUrl = resolveDeployUrl(customer, kv);
-  const shopName = customer?.shopName || '';
+  let adminEmail = customer?.adminEmail || kv?.adminEmail || '';
+  if (!adminEmail) {
+    const fromConfig = await readSpreadsheetConfigValue(env, getSaToken, TEST_SS_ID, 'adminEmail');
+    if (fromConfig) adminEmail = fromConfig;
+  }
   const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${TEST_SS_ID}/edit`;
   const settingsUrl = deployUrl || '';
 
@@ -179,7 +188,7 @@ export async function resolveTestEnvContext(env, customers, kvMap, getSaToken) {
 
   return {
     ssId: TEST_SS_ID,
-    shopName,
+    adminEmail,
     deployUrl,
     settingsUrl,
     liffUrl,
@@ -194,7 +203,7 @@ export async function resolveTestEnvContext(env, customers, kvMap, getSaToken) {
  * push-update コア処理（GUI / 旧URL 両方から利用）
  */
 export async function executePushUpdate(env, deps, options) {
-  const { ssIds, includeStopped = false, allActive = false } = options;
+  const { ssIds, includeStopped = false, allActive = false, includeTests = false } = options;
   const { getSaToken, fetchRawFiles, pushCodeToCustomer, syncServiceSuspendedToCustomer, kvGet, kvList } = deps;
 
   const kvListResult = await kvList();
@@ -232,7 +241,7 @@ export async function executePushUpdate(env, deps, options) {
     };
   }
 
-  const rawFiles = await fetchRawFiles(env);
+  const rawFiles = await fetchRawFiles(env, { includeTests });
   const results = [];
 
   for (const target of targets) {
@@ -320,9 +329,10 @@ export async function handleAdminApiPush(request, env, deps) {
 
   const ssIds = Array.isArray(body.ssIds) ? body.ssIds.filter(Boolean) : null;
   const includeStopped = !!body.includeStopped;
+  const includeTests = !!body.includeTests;
 
   try {
-    const data = await executePushUpdate(env, deps, { ssIds, includeStopped, allActive: !ssIds?.length });
+    const data = await executePushUpdate(env, deps, { ssIds, includeStopped, allActive: !ssIds?.length, includeTests });
     return jsonResponse({ success: true, ...data });
   } catch (err) {
     return jsonResponse({ success: false, message: err.message }, 500);
@@ -367,7 +377,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
   const adminEmailLabel = adminUser?.email ? escapeHtml(adminUser.email) : '';
   const test = testEnv || {
     ssId: TEST_SS_ID,
-    shopName: '',
+    adminEmail: '',
     deployUrl: '',
     settingsUrl: '',
     liffUrl: '',
@@ -427,6 +437,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
     th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid #eef0f3; vertical-align: middle; }
     th { background: #f8f9fa; font-weight: 700; color: #555; position: sticky; top: 0; }
     .ss-id { font-family: monospace; font-size: 0.9em; word-break: break-all; max-width: 140px; }
+    .admin-email { font-size: 0.9em; word-break: break-all; max-width: 200px; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.85em; font-weight: 700; }
     .badge-ok { background: #d5f5e3; color: #1e8449; }
     .badge-stop { background: #fadbd8; color: #cb4335; }
@@ -552,7 +563,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
         </div>
         <div class="panel panel-test" style="margin-bottom:16px;">
           <h2><span class="badge-test-env">テスト環境</span> 画面確認</h2>
-          <p class="test-ss-meta">${escapeHtml(test.shopName || 'テスト店舗')}${test.shopName ? ' · ' : ''}${escapeHtml(test.ssId)}</p>
+          <p class="test-ss-meta">${escapeHtml(test.ssId)}${test.adminEmail ? `<br>${escapeHtml(test.adminEmail)}` : ''}</p>
           ${testMissingHint}
           <div class="side-toolbar">
             <a href="/" target="_blank" rel="noopener noreferrer" class="btn btn-outline">導入ページを確認する</a>
@@ -571,7 +582,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
         <div class="panel">
           <h2>顧客台帳・メンテ</h2>
           ${registryUrl
-            ? `<p class="side-hint">決済ステータス・店舗名・決済メモは顧客台帳スプレッドシートで編集します。</p>`
+            ? `<p class="side-hint">決済ステータス・決済メモは顧客台帳スプレッドシートで編集します。店舗名は各店舗の予約スプレッドシート内 Config にあります。</p>`
             : `<div class="alert alert-warn" style="margin-bottom:0;">CUSTOMER_REGISTRY_SS_ID が未設定です。先に台帳を初期化してください。</div>`}
           <div class="side-toolbar">
             ${registryUrl
@@ -582,13 +593,14 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
           </div>
           <p style="margin-top:12px;font-size:0.78em;color:#999;">
             決済: ${PAYMENT_STATUSES.join(' / ')}<br>
-            サービス: ${SERVICE_STATUSES.join(' / ')}
+            サービス状態: ${SERVICE_STATUSES.join(' / ')}（停止＝予約受付を一時停止）
           </p>
         </div>
       </aside>
 
       <main class="panel">
         <h2>顧客一覧と操作</h2>
+        <p class="side-hint" style="margin-bottom:12px;">Gmail はオンボーディング時に Google 認証したアカウントです。決済・サービス状態は顧客台帳（CUSTOMER_REGISTRY_SS_ID）設定後に表示されます。</p>
         ${registryError ? `<div class="alert alert-err">台帳読込エラー: ${escapeHtml(registryError)}</div>` : ''}
         ${!registryConfigured ? `<div class="alert alert-warn">顧客台帳（CUSTOMER_REGISTRY_SS_ID）が未設定のため、KV の記録を表示しています。削除済みスプレッドシートは自動で非表示にしています。</div>` : ''}
         ${kvOrphanCount > 0 ? `<div class="alert alert-warn">KV に削除済みスプレッドシートの記録が <strong>${kvOrphanCount}</strong> 件残っています。<a href="/admin/kv-cleanup">KV クリーンアップ</a> で完全に削除できます。</div>` : ''}
@@ -597,6 +609,9 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
           <button type="button" class="btn btn-primary" id="btnPushSelected">選択店舗にコード配信</button>
           <button type="button" class="btn btn-warn" id="btnStopSelected">選択店舗を停止</button>
           <button type="button" class="btn btn-outline" id="btnResumeSelected">選択店舗を再開</button>
+          <label style="margin-left:8px;font-size:0.88em;cursor:pointer;" title="tests.js を同梱。テスト店舗のみ ON にしてください">
+            <input type="checkbox" id="chkIncludeTests"> テストスイート含む
+          </label>
           <span class="selected-count" id="selectedCount">0 件選択</span>
         </div>
 
@@ -613,9 +628,9 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
               <tr>
                 <th style="width:36px;"></th>
                 <th>ssId</th>
-                <th>店舗名</th>
+                <th>Gmail</th>
                 <th>決済</th>
-                <th>サービス</th>
+                <th title="稼働中＝予約受付可 / 停止＝予約を一時停止">サービス状態</th>
                 <th>配信</th>
                 <th></th>
               </tr>
@@ -683,7 +698,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
           <tr class="\${c.ssId === TEST_SS_ID ? 'row-test' : ''}" data-ss-id="\${esc(c.ssId)}" data-active="\${c.serviceStatus !== '停止'}">
             <td><input type="checkbox" class="row-chk" value="\${esc(c.ssId)}"></td>
             <td class="ss-id">\${renderSsIdCell(c)}</td>
-            <td>\${esc(c.shopName || '—')}</td>
+            <td class="admin-email">\${esc(c.adminEmail || '—')}</td>
             <td>\${esc(c.paymentStatus)}</td>
             <td>\${serviceBadge(c.serviceStatus)}</td>
             <td>\${pushBadge(c)}</td>
@@ -751,7 +766,11 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
         alert('配信する店舗を選択してください。');
         return;
       }
-      if (!confirm(ssIds.length + ' 店舗に GitHub（' + ${JSON.stringify(branch)} + '）の最新コードを配信します。よろしいですか？')) return;
+      const includeTests = document.getElementById('chkIncludeTests').checked;
+      let confirmMsg = ssIds.length + ' 店舗に GitHub（' + ${JSON.stringify(branch)} + '）の最新コードを配信します。';
+      if (includeTests) confirmMsg += '\\n\\n※ tests.js を含みます（テスト店舗向け）。';
+      confirmMsg += '\\nよろしいですか？';
+      if (!confirm(confirmMsg)) return;
 
       setLoading(true, 'GitHub からコード取得 → GAS へ配信中...');
       try {
@@ -759,7 +778,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ssIds, includeStopped: !!includeStopped }),
+          body: JSON.stringify({ ssIds, includeStopped: !!includeStopped, includeTests }),
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.message || '配信失敗');
