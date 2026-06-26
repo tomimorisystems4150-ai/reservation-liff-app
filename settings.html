@@ -114,12 +114,12 @@
     <div class="section-header">
       <span class="section-icon">🏪</span>
       <span class="section-title">店舗基本情報</span>
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <label class="form-label">店舗名 *</label>
       <input type="text" id="shopName" class="form-control" placeholder="〇〇サロン">
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <label class="form-label">営業時間 *</label>
       <div class="time-row">
         <input type="time" id="businessHoursStart" class="form-control">
@@ -211,8 +211,8 @@
     <div class="section-header">
       <span class="section-icon">📅</span>
       <span class="section-title">複数日程一括予約設定</span>
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <label class="form-label">1回で選択できる最大予約件数</label>
       <input type="number" id="maxBulkBookings" class="form-control" min="1" max="52" placeholder="1">
       <div class="form-hint">「<strong>1</strong>」に設定すると一括予約機能が<strong>無効</strong>になり、通常の単一予約のみになります。「2以上」で複数日時の一括予約が有効になります（上限52件）。</div>
@@ -224,8 +224,8 @@
     <div class="section-header">
       <span class="section-icon">👤</span>
       <span class="section-title">担当者機能</span>
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <div class="toggle-group">
         <div class="toggle-opt">
           <input type="radio" name="staffFeature" id="staffOff" value="false">
@@ -259,7 +259,7 @@
       <span class="section-icon">🔔</span>
       <span class="section-title">リマインド設定</span>
     </div>
-    <div class="form-group">
+      <div class="form-group">
       <label class="form-label">リマインドモード</label>
       <div class="toggle-group">
         <div class="toggle-opt">
@@ -300,20 +300,20 @@
       <label class="form-label">チャネルアクセストークン（長期） *</label>
       <input type="text" id="lineChannelAccessToken" class="form-control" placeholder="LINE Developers › Messaging API › チャネルアクセストークン（長期）">
     </div>
-    <div class="form-group">
+      <div class="form-group">
       <label class="form-label">LIFF ID *</label>
       <input type="text" id="liffChannelId" class="form-control" oninput="updateEndpointUrls()" placeholder="200xxxxxx-xxxxxxxx">
       <div class="form-hint">LINE Developers › LIFF アプリの LIFF ID。予約画面 URL の liffId パラメータに使用します。</div>
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <label class="form-label">Webhook URL（Messaging API に設定）</label>
       <div class="url-row">
         <input type="text" id="webhookUrlDisplay" class="form-control" readonly>
         <button type="button" class="btn-copy" onclick="copyUrl('webhookUrlDisplay')">コピー</button>
       </div>
       <div class="form-hint">LINE Developers › Messaging API › Webhook URL に貼り付けます。「Webhookの利用」をONにしてください。</div>
-    </div>
-    <div class="form-group">
+      </div>
+      <div class="form-group">
       <label class="form-label">LIFF エンドポイントURL（LIFFアプリに設定）</label>
       <div class="url-row">
         <input type="text" id="liffEndpointUrlDisplay" class="form-control" readonly>
@@ -348,7 +348,7 @@
   const LIFF_PAGES_BASE = <?!= JSON.stringify(_liffPagesBase) ?>;
   const OPERATIONS_MANUAL_URL = <?!= JSON.stringify(_operationsManualUrl) ?>;
   const staffBlockMap = configs.staff_block_calendar_id_map || {};
-  let serviceMenus = configs.serviceMenus || [];
+    let serviceMenus = configs.serviceMenus || [];
   let holidays = Array.isArray(configs.holidays) ? configs.holidays.map(Number).filter(n => !isNaN(n)) : [];
   let nonOperatingHours = Array.isArray(configs.nonOperatingHours) ? configs.nonOperatingHours.map(p => ({
     start: p.start || '',
@@ -474,19 +474,19 @@
   }
 
   // ===== Sync UI → data arrays =====
-  function syncUiToData() {
+    function syncUiToData() {
     syncHolidaysFromUi();
     syncBreaksFromUi();
     serviceMenus = [];
-    document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
+      document.querySelectorAll('#menuList .dynamic-item').forEach(item => {
       const name     = item.querySelector('.menu-name').value.trim();
-      const duration = parseInt(item.querySelector('.menu-duration').value, 10) || 0;
+        const duration = parseInt(item.querySelector('.menu-duration').value, 10) || 0;
       serviceMenus.push({ name, duration });
-    });
+      });
     staffs = [];
-    document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
+      document.querySelectorAll('#staffList .dynamic-item').forEach(item => {
       const name  = item.querySelector('.staff-name').value.trim();
-      const email = item.querySelector('.staff-email').value.trim();
+        const email = item.querySelector('.staff-email').value.trim();
       const blockCalendarId = (item.querySelector('.staff-block-cal')?.value || '').trim();
       staffs.push({ name, email, blockCalendarId });
     });
@@ -518,78 +518,78 @@
   }
 
   // ===== Staff =====
-  function toggleStaffSettings(show) {
-    document.getElementById('staffSettings').style.display = show ? 'block' : 'none';
-  }
+    function toggleStaffSettings(show) {
+      document.getElementById('staffSettings').style.display = show ? 'block' : 'none';
+    }
 
-  function renderStaffList() {
+    function renderStaffList() {
     const el = document.getElementById('staffList');
     el.innerHTML = '';
     staffs.forEach((s, i) => el.appendChild(createStaffItem(s.name, s.email, s.blockCalendarId, i)));
   }
 
   function createStaffItem(name, email, blockCalendarId, index) {
-    const div = document.createElement('div');
-    div.className = 'dynamic-item';
-    div.dataset.index = index;
-    div.innerHTML = `
+      const div = document.createElement('div');
+      div.className = 'dynamic-item';
+      div.dataset.index = index;
+      div.innerHTML = `
       <div class="item-field" style="flex:1">
         <label class="form-label">担当者名</label>
-        <input type="text" class="staff-name" value="${name}">
-      </div>
+          <input type="text" class="staff-name" value="${name}">
+        </div>
       <div class="item-field" style="flex:2">
         <label class="form-label">Gmailアドレス</label>
-        <input type="email" class="staff-email" value="${email}">
-      </div>
+          <input type="email" class="staff-email" value="${email}">
+        </div>
       <div class="item-field" style="flex:2">
         <label class="form-label">ブロックカレンダーID</label>
         <input type="text" class="staff-block-cal" value="${blockCalendarId || ''}" placeholder="xxxx@group.calendar.google.com">
       </div>
       <button type="button" class="btn-remove" onclick="removeStaff(this)">削除</button>`;
-    return div;
-  }
+      return div;
+    }
 
-  function addStaff() {
+    function addStaff() {
     syncUiToData(); staffs.push({ name: '', email: '', blockCalendarId: '' }); renderStaffList();
-  }
+    }
   function removeStaff(btn) {
-    syncUiToData();
+      syncUiToData();
     staffs.splice(parseInt(btn.parentElement.dataset.index, 10), 1);
-    renderStaffList();
-  }
+      renderStaffList();
+    }
 
   // ===== Menu =====
-  function renderMenuList() {
+    function renderMenuList() {
     const el = document.getElementById('menuList');
     el.innerHTML = '';
     serviceMenus.forEach((m, i) => el.appendChild(createMenuItem(m.name, m.duration, i)));
   }
 
   function createMenuItem(name, duration, index) {
-    const div = document.createElement('div');
-    div.className = 'dynamic-item';
-    div.dataset.index = index;
-    div.innerHTML = `
+      const div = document.createElement('div');
+      div.className = 'dynamic-item';
+      div.dataset.index = index;
+      div.innerHTML = `
       <div class="item-field" style="flex:2">
         <label class="form-label">メニュー名</label>
-        <input type="text" class="menu-name" value="${name}">
-      </div>
+          <input type="text" class="menu-name" value="${name}">
+        </div>
       <div class="item-field" style="flex:1">
         <label class="form-label">所要時間（分）</label>
         <input type="number" class="menu-duration" value="${duration > 0 ? duration : ''}" min="1">
-      </div>
+        </div>
       <button type="button" class="btn-remove" onclick="removeMenuItem(this)">削除</button>`;
-    return div;
-  }
+      return div;
+    }
 
-  function addMenuItem() {
+    function addMenuItem() {
     syncUiToData(); serviceMenus.push({ name: '', duration: 0 }); renderMenuList();
   }
   function removeMenuItem(btn) {
-    syncUiToData();
+      syncUiToData();
     serviceMenus.splice(parseInt(btn.parentElement.dataset.index, 10), 1);
-    renderMenuList();
-  }
+      renderMenuList();
+    }
 
   // ===== Reminder hint =====
   function updateReminderHint(mode) {
@@ -611,9 +611,9 @@
     group.style.display = allowed ? 'none' : '';
     field.disabled = allowed;
     document.getElementById('alternateBookingGuideCount').textContent = String(field.value.length);
-  }
+    }
 
-  function validateForm() {
+    function validateForm() {
     clearErrors();
     let ok = true;
 
@@ -716,7 +716,7 @@
     syncUiToData();
     if (!validateForm()) { toast('入力内容を確認してください。', 'err'); return; }
 
-    document.getElementById('saveButton').disabled = true;
+      document.getElementById('saveButton').disabled = true;
     toast('保存中...', '');
 
     const isStaffEnabled = document.getElementById('staffOn').checked;
@@ -726,10 +726,10 @@
       if (s.email && s.blockCalendarId) staffBlockCalendarIdMap[s.email] = s.blockCalendarId;
     });
 
-    const configsToSave = {
+      const configsToSave = {
       shopName:              document.getElementById('shopName').value.trim(),
-      businessHours: {
-        start: document.getElementById('businessHoursStart').value,
+        businessHours: {
+          start: document.getElementById('businessHoursStart').value,
         end:   document.getElementById('businessHoursEnd').value
       },
       holidays:              holidays,
@@ -738,7 +738,7 @@
       bookingLookaheadDays:  parseInt(document.getElementById('bookingLookaheadDays').value, 10),
       maxConcurrentBookings: parseInt(document.getElementById('maxConcurrentBookings').value, 10),
       maxBulkBookings:       parseInt(document.getElementById('maxBulkBookings').value, 10),
-      isStaffFeatureEnabled: isStaffEnabled,
+        isStaffFeatureEnabled: isStaffEnabled,
       staffs:                isStaffEnabled ? staffs.filter(s => s.name && s.email).map(s => ({ name: s.name, email: s.email })) : [],
       staff_block_calendar_id_map: isStaffEnabled ? staffBlockCalendarIdMap : {},
       serviceMenus:          serviceMenus.filter(m => m.name && m.duration > 0),
@@ -753,9 +753,9 @@
       lineLoginChannelId:    document.getElementById('lineLoginChannelId').value.trim(),
       liffChannelId:         document.getElementById('liffChannelId').value.trim(),
       reminderMode:          reminderMode
-    };
+      };
 
-    google.script.run
+      google.script.run
       .withSuccessHandler(result => {
         document.getElementById('saveButton').disabled = false;
         const ok = (typeof result === 'object' && result !== null) ? result.success : !!result;
@@ -767,8 +767,8 @@
         document.getElementById('saveButton').disabled = false;
         toast('エラー: ' + err.message, 'err');
       })
-      .saveConfigs(configsToSave);
-  }
+        .saveConfigs(configsToSave);
+    }
 
   // ===== Toast =====
   function toast(msg, type) {
@@ -800,8 +800,8 @@
   }
 
   // ===== Init =====
-  window.onload = function() {
-    populateForm();
+    window.onload = function() {
+      populateForm();
     renderManualLinks();
 
     document.querySelectorAll('input[name="staffFeature"]').forEach(r => {
@@ -818,7 +818,7 @@
 
     document.getElementById('allowSameDayBooking').addEventListener('change', updateAlternateBookingGuideUi);
     document.getElementById('alternateBookingGuide').addEventListener('input', updateAlternateBookingGuideUi);
-  };
+    };
 </script>
 </body>
 </html>
