@@ -147,6 +147,14 @@ function canRenderTimetable() {
   return true;
 }
 
+function setTimetableLoadingVisible_(visible) {
+  const loadingEl = document.getElementById('timetable-loading');
+  const wrapperEl = document.querySelector('#timetable-container .timetable-wrapper');
+  if (!loadingEl || !wrapperEl) return;
+  loadingEl.style.display = visible ? 'flex' : 'none';
+  wrapperEl.style.display = visible ? 'none' : '';
+}
+
 /** "HH:mm" を分に変換 */
 function parseTimeToMinutes_(timeStr) {
   const parts = String(timeStr || '00:00').split(':');
@@ -757,10 +765,8 @@ async function renderTimetable() {
   const slotRequest = buildSlotRequest_();
   const cacheKey = buildSlotsCacheKey_(slotRequest);
   const cachedSlots = getCachedSlots_(cacheKey);
-  if (!cachedSlots && !inflightSlotFetches.has(cacheKey)) {
-    timetableBody.innerHTML = '<tr><td colspan="8" style="padding: 20px;">空き時間を検索中...</td></tr>';
-    timetableHead.innerHTML = '';
-  }
+  const needsFetch = !cachedSlots;
+  if (needsFetch) setTimetableLoadingVisible_(true);
 
   const monthDisplay = new Date(currentWeekStartDate.getTime());
   monthDisplay.setDate(monthDisplay.getDate() + 3);
@@ -775,65 +781,71 @@ async function renderTimetable() {
   maxDate.setDate(maxDate.getDate() + (initData.bookingLookaheadDays || 90));
   document.getElementById('next-week-button').disabled = currentWeekStartDate.getTime() >= maxDate.getTime();
 
-  const weeklyAvailableSlots = await fetchAvailableSlotsData_(slotRequest);
+  try {
+    const weeklyAvailableSlots = await fetchAvailableSlotsData_(slotRequest);
 
-  if (renderGeneration !== timetableRenderGeneration) return;
-  if (currentWeekStartDate.getTime() !== weekStartMs) return;
-  const staffEmailNow = bookingState.staff ? bookingState.staff.email : null;
-  if (staffEmailNow !== staffEmailAtRequest) return;
+    if (renderGeneration !== timetableRenderGeneration) return;
+    if (currentWeekStartDate.getTime() !== weekStartMs) return;
+    const staffEmailNow = bookingState.staff ? bookingState.staff.email : null;
+    if (staffEmailNow !== staffEmailAtRequest) return;
 
-  let headerHtml = '<tr><th></th>';
-  const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(currentWeekStartDate.getTime());
-    d.setDate(d.getDate() + i);
-    const dayClass = d.getDay() === 0 ? 'is-sunday' : (d.getDay() === 6 ? 'is-saturday' : '');
-    headerHtml += `<th class="${dayClass}">${d.getDate()}<br><span class="day-of-week">(${daysOfWeek[d.getDay()]})</span></th>`;
-  }
-  headerHtml += '</tr>';
-  timetableHead.innerHTML = headerHtml;
+    let headerHtml = '<tr><th></th>';
+    const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(currentWeekStartDate.getTime());
+      d.setDate(d.getDate() + i);
+      const dayClass = d.getDay() === 0 ? 'is-sunday' : (d.getDay() === 6 ? 'is-saturday' : '');
+      headerHtml += `<th class="${dayClass}">${d.getDate()}<br><span class="day-of-week">(${daysOfWeek[d.getDay()]})</span></th>`;
+    }
+    headerHtml += '</tr>';
+    timetableHead.innerHTML = headerHtml;
 
-  let bodyHtml = '';
-  const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10);
-  const businessHours = getBusinessHours_();
-  const startMinutes = parseTimeToMinutes_(businessHours.start);
-  const endMinutes = parseTimeToMinutes_(businessHours.end);
+    let bodyHtml = '';
+    const timeUnit = parseInt(initData.bookingTimeUnit || 30, 10);
+    const businessHours = getBusinessHours_();
+    const startMinutes = parseTimeToMinutes_(businessHours.start);
+    const endMinutes = parseTimeToMinutes_(businessHours.end);
 
-  for (let slotMinutes = startMinutes; slotMinutes < endMinutes; slotMinutes += timeUnit) {
-    const timeStr = minutesToTimeStr_(slotMinutes);
-    bodyHtml += `<tr><th>${timeStr}</th>`;
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(currentWeekStartDate.getTime());
-        d.setDate(d.getDate() + i);
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const date = String(d.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${date}`;
-        const dailyAvailableSlots = weeklyAvailableSlots[dateStr] || [];
-        
-        let cellContent = 'ー';
-        let cellClass = 'unavailable';
+    for (let slotMinutes = startMinutes; slotMinutes < endMinutes; slotMinutes += timeUnit) {
+      const timeStr = minutesToTimeStr_(slotMinutes);
+      bodyHtml += `<tr><th>${timeStr}</th>`;
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(currentWeekStartDate.getTime());
+          d.setDate(d.getDate() + i);
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const date = String(d.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${date}`;
+          const dailyAvailableSlots = weeklyAvailableSlots[dateStr] || [];
+          
+          let cellContent = 'ー';
+          let cellClass = 'unavailable';
 
-        if (d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime()) {
-          if (dailyAvailableSlots.includes(timeStr)) {
-            cellContent = '◯';
-            cellClass = '';
-          } else {
-            cellContent = '✕';
+          if (d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime()) {
+            if (dailyAvailableSlots.includes(timeStr)) {
+              cellContent = '◯';
+              cellClass = '';
+            } else {
+              cellContent = '✕';
+            }
           }
+          
+          // ▼▼▼【修正】data-datetime属性にタイムゾーン情報を付与▼▼▼
+          const dateTimeString = `${dateStr}T${timeStr}:00+09:00`;
+          bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateTimeString}">${cellContent}</div></td>`;
         }
-        
-        // ▼▼▼【修正】data-datetime属性にタイムゾーン情報を付与▼▼▼
-        const dateTimeString = `${dateStr}T${timeStr}:00+09:00`;
-        bodyHtml += `<td><div class="slot ${cellClass}" data-datetime="${dateTimeString}">${cellContent}</div></td>`;
-      }
-      bodyHtml += '</tr>';
-  }
-  timetableBody.innerHTML = bodyHtml;
+        bodyHtml += '</tr>';
+    }
+    timetableBody.innerHTML = bodyHtml;
 
-  restoreSlotSelections();
-  updateBulkSlotAvailability();
-  updateBulkCounter();
+    restoreSlotSelections();
+    updateBulkSlotAvailability();
+    updateBulkCounter();
+  } finally {
+    if (renderGeneration === timetableRenderGeneration) {
+      setTimetableLoadingVisible_(false);
+    }
+  }
 }
 
 /**

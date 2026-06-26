@@ -332,6 +332,24 @@ select.form-control {
   margin-top: 14px;
 }
 
+.timetable-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px 28px;
+  text-align: center;
+}
+
+.timetable-loading .spinner {
+  margin-bottom: 14px;
+}
+
+.timetable-loading .info-text {
+  margin: 0;
+  color: #7f8c8d;
+}
+
 #lookahead-days-info {
   text-align: left;
   margin-top: 12px;
