@@ -502,7 +502,7 @@ var CONFIG_CACHE_MAX_BYTES_ = 90000;
 var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
 var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
 var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
-var TRIGGERS_CONFIG_VERSION_ = '8';
+var TRIGGERS_CONFIG_VERSION_ = '9';
 var DEFAULT_OPERATIONS_MANUAL_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/docs/initial-setup-manual';
 
 var PUBLIC_CONFIG_KEYS_ = [
@@ -3433,9 +3433,11 @@ function setupTriggers() {
   ScriptApp.newTrigger('sendDayBeforeReminders')
     .timeBased().everyDays(1).atHour(18).create();
 
-  // 当日60分前LINEリマインド（1時間ごと）
-  ScriptApp.newTrigger('sendHourBeforeReminders')
-    .timeBased().everyHours(1).create();
+  // 当日60分前LINEリマインド（毎時 0/15/30/45 分固定・30分刻み予約に対応）
+  [0, 15, 30, 45].forEach(function(minute) {
+    ScriptApp.newTrigger('sendHourBeforeReminders')
+      .timeBased().everyHours(1).nearMinute(minute).create();
+  });
 
   // 日次アーカイブ（毎日 深夜3時）
   ScriptApp.newTrigger('runDailyArchive')
@@ -3448,7 +3450,7 @@ function setupTriggers() {
   const props = PropertiesService.getScriptProperties();
   props.setProperty('triggersConfigVersion', TRIGGERS_CONFIG_VERSION_);
   props.setProperty('endOfDayTriggerSchedule', endOfDay.scheduleKey);
-  Logger.log(`トリガーを設定しました（全7種。終業後処理: ${endOfDay.scheduleKey} = 営業終了+15分）。`);
+  Logger.log(`トリガーを設定しました（全10種。終業後処理: ${endOfDay.scheduleKey} = 営業終了+15分、60分前リマインド: 毎時0/15/30/45分）。`);
   return { success: true, endOfDaySchedule: endOfDay.scheduleKey };
 }
 
@@ -3674,7 +3676,7 @@ function sendDayBeforeReminders() {
 }
 
 /**
- * 当日60分前リマインド（1時間ごとトリガー）。
+ * 当日60分前リマインド（毎時 0/15/30/45 分トリガー・デプロイ時刻に依存しない）。
  * 現在時刻から60〜75分後に開始する予約の顧客にプッシュ通知を送る。
  */
 function sendHourBeforeReminders() {
@@ -3988,6 +3990,7 @@ function getOrCreateArchiveSpreadsheet_(configs) {
         normalizeArchiveSpreadsheetSheets_(ss);
       }
     } catch (e) {
+      logError_('getOrCreateArchiveSpreadsheet_', wrapErrorMessage_(e, 'archiveSpreadsheetId=' + configs.archiveSpreadsheetId));
       ss = null;
     }
   }

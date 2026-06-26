@@ -753,7 +753,7 @@ export function renderAdminConsole(env, adminUser, { customers, registryError, k
         const label = r.status === 'success' ? '✅ 成功' : (r.status === 'skipped' ? '⏭ スキップ' : '❌ エラー');
         const detail = r.reason || (r.status === 'success'
           ? 'v' + r.versionNumber + ' にデプロイ'
-            + (r.triggersSetup === false ? '（トリガー: 要フォールバック）' : '（トリガー7種設定済）')
+            + (r.triggersSetup === false ? '（トリガー: 要フォールバック）' : '（トリガー10種設定済）')
             + (r.configSyncWarning ? '（警告: ' + r.configSyncWarning + '）' : '')
           : '');
         return '<tr><td class="ss-id">' + esc(r.ssId) + '</td><td>' + label + '</td><td class="reason">' + esc(detail) + '</td></tr>';

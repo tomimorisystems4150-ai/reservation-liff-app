@@ -1037,7 +1037,7 @@ function runErrorLogIntegrationTests_() {
     _withConfigBackup_('archiveSpreadsheetId', '__TC_EL_invalid_archive__', () => {
       const countBefore = _errorLogRowCount_();
       runDailyArchive();
-      assertNewErrorLogged_(countBefore, 'runDailyArchive');
+      assertNewErrorLogged_(countBefore, 'getOrCreateArchiveSpreadsheet_', 'archiveSpreadsheetId');
     });
     _deleteBookingRow_(seeded.rowNum);
   }));
@@ -1045,20 +1045,12 @@ function runErrorLogIntegrationTests_() {
   results.push(runTest_('TC-EL-007: createBooking:calendarCreate - 無効カレンダー', () => {
     _withConfigBackup_('reservationCalendarId', '__TC_EL_invalid_calendar__', () => {
       const countBefore = _errorLogRowCount_();
-      const slot = _getTestSlot(21);
-      const res = _callDoPost({
-        action: 'createBooking',
-        bookingData: {
-          lineUserId: 'test_el_cal_' + Date.now(),
-          userName: TEST_CUSTOMER_NAME,
-          menuName: _getFirstMenuName(),
-          duration: 30,
-          startDateTime: slot,
-          staffEmail: 'any',
-          staffName: '',
-        },
-      });
-      assert_(!res.success, '無効カレンダーで予約が成功してしまった: ' + (res.message || ''));
+      try {
+        createBooking(_buildTestBookingData_({ startDateTime: _getTestSlot(21) }));
+        throw new Error('createBooking がエラーにならなかった');
+      } catch (e) {
+        if (e.message === 'createBooking がエラーにならなかった') throw e;
+      }
       assertNewErrorLogged_(countBefore, 'createBooking:calendarCreate');
     });
   }));
@@ -1088,7 +1080,7 @@ function runErrorLogIntegrationTests_() {
     }
     const slot = _getTestSlot(28);
     const staff = configs.staffs[0];
-    const base = {
+    const bookingData = {
       lineUserId: 'test_el_full_' + Date.now(),
       userName: TEST_CUSTOMER_NAME,
       menuName: _getFirstMenuName(),
@@ -1097,11 +1089,16 @@ function runErrorLogIntegrationTests_() {
       staffEmail: staff.email,
       staffName: staff.name,
     };
-    const res1 = _callDoPost({ action: 'createBooking', bookingData: base });
-    assert_(res1.success, '1件目の予約が失敗: ' + (res1.message || ''));
+    const result1 = createBooking(bookingData);
+    assert_(result1 && result1.bookingId, '1件目の予約が失敗');
     const countBefore = _errorLogRowCount_();
-    const res2 = _callDoPost({ action: 'createBooking', bookingData: base });
-    assert_(!res2.success, '満席スロットへの2件目が成功してしまった');
+    try {
+      createBooking(bookingData);
+      throw new Error('満席スロットへの2件目が成功してしまった');
+    } catch (e) {
+      if (e.message === '満席スロットへの2件目が成功してしまった') throw e;
+      assertContains_(e.message, '申し訳ありません', '想定内エラーメッセージ');
+    }
     assertNewErrorNotLogged_(countBefore, 'createBooking');
     assertNewErrorNotLogged_(countBefore, 'createBooking:calendarCreate');
   }));
@@ -1471,11 +1468,28 @@ function _getConfigValueFromSheet_(key) {
 function _withConfigBackup_(key, tempValue, fn) {
   const original = _getConfigValueFromSheet_(key);
   updateConfigValue_(key, tempValue);
+  invalidateScriptCaches_();
   try {
     fn();
   } finally {
     updateConfigValue_(key, original !== null && original !== undefined ? original : '');
+    invalidateScriptCaches_();
   }
+}
+
+function _buildTestBookingData_(overrides) {
+  const base = {
+    lineUserId: 'test_el_' + Date.now(),
+    userName: TEST_CUSTOMER_NAME,
+    menuName: _getFirstMenuName(),
+    duration: 30,
+    startDateTime: _getTestSlot(21),
+    staffEmail: 'any',
+    staffName: '',
+  };
+  if (!overrides) return base;
+  Object.keys(overrides).forEach(function(k) { base[k] = overrides[k]; });
+  return base;
 }
 
 function _withSheetRenamed_(currentName, tempName, fn) {
