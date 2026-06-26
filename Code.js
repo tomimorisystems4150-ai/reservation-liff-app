@@ -3830,15 +3830,19 @@ function getErrorReportDisabledReason_() {
  * @returns {{ok: boolean, enabled: boolean, httpCode: number, message: string, responseBody: string}}
  */
 function probeErrorReportConnection_() {
+  var base = {
+    secretInjected: _ERROR_REPORT_SECRET !== 'PLACEHOLDER_ERROR_REPORT_SECRET',
+    ssId: _PROVISIONED_SS_ID
+  };
   var disabledReason = getErrorReportDisabledReason_();
   if (disabledReason) {
-    return {
+    return Object.assign({
       ok: false,
       enabled: false,
       httpCode: 0,
       message: disabledReason,
       responseBody: ''
-    };
+    }, base);
   }
   var testErr = new Error('probeErrorReportConnection_ 疎通確認 ' + new Date().toISOString());
   var shopName = '';
@@ -3869,21 +3873,21 @@ function probeErrorReportConnection_() {
     });
     var code = res.getResponseCode();
     var text = res.getContentText().substring(0, 500);
-    return {
+    return Object.assign({
       ok: code >= 200 && code < 300,
       enabled: true,
       httpCode: code,
       message: code >= 200 && code < 300 ? 'Worker への報告に成功しました' : 'Worker がエラーを返しました',
       responseBody: text
-    };
+    }, base);
   } catch (e) {
-    return {
+    return Object.assign({
       ok: false,
       enabled: true,
       httpCode: 0,
       message: 'UrlFetch 失敗: ' + e.message,
       responseBody: ''
-    };
+    }, base);
   }
 }
 
@@ -3893,7 +3897,25 @@ function probeErrorReportConnection_() {
  * @returns {{ok: boolean, enabled: boolean, httpCode: number, message: string, responseBody: string}}
  */
 function probeErrorReportConnection() {
-  return probeErrorReportConnection_();
+  var result = probeErrorReportConnection_();
+  Logger.log('=== probeErrorReportConnection 結果 ===');
+  Logger.log('secretInjected: ' + result.secretInjected);
+  Logger.log('ssId: ' + result.ssId);
+  Logger.log('ok: ' + result.ok + ' / enabled: ' + result.enabled + ' / httpCode: ' + result.httpCode);
+  Logger.log('message: ' + result.message);
+  if (result.responseBody) {
+    Logger.log('responseBody: ' + result.responseBody);
+  }
+  if (result.ok) {
+    Logger.log('→ デプロイ支援コンソール /admin を再読み込み（「直近のシステムエラー」パネル）');
+  } else if (!result.secretInjected) {
+    Logger.log('→ wrangler secret put ERROR_REPORT_SECRET 後、デプロイ支援コンソールでコード配信を再実行してください');
+  } else if (result.httpCode === 401) {
+    Logger.log('→ Worker の ERROR_REPORT_SECRET と GAS 埋め込み値が不一致です。secret 更新後にコード配信し直してください');
+  } else if (result.httpCode === 404) {
+    Logger.log('→ Worker に /api/report-error が未デプロイです。cloudflare-worker で wrangler deploy してください');
+  }
+  return result;
 }
 
 /** シート記録成功後に Worker へベストエフォートで通知する */
