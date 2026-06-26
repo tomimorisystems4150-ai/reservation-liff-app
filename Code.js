@@ -3806,13 +3806,27 @@ function isErrorReportEnabled_() {
 }
 
 function hmacSha256Base64Url_(message, secret) {
-  var sigBytes = Utilities.computeHmacSha256Signature(message, secret);
+  var key = String(secret || '').trim();
+  var sigBytes = Utilities.computeHmacSha256Signature(message, key);
   // GAS の byte 配列は符号付き (-128〜127) のため、0xFF マスクしてから Base64 化する
   var binary = sigBytes.map(function(b) {
     return String.fromCharCode((b + 256) % 256);
   }).join('');
   var base64 = Utilities.base64Encode(binary);
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Worker へエラー報告 POST（署名はクエリ ?ts=&sig= に載せる — UrlFetch のヘッダー制限回避） */
+function postErrorReportToWorker_(body, timestamp, signature) {
+  var url = ERROR_REPORT_WORKER_URL_
+    + '?ts=' + encodeURIComponent(timestamp)
+    + '&sig=' + encodeURIComponent(signature);
+  return UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: body,
+    muteHttpExceptions: true
+  });
 }
 
 function getErrorReportDisabledReason_() {
@@ -3861,16 +3875,7 @@ function probeErrorReportConnection_() {
   var timestamp = Math.floor(Date.now() / 1000).toString();
   var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
   try {
-    var res = UrlFetchApp.fetch(ERROR_REPORT_WORKER_URL_, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: body,
-      headers: {
-        'X-Error-Timestamp': timestamp,
-        'X-Error-Signature': signature
-      },
-      muteHttpExceptions: true
-    });
+    var res = postErrorReportToWorker_(body, timestamp, signature);
     var code = res.getResponseCode();
     var text = res.getContentText().substring(0, 500);
     return Object.assign({
@@ -3949,16 +3954,7 @@ function notifyDeveloperError_(functionName, error) {
     var body = JSON.stringify(payload);
     var timestamp = Math.floor(Date.now() / 1000).toString();
     var signature = hmacSha256Base64Url_(timestamp + '.' + body, _ERROR_REPORT_SECRET);
-    var res = UrlFetchApp.fetch(ERROR_REPORT_WORKER_URL_, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: body,
-      headers: {
-        'X-Error-Timestamp': timestamp,
-        'X-Error-Signature': signature
-      },
-      muteHttpExceptions: true
-    });
+    var res = postErrorReportToWorker_(body, timestamp, signature);
     if (res.getResponseCode() >= 400) {
       Logger.log('notifyDeveloperError_ HTTP ' + res.getResponseCode() + ': ' + res.getContentText().substring(0, 200));
     }

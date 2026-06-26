@@ -1409,7 +1409,7 @@ function substituteProvisionedValues(rawFiles, spreadsheetId, env) {
   const ssIdPattern = /const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';/;
   const ssIdReplacement = `const _PROVISIONED_SS_ID = '${spreadsheetId}';`;
   const secretPattern = /const _ERROR_REPORT_SECRET = 'PLACEHOLDER_ERROR_REPORT_SECRET';/;
-  const secretRaw = env.ERROR_REPORT_SECRET || 'PLACEHOLDER_ERROR_REPORT_SECRET';
+  const secretRaw = (env.ERROR_REPORT_SECRET || 'PLACEHOLDER_ERROR_REPORT_SECRET').trim();
   const secretEscaped = String(secretRaw).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const secretReplacement = `const _ERROR_REPORT_SECRET = '${secretEscaped}';`;
   return rawFiles.map(({ name, type, file, source }) => ({

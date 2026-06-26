@@ -64,13 +64,15 @@ export async function loadErrorLogState(kv) {
 }
 
 async function verifyReportSignature(request, bodyText, env) {
-  const secret = env.ERROR_REPORT_SECRET;
+  const secret = (env.ERROR_REPORT_SECRET || '').trim();
   if (!secret) return { ok: false, message: 'ERROR_REPORT_SECRET 未設定' };
 
-  const timestamp = request.headers.get('X-Error-Timestamp')?.trim();
-  const signature = request.headers.get('X-Error-Signature')?.trim();
+  const url = new URL(request.url);
+  // GAS UrlFetch はカスタムヘッダーが届かないことがあるため ?ts=&sig= も受け付ける
+  const timestamp = (url.searchParams.get('ts') || request.headers.get('X-Error-Timestamp') || '').trim();
+  const signature = (url.searchParams.get('sig') || request.headers.get('X-Error-Signature') || '').trim();
   if (!timestamp || !signature) {
-    return { ok: false, message: '署名ヘッダーが不足しています' };
+    return { ok: false, message: '署名パラメーターが不足しています（?ts=&sig= または X-Error-* ヘッダー）' };
   }
 
   const ts = Number(timestamp);
