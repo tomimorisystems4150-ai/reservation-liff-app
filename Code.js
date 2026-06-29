@@ -10,6 +10,9 @@
 const _PROVISIONED_SS_ID = 'PLACEHOLDER_SPREADSHEET_ID';
 // コード配信時に Worker が ERROR_REPORT_SECRET を埋め込む（未配信時は通知しない）
 const _ERROR_REPORT_SECRET = 'PLACEHOLDER_ERROR_REPORT_SECRET';
+// コード配信時に Worker が BILLING_API_SECRET / WORKER_URL を埋め込む
+const _BILLING_API_SECRET = 'PLACEHOLDER_BILLING_API_SECRET';
+const _BILLING_WORKER_BASE_URL_ = 'PLACEHOLDER_BILLING_WORKER_BASE_URL';
 
 // グローバルスコープでの SpreadsheetApp 呼び出しは GAS の認証フローと競合するため、
 // 遅延初期化パターンを使用する。各リクエスト内で最初のアクセス時のみ初期化される。
@@ -184,6 +187,28 @@ function doGet(e) {
     return HtmlService.createTemplateFromFile('unauthorized').evaluate().setTitle('アクセスエラー');
   }
 
+  const entitlement = checkSaasEntitlementForWeb_();
+  if (entitlement.requiresBilling) {
+    const billingTmpl = HtmlService.createTemplateFromFile('billing');
+    billingTmpl.shopName = configs.shopName || '';
+    billingTmpl.planLabel = entitlement.planLabel || '';
+    billingTmpl.reason = entitlement.reason || '';
+    billingTmpl.gasDeployUrl = ScriptApp.getService().getUrl();
+    return billingTmpl.evaluate().setTitle('SaaS利用料のお支払い');
+  }
+  if (!entitlement.allowed && !entitlement.setupPhase) {
+    return HtmlService.createHtmlOutput(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>サービス確認中</title>
+      <style>body{font-family:sans-serif;padding:40px;text-align:center;background:#f5f5f5;}
+      .card{background:#fff;border-radius:12px;padding:32px;max-width:480px;margin:40px auto;
+            box-shadow:0 2px 12px rgba(0,0,0,0.1);}</style></head>
+      <body><div class="card">
+        <h2>サービス状態を確認できません</h2>
+        <p style="color:#555;line-height:1.7;">${escapeHtml_(entitlement.message || 'しばらく待ってから再度アクセスしてください。')}</p>
+      </div></body></html>`
+    ).setTitle('サービス確認中');
+  }
+
   // ページルーティング（?page=kanri で管理画面を表示）
   const page = (e && e.parameter && e.parameter.page) || 'settings';
 
@@ -292,7 +317,7 @@ function doPost(e) {
 
       if (postData.action !== 'runTests' && postData.action !== 'runErrorLogTests'
           && postData.action !== 'probeErrorReportConnection') {
-        if (isServiceSuspendedFromSheet_()) {
+        if (!isSaasBookingAllowed_()) {
           return createServiceSuspendedResponse_();
         }
       }
@@ -558,6 +583,7 @@ function getPublicConfigs_() {
 
 function invalidateScriptCaches_() {
   CacheService.getScriptCache().remove(CONFIG_CACHE_KEY_);
+  invalidateBillingEntitlementCache_();
 }
 
 function invalidateCustomerLookupCache_(lineUserId) {
@@ -830,6 +856,11 @@ function saveConfigs(configs) {
     Logger.log('設定を保存しました。');
     invalidateScriptCaches_();
     ensureTriggersConfigured_();
+    try {
+      notifySetupCompleteIfReady_(Object.assign({}, currentConfigs, configs));
+    } catch (setupErr) {
+      Logger.log('setup-complete 通知スキップ: ' + setupErr.message);
+    }
     return { success: true, message: 'OK' };
 
   } catch (e) {
@@ -991,7 +1022,7 @@ function generateBookingId() {
 // =================================================================
 function handleWebhook(e) {
   const configs = getConfigs();
-  if (isServiceSuspended_(configs)) {
+  if (isServiceSuspended_(configs) || !isSaasBookingAllowed_()) {
     Logger.log('サービス停止中のため Webhook を無視しました。');
     return;
   }
@@ -3802,6 +3833,186 @@ function logErrorIfSystem_(functionName, error) {
 function wrapErrorMessage_(error, prefix) {
   const base = error instanceof Error ? error.message : String(error);
   return new Error(prefix + ': ' + base);
+}
+
+// =================================================================
+// SaaS 月額課金（Worker 台帳連携）
+// =================================================================
+
+var BILLING_ENTITLEMENT_CACHE_KEY_ = 'billing_ent_';
+var BILLING_ENTITLEMENT_CACHE_TTL_SEC_ = 60;
+
+function isBillingApiEnabled_() {
+  return _BILLING_API_SECRET !== 'PLACEHOLDER_BILLING_API_SECRET'
+    && _BILLING_WORKER_BASE_URL_ !== 'PLACEHOLDER_BILLING_WORKER_BASE_URL';
+}
+
+function bytesToHex_(bytes) {
+  return bytes.map(function(b) {
+    return ('0' + (b & 0xff).toString(16)).slice(-2);
+  }).join('');
+}
+
+function sha256Hex_(text) {
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(text || ''),
+    Utilities.Charset.UTF_8
+  );
+  return bytesToHex_(digest);
+}
+
+function hmacSha256Hex_(secret, message) {
+  var digest = Utilities.computeHmacSha256Signature(String(message), String(secret));
+  return bytesToHex_(digest);
+}
+
+function buildBillingAuthHeaders_(bodyText) {
+  var ssId = _PROVISIONED_SS_ID;
+  var ts = String(Date.now());
+  var bodyHash = sha256Hex_(bodyText || '');
+  var payload = ts + '\n' + ssId + '\n' + bodyHash;
+  return {
+    'X-Billing-Timestamp': ts,
+    'X-Billing-SsId': ssId,
+    'X-Billing-Signature': hmacSha256Hex_(_BILLING_API_SECRET, payload),
+  };
+}
+
+function parseBillingJsonResponse_(res) {
+  var code = res.getResponseCode();
+  var text = res.getContentText() || '{}';
+  var parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    parsed = { success: false, message: text.substring(0, 200) };
+  }
+  if (code < 200 || code >= 300) {
+    parsed.success = false;
+    parsed.message = parsed.message || ('HTTP ' + code);
+  }
+  return parsed;
+}
+
+function fetchBillingEntitlement_() {
+  if (!isBillingApiEnabled_()) return null;
+  var url = _BILLING_WORKER_BASE_URL_.replace(/\/$/, '') + '/api/billing/entitlement?ssId=' + encodeURIComponent(_PROVISIONED_SS_ID);
+  var headers = buildBillingAuthHeaders_('');
+  var res = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: headers,
+    muteHttpExceptions: true,
+  });
+  return parseBillingJsonResponse_(res);
+}
+
+function fetchBillingEntitlementCached_() {
+  if (!isBillingApiEnabled_()) return null;
+  var cache = CacheService.getScriptCache();
+  var cacheKey = BILLING_ENTITLEMENT_CACHE_KEY_ + _PROVISIONED_SS_ID;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      cache.remove(cacheKey);
+    }
+  }
+  var fresh = fetchBillingEntitlement_();
+  if (fresh && fresh.success) {
+    cache.put(cacheKey, JSON.stringify(fresh), BILLING_ENTITLEMENT_CACHE_TTL_SEC_);
+  }
+  return fresh;
+}
+
+function invalidateBillingEntitlementCache_() {
+  try {
+    CacheService.getScriptCache().remove(BILLING_ENTITLEMENT_CACHE_KEY_ + _PROVISIONED_SS_ID);
+  } catch (e) { /* ignore */ }
+}
+
+function checkSaasEntitlementForWeb_() {
+  if (!isBillingApiEnabled_()) {
+    return { allowed: true, setupPhase: false, requiresBilling: false, reason: 'billing_disabled' };
+  }
+  var ent = fetchBillingEntitlementCached_();
+  if (!ent || !ent.success) {
+    return {
+      allowed: false,
+      setupPhase: false,
+      requiresBilling: false,
+      reason: 'worker_unreachable',
+      message: (ent && ent.message) ? ent.message : '利用状態を確認できませんでした。',
+    };
+  }
+  return ent;
+}
+
+function isSaasBookingAllowed_() {
+  if (isServiceSuspendedFromSheet_()) return false;
+  if (!isBillingApiEnabled_()) return true;
+  var ent = fetchBillingEntitlementCached_();
+  if (!ent || !ent.success) return false;
+  return ent.allowed === true;
+}
+
+function isInitialSetupComplete_(configs) {
+  configs = configs || {};
+  if (!String(configs.shopName || '').trim()) return false;
+  if (!String(configs.lineChannelAccessToken || '').trim()) return false;
+  if (!String(configs.lineChannelSecret || '').trim()) return false;
+  if (!String(configs.lineLoginChannelId || '').trim()) return false;
+  if (!String(configs.liffChannelId || '').trim()) return false;
+  if (!String(configs.reservationCalendarId || '').trim()) return false;
+  if (!String(configs.block_input_calendar_id || '').trim()) return false;
+  var menus = configs.serviceMenus;
+  if (typeof menus === 'string') {
+    try { menus = JSON.parse(menus); } catch (e) { menus = []; }
+  }
+  if (!Array.isArray(menus) || menus.length === 0) return false;
+  return true;
+}
+
+function notifySetupCompleteIfReady_(configs) {
+  if (!isBillingApiEnabled_()) return;
+  if (!isInitialSetupComplete_(configs)) return;
+  var url = _BILLING_WORKER_BASE_URL_.replace(/\/$/, '') + '/api/billing/setup-complete';
+  var body = JSON.stringify({ ssId: _PROVISIONED_SS_ID });
+  var headers = buildBillingAuthHeaders_(body);
+  headers['Content-Type'] = 'application/json';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: body,
+    muteHttpExceptions: true,
+  });
+  var parsed = parseBillingJsonResponse_(res);
+  if (parsed.success) {
+    invalidateBillingEntitlementCache_();
+  } else {
+    Logger.log('setup-complete 失敗: ' + (parsed.message || 'unknown'));
+  }
+}
+
+/** billing.html から google.script.run で呼ばれる */
+function createSaasCheckoutSession() {
+  if (!isBillingApiEnabled_()) {
+    return { success: false, message: '請求 API が未設定です（コード配信が必要）' };
+  }
+  var url = _BILLING_WORKER_BASE_URL_.replace(/\/$/, '') + '/api/billing/create-checkout-session';
+  var body = JSON.stringify({ ssId: _PROVISIONED_SS_ID });
+  var headers = buildBillingAuthHeaders_(body);
+  headers['Content-Type'] = 'application/json';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: body,
+    muteHttpExceptions: true,
+  });
+  return parseBillingJsonResponse_(res);
 }
 
 var ERROR_REPORT_WORKER_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/api/report-error';

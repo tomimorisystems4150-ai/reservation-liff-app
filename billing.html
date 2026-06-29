@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaaS利用料のお支払い</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 24px; color: #1a1a2e;
+    }
+    .card {
+      background: #fff; border-radius: 16px; padding: 36px 32px;
+      max-width: 480px; width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    }
+    h1 { font-size: 1.35em; margin-bottom: 8px; color: #2c3e50; }
+    .shop { color: #666; font-size: 0.95em; margin-bottom: 20px; }
+    .notice {
+      background: #fff8e6; border: 1px solid #ffe082; border-radius: 10px;
+      padding: 14px 16px; font-size: 0.92em; line-height: 1.65; margin-bottom: 24px;
+    }
+    .plan {
+      background: #f8f9fa; border-radius: 10px; padding: 16px; margin-bottom: 24px;
+      font-size: 0.95em; line-height: 1.6;
+    }
+    .plan strong { display: block; font-size: 1.05em; margin-bottom: 6px; }
+    .btn {
+      display: block; width: 100%; padding: 14px; border: none; border-radius: 10px;
+      background: #635bff; color: #fff; font-size: 1em; font-weight: 600;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .btn:hover { background: #5248e6; }
+    .btn:disabled { background: #aaa; cursor: not-allowed; }
+    .err { color: #c0392b; font-size: 0.88em; margin-top: 12px; display: none; }
+    .hint { font-size: 0.82em; color: #888; margin-top: 16px; line-height: 1.55; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>SaaS利用料のお支払い</h1>
+    <p class="shop"><?!= shopName ? shopName + ' — ' : '' ?>LINE予約システム</p>
+
+    <div class="notice" id="noticeBox">
+      無料トライアル期間が終了しました。引き続きご利用いただくには、月額サブスクリプションへのご登録が必要です。
+    </div>
+
+    <div class="plan">
+      <strong id="planLabel"><?!= planLabel || '月額プラン' ?></strong>
+      クレジットカードによる自動更新（Stripe）<br>
+      決済完了後、数秒以内に設定画面・予約受付が再開されます。
+    </div>
+
+    <button type="button" class="btn" id="checkoutBtn" onclick="startCheckout()">Stripe で決済する</button>
+    <p class="err" id="errBox"></p>
+    <p class="hint">決済に関するお問い合わせはサポートまでご連絡ください。</p>
+  </div>
+
+  <script>
+    var REASON = '<?!= reason || "" ?>';
+    if (REASON === 'payment_failed') {
+      document.getElementById('noticeBox').textContent =
+        '前回のお支払いに失敗しました。カード情報を更新のうえ、再度お手続きください。';
+    }
+
+    function startCheckout() {
+      var btn = document.getElementById('checkoutBtn');
+      var err = document.getElementById('errBox');
+      btn.disabled = true;
+      err.style.display = 'none';
+      btn.textContent = '処理中…';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success && res.checkoutUrl) {
+            window.top.location.href = res.checkoutUrl;
+            return;
+          }
+          err.textContent = (res && res.message) ? res.message : '決済URLの取得に失敗しました';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Stripe で決済する';
+        })
+        .withFailureHandler(function(e) {
+          err.textContent = e.message || String(e);
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Stripe で決済する';
+        })
+        .createSaasCheckoutSession();
+    }
+  </script>
+</body>
+</html>
