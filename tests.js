@@ -708,6 +708,19 @@ function runLogicTests_() {
     invalidateScriptCaches_();
   }));
 
+  // TC-L-003g: 1時間前リマインド窓（分単位・45〜75分前）
+  results.push(runTest_('TC-L-003g: isHourReminderWindowMatch_ - 境界', () => {
+    const appt = new Date(2026, 5, 27, 15, 30, 0);
+    assert_(isHourReminderWindowMatch_(new Date(2026, 5, 27, 14, 30, 44), appt),
+      '14:30:44 実行で 15:30 予約は対象');
+    assert_(isHourReminderWindowMatch_(new Date(2026, 5, 27, 14, 15, 59), appt),
+      '14:15 実行で 15:30 予約は対象');
+    assert_(!isHourReminderWindowMatch_(new Date(2026, 5, 27, 15, 0, 0), appt),
+      '15:00 実行（30分前）は対象外');
+    assert_(!isHourReminderWindowMatch_(new Date(2026, 5, 27, 13, 30, 0), appt),
+      '13:30 実行（120分前）は対象外');
+  }));
+
   // TC-L-003f: 顧客検索キャッシュ
   results.push(runTest_('TC-L-003f: findCustomerByUserId_ - ScriptCache', () => {
     const uniqueId = 'test_cust_cache_' + new Date().getTime();

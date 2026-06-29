@@ -510,7 +510,9 @@ var CONFIG_CACHE_MAX_BYTES_ = 90000;
 var CUSTOMER_LOOKUP_CACHE_PREFIX_ = 'customerLookup:v1:';
 var CUSTOMER_LOOKUP_CACHE_TTL_SEC_ = 60;
 var CUSTOMER_LOOKUP_CACHE_MISS_ = '__NULL__';
-var TRIGGERS_CONFIG_VERSION_ = '9';
+var TRIGGERS_CONFIG_VERSION_ = '10';
+var HOUR_REMINDER_MIN_AHEAD_MIN_ = 45;
+var HOUR_REMINDER_MAX_AHEAD_MIN_ = 75;
 var DEFAULT_OPERATIONS_MANUAL_URL_ = 'https://reservation-onboarding.reservation-onboarding.workers.dev/docs/initial-setup-manual';
 
 var PUBLIC_CONFIG_KEYS_ = [
@@ -3458,7 +3460,7 @@ function setupTriggers() {
   const props = PropertiesService.getScriptProperties();
   props.setProperty('triggersConfigVersion', TRIGGERS_CONFIG_VERSION_);
   props.setProperty('endOfDayTriggerSchedule', endOfDay.scheduleKey);
-  Logger.log(`トリガーを設定しました（全10種。終業後処理: ${endOfDay.scheduleKey} = 営業終了+15分、60分前リマインド: 毎時0/15/30/45分）。`);
+  Logger.log(`トリガーを設定しました（全10種。終業後処理: ${endOfDay.scheduleKey} = 営業終了+15分、60分前リマインド: 毎時0/15/30/45分・45〜75分前判定）。`);
   return { success: true, endOfDaySchedule: endOfDay.scheduleKey };
 }
 
@@ -3584,6 +3586,24 @@ function buildLineReminderMessage_(kind, startTime, menuName, staffName) {
   return text;
 }
 
+/** Date を分単位に切り捨て（トリガー遅延・秒精度のズレを吸収）。 */
+function floorToMinute_(date) {
+  const t = date instanceof Date ? date : new Date(date);
+  return new Date(Math.floor(t.getTime() / 60000) * 60000);
+}
+
+/**
+ * 当日60分前リマインドの送信対象か（分単位・45〜75分前）。
+ * 送信済みフラグで二重送信は防止する。
+ */
+function isHourReminderWindowMatch_(now, startTime) {
+  const nowMin = floorToMinute_(now);
+  const startMin = floorToMinute_(startTime);
+  const windowStart = new Date(nowMin.getTime() + HOUR_REMINDER_MIN_AHEAD_MIN_ * 60000);
+  const windowEnd = new Date(nowMin.getTime() + HOUR_REMINDER_MAX_AHEAD_MIN_ * 60000);
+  return startMin >= windowStart && startMin <= windowEnd;
+}
+
 /**
  * LINE リマインド送信済みフラグのキー生成（予約開始日時ごとに管理）。
  */
@@ -3685,16 +3705,14 @@ function sendDayBeforeReminders() {
 
 /**
  * 当日60分前リマインド（毎時 0/15/30/45 分トリガー・デプロイ時刻に依存しない）。
- * 現在時刻から60〜75分後に開始する予約の顧客にプッシュ通知を送る。
+ * 現在時刻から45〜75分後に開始する予約の顧客にプッシュ通知を送る（分単位比較）。
  */
 function sendHourBeforeReminders() {
   try {
     const configs = getConfigs();
     if (configs.reminderMode !== 'LINE') return;
 
-    const now         = new Date();
-    const windowStart = new Date(now.getTime() + 60 * 60000);
-    const windowEnd   = new Date(now.getTime() + 75 * 60000);
+    const now = new Date();
 
     const sheet = getReservationSheet(configs);
     const data  = sheet.getDataRange().getValues();
@@ -3714,7 +3732,7 @@ function sendHourBeforeReminders() {
       if (!row[bkIdCol] || (status !== '予約' && status !== '仮予約')) continue;
 
       const startTime = new Date(row[startCol]);
-      if (startTime < windowStart || startTime > windowEnd) continue;
+      if (!isHourReminderWindowMatch_(now, startTime)) continue;
 
       const bookingId = row[bkIdCol];
       const propKey   = getHourReminderPropKey_(bookingId, startTime);
